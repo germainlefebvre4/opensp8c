@@ -1,0 +1,121 @@
+package api
+
+import (
+	"io"
+	"io/fs"
+	"net/http"
+	"path/filepath"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/glefebvre/opensp8c/internal/api/handlers"
+	"github.com/glefebvre/opensp8c/internal/config"
+	"github.com/glefebvre/opensp8c/internal/session"
+	"github.com/glefebvre/opensp8c/internal/watcher"
+	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/glefebvre/opensp8c/ui"
+)
+
+func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
+	r := chi.NewRouter()
+
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(corsMiddleware)
+
+	mgr := session.NewManager()
+
+	watcherSvc := watcher.NewWatcherService()
+	for _, wc := range cfg.Workspaces {
+		absPath, _ := filepath.Abs(wc.Path)
+		_ = watcherSvc.StartWatching(workspace.StableID(absPath), absPath)
+	}
+
+	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath)
+	kanbanHandler := handlers.NewKanbanHandler(wsHandler)
+	specsHandler := handlers.NewSpecsHandler(wsHandler)
+	archiveHandler := handlers.NewArchiveHandler(wsHandler)
+	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr)
+	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
+
+	r.Route("/api", func(r chi.Router) {
+		r.Use(jsonContentType)
+
+		r.Get("/workspaces", wsHandler.List)
+		r.Post("/workspaces", wsHandler.Add)
+		r.Delete("/workspaces/{id}", wsHandler.Delete)
+
+		r.Get("/workspaces/{id}/changes", kanbanHandler.ListChanges)
+		r.Get("/workspaces/{id}/changes/{name}", kanbanHandler.GetChange)
+		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
+
+		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)
+		r.Get("/workspaces/{id}/specs/{name}", specsHandler.GetSpec)
+
+		r.Post("/workspaces/{id}/changes/{name}/archive", archiveHandler.Archive)
+
+		r.Get("/workspaces/{id}/changes/{name}/explore", exploreHandler.HandleWS)
+		r.Delete("/workspaces/{id}/changes/{name}/explore", exploreHandler.StopSession)
+
+		r.Post("/workspaces/{id}/explore/sessions", exploreHandler.CreateAnonymousSession)
+		r.Get("/workspaces/{id}/explore/sessions/{sessionId}", exploreHandler.HandleAnonymousWS)
+		r.Delete("/workspaces/{id}/explore/sessions/{sessionId}", exploreHandler.StopAnonymousSession)
+
+		r.Get("/workspaces/{id}/events", eventsHandler.HandleSSE)
+	})
+
+	r.Handle("/*", staticHandler(ui.FS()))
+
+	return r
+}
+
+// staticHandler serves a SPA: exact files first, index.html fallback for unknown paths.
+func staticHandler(distFS fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(distFS))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if path == "/" || path == "" {
+			serveIndex(w, distFS)
+			return
+		}
+		// Strip leading slash for fs.Open
+		f, err := distFS.Open(path[1:])
+		if err != nil {
+			serveIndex(w, distFS)
+			return
+		}
+		f.Close()
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+func serveIndex(w http.ResponseWriter, distFS fs.FS) {
+	f, err := distFS.Open("index.html")
+	if err != nil {
+		http.Error(w, "frontend not built", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.Copy(w, f)
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func jsonContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}

@@ -1,0 +1,13 @@
+workspaces:
+    - name: opensp8c
+      path: /home/glefebvre/Documents/Dev/Perso/OpenSpec/opensp8c
+    - name: crossplane-assistant
+      path: /home/glefebvre/Documents/Dev/Perso/CrossplaneAssistant/crossplane-assistant
+    - name: stalkeer
+      path: /home/glefebvre/Documents/Dev/Perso/TorrentTracker/stalkeer
+    - name: bspauto-tracker
+      path: /home/glefebvre/Documents/Dev/Perso/BSPAuto/bspauto-tracker
+    - name: libtado
+      path: /home/glefebvre/Documents/Dev/Perso/Libtado/libtado
+    - name: rubikscube-solver
+      path: /home/glefebvre/Documents/Dev/Perso/RubiksCube/rubikscube-solver
