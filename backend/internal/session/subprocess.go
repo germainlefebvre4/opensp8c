@@ -1,8 +1,10 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"io"
+	"log"
 	"os/exec"
 )
 
@@ -17,11 +19,11 @@ type Subprocess struct {
 func StartSubprocess(ctx context.Context, workspacePath string, extraSystemPrompt string) (*Subprocess, error) {
 	args := []string{
 		"--print",
+		"--verbose",
 		"--input-format", "stream-json",
 		"--output-format", "stream-json",
 		"--include-partial-messages",
 		"--append-system-prompt", systemPrompt,
-		"--cwd", workspacePath,
 	}
 	if extraSystemPrompt != "" {
 		args = append(args, "--append-system-prompt", extraSystemPrompt)
@@ -36,12 +38,23 @@ func StartSubprocess(ctx context.Context, workspacePath string, extraSystemPromp
 	if err != nil {
 		return nil, err
 	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
 
 	cmd.Dir = workspacePath
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			log.Printf("[subprocess stderr] %s", scanner.Text())
+		}
+	}()
 
 	return &Subprocess{cmd: cmd, stdin: stdin, stdout: stdout}, nil
 }

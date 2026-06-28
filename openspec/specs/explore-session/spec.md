@@ -67,6 +67,17 @@ La `Session` backend SHALL maintenir un buffer circulaire des messages produits 
 - **WHEN** le buffer atteint 500 messages et un nouveau message arrive
 - **THEN** le message le plus ancien est supprimé avant d'ajouter le nouveau
 
+### Requirement: Visibilité des erreurs subprocess
+Le backend SHALL capturer le stderr du subprocess `claude` et logguer chaque ligne avec un préfixe identifiable. Aucune erreur subprocess ne SHALL être silencieusement ignorée.
+
+#### Scenario: Erreur de démarrage visible dans les logs
+- **WHEN** le subprocess `claude` écrit sur stderr (erreur d'authentification, flag inconnu, crash)
+- **THEN** chaque ligne stderr est loggée par le backend avec le préfixe `[subprocess stderr]` suivi du contenu
+
+#### Scenario: Subprocess sain sans stderr
+- **WHEN** le subprocess fonctionne normalement et ne produit rien sur stderr
+- **THEN** aucun log stderr n'est émis (pas de bruit dans les logs)
+
 ### Requirement: Replay de l'historique sur reconnexion WebSocket
 À l'établissement d'une connexion WebSocket pour une session dont le subprocess est déjà actif, le backend SHALL envoyer l'intégralité du buffer de messages avant de reprendre le stream live.
 

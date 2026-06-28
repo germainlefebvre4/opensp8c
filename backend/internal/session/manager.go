@@ -177,6 +177,18 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Se
 
 	m.startFanOut(s, key, workspaceID, true)
 
+	// Inject a greeting prompt so the subprocess stays alive waiting for user input
+	// and produces a welcome message visible in the panel.
+	initPayload := map[string]interface{}{
+		"type": "user",
+		"message": map[string]string{
+			"role":    "user",
+			"content": "Présente-toi en une phrase courte et invite l'utilisateur à décrire ce qu'il veut explorer ou construire.",
+		},
+	}
+	initMsg, _ := json.Marshal(initPayload)
+	proc.Write(append(initMsg, '\n'))
+
 	return sessionID, s, nil
 }
 
