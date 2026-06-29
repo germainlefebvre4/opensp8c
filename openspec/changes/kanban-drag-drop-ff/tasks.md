@@ -1,6 +1,6 @@
 ## 1. Backend — ConversationStore
 
-- [ ] 1.1 Créer `backend/internal/conversation/store.go` : struct `Store` avec méthodes `Append(wsID, changeName, kind, line []byte) error` et `List(wsID, changeName, kind) ([]RunMeta, error)` et `Load(wsID, changeName, kind, ts string) ([][]byte, error)`
+- [x] 1.1 Créer `backend/internal/conversation/store.go` : struct `Store` avec méthodes `Append(wsID, changeName, kind, line []byte) error` et `List(wsID, changeName, kind) ([]RunMeta, error)` et `Load(wsID, changeName, kind, ts string) ([][]byte, error)`
 - [ ] 1.2 Initialiser le `ConversationStore` dans `router.go` avec le chemin `<config-dir>/conversations/` (dérivé comme `preferencesPath`)
 - [ ] 1.3 Écrire les tests unitaires de `store.go` : append, list (tri antéchronologique), load, fichier partiel
 

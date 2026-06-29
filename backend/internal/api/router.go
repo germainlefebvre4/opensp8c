@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/glefebvre/opensp8c/internal/api/handlers"
 	"github.com/glefebvre/opensp8c/internal/config"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
@@ -23,6 +24,13 @@ func preferencesPath(cfgPath string) string {
 		return p
 	}
 	return filepath.Join(filepath.Dir(cfgPath), "preferences.json")
+}
+
+func conversationsPath(cfgPath string) string {
+	if p := os.Getenv("CONVERSATIONS_PATH"); p != "" {
+		return p
+	}
+	return filepath.Join(filepath.Dir(cfgPath), "conversations")
 }
 
 func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
