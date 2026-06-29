@@ -40,7 +40,7 @@ Pas de parsing markdown avancé — le format `- [ ] texte` est stable et défin
 
 ### 3. Toggle pessimiste côté frontend
 
-Le checkbox est disabled pendant la requête PATCH. On invalide `['changeDetail', workspaceId, changeName]` après succès pour forcer un re-fetch. Pas d'optimistic update.
+Le checkbox est disabled pendant la requête PATCH. On invalide `['change-detail', workspaceId, changeName]` après succès pour forcer un re-fetch. Pas d'optimistic update.
 
 **Rationale :** latence locale < 10ms, rollback inutile, implémentation 3x plus simple.
 

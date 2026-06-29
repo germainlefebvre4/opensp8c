@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { X, Code, Eye } from 'lucide-react'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
+import { useToggleTask } from '../hooks/useToggleTask'
 
 interface Props {
   workspaceId: string
@@ -24,7 +25,10 @@ type ViewMode = 'raw' | 'rendered'
 export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
   const { data, isLoading } = useChangeDetail(workspaceId, changeName)
   const archive = useArchive(workspaceId)
+  const toggleTask = useToggleTask(workspaceId, changeName)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
+  const [pendingTaskIdx, setPendingTaskIdx] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('tasks')
   const [viewMode, setViewMode] = useState<ViewMode>('rendered')
 
@@ -129,15 +133,32 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                   <p className="text-sm text-slate-400">Aucune tâche définie.</p>
                 )}
                 {data.tasks.map((t, i) => (
-                  <div key={i} className="flex gap-2 items-start text-xs">
-                    <span className={`shrink-0 mt-0.5 font-bold ${t.done ? 'text-emerald-500' : 'text-slate-300'}`}>
-                      {t.done ? '✓' : '○'}
-                    </span>
-                    <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700'}>
+                  <label key={i} className="flex gap-2 items-start text-xs cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={t.done}
+                      disabled={pendingTaskIdx === i}
+                      onChange={() => {
+                        setToggleError(null)
+                        setPendingTaskIdx(i)
+                        toggleTask.mutate(i, {
+                          onSuccess: () => setPendingTaskIdx(null),
+                          onError: (err) => {
+                            setPendingTaskIdx(null)
+                            setToggleError(err instanceof Error ? err.message : String(err))
+                          },
+                        })
+                      }}
+                      className="shrink-0 mt-0.5 accent-emerald-500 cursor-pointer disabled:cursor-wait"
+                    />
+                    <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-slate-900'}>
                       {t.text}
                     </span>
-                  </div>
+                  </label>
                 ))}
+                {toggleError && (
+                  <p className="text-[11px] text-red-600 mt-1">{toggleError}</p>
+                )}
               </div>
             )}
 

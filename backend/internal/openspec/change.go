@@ -212,3 +212,37 @@ func readFileContent(path string) string {
 	return string(data)
 }
 
+func ToggleTask(workspacePath, changeName string, index int) error {
+	tasksPath := filepath.Join(workspacePath, "openspec", "changes", changeName, "tasks.md")
+	data, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	taskIdx := 0
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- [") {
+			continue
+		}
+		if taskIdx == index {
+			if strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") {
+				lines[i] = strings.Replace(line, "- [x]", "- [ ]", 1)
+				lines[i] = strings.Replace(lines[i], "- [X]", "- [ ]", 1)
+			} else {
+				lines[i] = strings.Replace(line, "- [ ]", "- [x]", 1)
+			}
+			found = true
+			break
+		}
+		taskIdx++
+	}
+
+	if !found {
+		return os.ErrNotExist
+	}
+	return os.WriteFile(tasksPath, []byte(strings.Join(lines, "\n")), 0644)
+}
+

@@ -49,3 +49,6 @@ export const getPreferences = () =>
 
 export const patchPreferences = (data: Partial<Preferences>) =>
   api.patch('/api/preferences', data)
+
+export const patchTask = (workspaceId: string, changeName: string, taskIndex: number) =>
+  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/${taskIndex}`)
