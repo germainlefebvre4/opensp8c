@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useExploreSession } from '../hooks/useExploreSession'
@@ -15,17 +15,31 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [input])
+
+  const handleSend = useCallback(() => {
     if (!input.trim()) return
     send(input.trim())
     setInput('')
-  }
+  }, [input, send])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }, [handleSend])
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -102,23 +116,26 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSend} className="p-3 border-t border-slate-200 flex gap-2 shrink-0">
-        <input
-          type="text"
+      <div className="p-3 border-t border-slate-200 flex gap-2 shrink-0 items-end">
+        <textarea
+          ref={textareaRef}
+          rows={1}
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="Votre message..."
+          onKeyDown={handleKeyDown}
+          placeholder="Votre message... (Shift+Enter pour aller à la ligne)"
           disabled={!connected}
-          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 placeholder:text-slate-400"
+          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 placeholder:text-slate-400 resize-none overflow-y-auto"
+          style={{ maxHeight: '160px' }}
         />
         <button
-          type="submit"
+          onClick={handleSend}
           disabled={!connected || !input.trim()}
           className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
           Envoyer
         </button>
-      </form>
+      </div>
     </div>
   )
 }
