@@ -4,17 +4,26 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/glefebvre/opensp8c/internal/api/handlers"
 	"github.com/glefebvre/opensp8c/internal/config"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/glefebvre/opensp8c/internal/workspace"
 	"github.com/glefebvre/opensp8c/ui"
 )
+
+func preferencesPath(cfgPath string) string {
+	if p := os.Getenv("PREFERENCES_PATH"); p != "" {
+		return p
+	}
+	return filepath.Join(filepath.Dir(cfgPath), "preferences.json")
+}
 
 func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r := chi.NewRouter()
@@ -23,7 +32,8 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
-	mgr := session.NewManager()
+	prefsSvc := preferences.NewService(preferencesPath(cfgPath))
+	mgr := session.NewManager(prefsSvc)
 
 	watcherSvc := watcher.NewWatcherService()
 	for _, wc := range cfg.Workspaces {
@@ -37,6 +47,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr)
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
+	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(jsonContentType)
@@ -62,6 +73,10 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Delete("/workspaces/{id}/explore/sessions/{sessionId}", exploreHandler.StopAnonymousSession)
 
 		r.Get("/workspaces/{id}/events", eventsHandler.HandleSSE)
+
+		r.Get("/agents", prefsHandler.ListAgents)
+		r.Get("/preferences", prefsHandler.GetPreferences)
+		r.Patch("/preferences", prefsHandler.PatchPreferences)
 	})
 
 	r.Handle("/*", staticHandler(ui.FS()))

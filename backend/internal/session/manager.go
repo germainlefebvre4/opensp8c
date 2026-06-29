@@ -7,9 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 const inactivityTimeout = 30 * time.Minute
@@ -71,10 +75,14 @@ func (s *Session) Done() <-chan struct{}   { return s.done }
 type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+	prefs    *preferences.Service
 }
 
-func NewManager() *Manager {
-	m := &Manager{sessions: make(map[string]*Session)}
+func NewManager(prefs *preferences.Service) *Manager {
+	m := &Manager{
+		sessions: make(map[string]*Session),
+		prefs:    prefs,
+	}
 	go m.reapLoop()
 	return m
 }
@@ -105,6 +113,67 @@ func (m *Manager) GetAnonymous(workspaceID, sessionID string) *Session {
 	return m.sessions[anonKey(workspaceID, sessionID)]
 }
 
+type resolvedAgent struct {
+	config          agents.AgentConfig
+	status          agents.AgentStatus
+	usedFallback    bool
+	requestedLabel  string
+}
+
+func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
+	agentID := ""
+	if changeName != "" {
+		agentID = m.prefs.GetSessionAgent(workspaceID, changeName)
+	}
+	if agentID == "" {
+		agentID = m.prefs.GetDefaultAgent()
+	}
+	cfg, ok := agents.ByID(agentID)
+	if !ok {
+		cfg, _ = agents.ByID("claude")
+	}
+
+	status := agents.Detect(cfg)
+	if !status.Installed {
+		log.Printf("[session] agent %q not installed, falling back to claude", cfg.ID)
+		requestedLabel := cfg.Label
+		cfg, _ = agents.ByID("claude")
+		claudeStatus := agents.Detect(cfg)
+		return resolvedAgent{config: cfg, status: claudeStatus, usedFallback: true, requestedLabel: requestedLabel}
+	}
+	return resolvedAgent{config: cfg, status: status}
+}
+
+func injectAgentInfo(s *Session, r resolvedAgent) {
+	msg := map[string]interface{}{
+		"type":    "agent_info",
+		"id":      r.config.ID,
+		"label":   r.config.Label,
+		"version": r.status.Version,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	s.msgMu.Lock()
+	s.messages = append(s.messages, data)
+	s.msgMu.Unlock()
+
+	if r.usedFallback {
+		warn := map[string]interface{}{
+			"type": "session_warning",
+			"text": fmt.Sprintf("Agent \"%s\" non installé — utilisation de Claude par défaut.", r.requestedLabel),
+		}
+		warnData, err := json.Marshal(warn)
+		if err != nil {
+			return
+		}
+		s.msgMu.Lock()
+		s.messages = append(s.messages, warnData)
+		s.msgMu.Unlock()
+	}
+}
+
 func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session, error) {
 	key := sessionKey(workspaceID, changeName)
 
@@ -115,8 +184,17 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 	}
 	m.mu.Unlock()
 
+	resolved := m.resolveAgent(workspaceID, changeName)
+
+	// Persist agent choice for this named session (if not already set)
+	if existing := m.prefs.GetSessionAgent(workspaceID, changeName); existing == "" {
+		if err := m.prefs.SetSessionAgent(workspaceID, changeName, resolved.config.ID); err != nil {
+			log.Printf("[session] failed to persist session agent: %v", err)
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, "")
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "")
 	if err != nil {
 		cancel()
 		return nil, err
@@ -129,6 +207,8 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 		notify:   make(chan struct{}, 1),
 		done:     make(chan struct{}),
 	}
+
+	injectAgentInfo(s, resolved)
 
 	m.mu.Lock()
 	m.sessions[key] = s
@@ -156,8 +236,10 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Se
 	sessionID := newSessionID()
 	key := anonKey(workspaceID, sessionID)
 
+	resolved := m.resolveAgent(workspaceID, "")
+
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, anonSystemPrompt)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt)
 	if err != nil {
 		cancel()
 		return "", nil, err
@@ -170,6 +252,8 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Se
 		notify:   make(chan struct{}, 1),
 		done:     make(chan struct{}),
 	}
+
+	injectAgentInfo(s, resolved)
 
 	m.mu.Lock()
 	m.sessions[key] = s

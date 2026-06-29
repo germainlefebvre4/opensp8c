@@ -6,9 +6,11 @@ import (
 	"io"
 	"log"
 	"os/exec"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
 )
 
-const systemPrompt = "Never use AskUserQuestion or interactive choice prompts. Communicate only through plain conversational text."
+const baseSystemPrompt = "Never use AskUserQuestion or interactive choice prompts. Communicate only through plain conversational text."
 
 type Subprocess struct {
 	cmd    *exec.Cmd
@@ -16,19 +18,9 @@ type Subprocess struct {
 	stdout io.ReadCloser
 }
 
-func StartSubprocess(ctx context.Context, workspacePath string, extraSystemPrompt string) (*Subprocess, error) {
-	args := []string{
-		"--print",
-		"--verbose",
-		"--input-format", "stream-json",
-		"--output-format", "stream-json",
-		"--include-partial-messages",
-		"--append-system-prompt", systemPrompt,
-	}
-	if extraSystemPrompt != "" {
-		args = append(args, "--append-system-prompt", extraSystemPrompt)
-	}
-	cmd := exec.CommandContext(ctx, "claude", args...)
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt string) (*Subprocess, error) {
+	args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
+	cmd := exec.CommandContext(ctx, agentCfg.CLI, args...)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

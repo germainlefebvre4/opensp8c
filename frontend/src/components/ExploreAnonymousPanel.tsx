@@ -9,11 +9,10 @@ interface Props {
   workspaceId: string
   onClose: () => void
   onPromoted: (name: string) => void
-  assistantName?: string
 }
 
-export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted, assistantName = 'Claude' }: Props) {
-  const { messages, connected, expired, waiting, promotedName, send, stop } = useAnonymousExploreSession(workspaceId)
+export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Props) {
+  const { messages, connected, expired, waiting, promotedName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
   const [showSlowLabel, setShowSlowLabel] = useState(false)
@@ -69,6 +68,11 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted, assist
           <span className={`text-[10px] font-semibold shrink-0 ${connected ? 'text-emerald-500' : 'text-amber-500'}`}>
             {connected ? '● connecté' : '○ déconnecté'}
           </span>
+          {agentInfo && (
+            <span className="text-[10px] font-medium text-slate-400 shrink-0 bg-slate-100 px-1.5 py-0.5 rounded">
+              {agentInfo.label}{agentInfo.version ? ` ${agentInfo.version}` : ''}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-2">
           <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
@@ -119,7 +123,7 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted, assist
             )}
           </div>
         ))}
-        {waiting && <TypingBubble assistantName={assistantName} showLabel={showSlowLabel} />}
+        {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
         {expired && (
           <div className="text-center text-amber-600 text-xs">Session expirée.</div>
         )}

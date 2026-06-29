@@ -29,3 +29,23 @@ export const wsURL = (path: string) => {
   const base = baseURL.replace(/^http/, 'ws')
   return `${base}${path}`
 }
+
+export interface AgentStatus {
+  id: string
+  label: string
+  installed: boolean
+  version?: string
+}
+
+export interface Preferences {
+  defaultAgent: string
+}
+
+export const getAgents = () =>
+  api.get<AgentStatus[]>('/api/agents').then(r => r.data)
+
+export const getPreferences = () =>
+  api.get<Preferences>('/api/preferences').then(r => r.data)
+
+export const patchPreferences = (data: Partial<Preferences>) =>
+  api.patch('/api/preferences', data)

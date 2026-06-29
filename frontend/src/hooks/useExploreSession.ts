@@ -7,11 +7,18 @@ export interface Message {
   partial?: boolean
 }
 
+export interface AgentInfo {
+  id: string
+  label: string
+  version: string
+}
+
 export function useExploreSession(workspaceId: string, changeName: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [connected, setConnected] = useState(false)
   const [expired, setExpired] = useState(false)
   const [waiting, setWaiting] = useState(false)
+  const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const connect = useCallback(() => {
@@ -30,6 +37,16 @@ export function useExploreSession(workspaceId: string, changeName: string) {
           setExpired(true)
           setConnected(false)
           setWaiting(false)
+          return
+        }
+
+        if (data.type === 'agent_info') {
+          setAgentInfo({ id: data.id as string, label: data.label as string, version: (data.version as string) ?? '' })
+          return
+        }
+
+        if (data.type === 'session_warning' && typeof data.text === 'string') {
+          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}` }])
           return
         }
 
@@ -83,10 +100,11 @@ export function useExploreSession(workspaceId: string, changeName: string) {
     wsRef.current?.close()
     setMessages([])
     setWaiting(false)
+    setAgentInfo(null)
     connect()
   }, [connect])
 
-  return { messages, connected, expired, waiting, send, reconnect }
+  return { messages, connected, expired, waiting, agentInfo, send, reconnect }
 }
 
 function extractText(data: Record<string, unknown>): string {

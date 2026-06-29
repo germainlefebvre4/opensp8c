@@ -3,6 +3,7 @@ import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { FolderOpen, PlusCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Workspace } from '../hooks/useWorkspaces'
 import { useAddWorkspace, useRemoveWorkspace } from '../hooks/useWorkspaces'
+import { AgentSelector } from './AgentSelector'
 
 const BADGE_COLORS: Record<string, string> = {
   'to-explore': 'bg-violet-400',
@@ -52,6 +53,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
       </div>
 
       <div className={`flex flex-col flex-1 overflow-hidden transition-opacity duration-150 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      <AgentSelector />
       <ScrollArea.Root className="flex-1 overflow-hidden">
         <ScrollArea.Viewport className="h-full w-full">
           <div className="px-2 pb-2 flex flex-col gap-0.5">

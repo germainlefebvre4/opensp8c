@@ -8,6 +8,12 @@ export interface Message {
   partial?: boolean
 }
 
+export interface AgentInfo {
+  id: string
+  label: string
+  version: string
+}
+
 const STATIC_GREETING: Message = {
   role: 'assistant',
   content: 'Décris ce que tu veux explorer ou construire dans ce projet. Je peux naviguer les fichiers pour mieux comprendre le contexte.',
@@ -20,6 +26,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
   const [waiting, setWaiting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [promotedName, setPromotedName] = useState<string | null>(null)
+  const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const queryClient = useQueryClient()
 
@@ -39,6 +46,16 @@ export function useAnonymousExploreSession(workspaceId: string) {
           setExpired(true)
           setConnected(false)
           setWaiting(false)
+          return
+        }
+
+        if (data.type === 'agent_info') {
+          setAgentInfo({ id: data.id as string, label: data.label as string, version: (data.version as string) ?? '' })
+          return
+        }
+
+        if (data.type === 'session_warning' && typeof data.text === 'string') {
+          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}` }])
           return
         }
 
@@ -109,7 +126,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
     }
   }, [workspaceId, sessionId])
 
-  return { messages, connected, expired, waiting, sessionId, promotedName, send, stop }
+  return { messages, connected, expired, waiting, sessionId, promotedName, agentInfo, send, stop }
 }
 
 function extractText(data: Record<string, unknown>): string {
