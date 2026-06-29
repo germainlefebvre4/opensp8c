@@ -43,9 +43,11 @@ The existing persistence pattern is pure filesystem JSON/JSONL. No SQLite is pre
 
 ### 4. ff subprocess: separate session namespace + auto-cleanup
 
-**Decision**: ff sessions use key `workspaceID + "/__ff__/" + changeName` to avoid collision with explore sessions sharing the same changeName. The fanOut goroutine, on subprocess exit (`sess.Done()`), removes the ff session from the manager map automatically. No 30-minute inactivity timeout applies — ff sessions are fire-and-forget.
+**Decision**: ff sessions are tracked in a private `running map[string]struct{}` inside `FFHandler`, keyed by `wsID + "/" + changeName`. This map is entirely separate from the session manager used by explore sessions — no collision is possible by construction. The fanOut goroutine removes the key via `defer markDone()` on subprocess exit. No 30-minute inactivity timeout applies — ff sessions are fire-and-forget.
 
-**Decision**: A guard in the ff handler checks for an existing ff session for the same key before spawning. If one exists (still running), the POST /ff returns 409 Conflict and the frontend keeps the spinner.
+**Note on spec divergence**: The original spec described using the session manager with key `workspaceID + "/__ff__/" + changeName`. The implementation achieves the same isolation intent (no collision with explore sessions) through a simpler dedicated map, without coupling ff lifecycle to the session manager.
+
+**Decision**: A guard in the ff handler checks for an existing key in the running map before spawning. If one exists (still running), the POST /ff returns 409 Conflict and the frontend keeps the spinner.
 
 ### 5. ExplorePanel close before ff trigger
 

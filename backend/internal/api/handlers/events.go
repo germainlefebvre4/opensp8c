@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -54,7 +55,8 @@ func (h *EventsHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			fmt.Fprintf(w, "event: %s\ndata: {\"name\":%q}\n\n", ev.Type, ev.Name)
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
 			flusher.Flush()
 		case <-ping.C:
 			fmt.Fprintf(w, "event: ping\ndata: {}\n\n")

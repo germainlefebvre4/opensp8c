@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useDroppable } from '@dnd-kit/core'
 import type { Change } from '../hooks/useChanges'
 import { ChangeCard } from './ChangeCard'
 
@@ -13,6 +14,9 @@ interface Props {
   maxVisible?: number
   collapsible?: boolean
   className?: string
+  getFfStatus: (name: string) => 'running' | 'failed' | null
+  validDropSources: string[]
+  dragSourceStatus: string | null
 }
 
 const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
@@ -23,16 +27,28 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNew, maxVisible, collapsible, className }: Props) {
+export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNew, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
   const [collapsed, setCollapsed] = useState(false)
+
+  const { setNodeRef, isOver } = useDroppable({ id: status })
+  const isValidForDrag = dragSourceStatus ? validDropSources.includes(dragSourceStatus) : false
 
   const visible = maxVisible !== undefined ? changes.slice(0, visibleCount) : changes
   const hasMore = maxVisible !== undefined && changes.length > visibleCount
 
   return (
-    <div className={`${className ?? 'flex-1'} min-w-[220px] bg-slate-50 rounded-xl p-3 flex flex-col gap-2 border border-slate-100`}>
+    <div
+      ref={setNodeRef}
+      className={`${className ?? 'flex-1'} min-w-[220px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
+        isOver && isValidForDrag
+          ? 'bg-violet-50 border-violet-300'
+          : isOver && dragSourceStatus && !isValidForDrag
+          ? 'bg-red-50 border-red-200'
+          : 'bg-slate-50 border-slate-100'
+      }`}
+    >
       <div className="flex items-center justify-between mb-0.5 shrink-0">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
@@ -71,6 +87,7 @@ export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNe
               change={ch}
               workspaceId={workspaceId}
               onOpen={onOpen}
+              ffStatus={getFfStatus(ch.name)}
             />
           ))}
           {hasMore && (

@@ -1,6 +1,6 @@
 module github.com/glefebvre/opensp8c
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect

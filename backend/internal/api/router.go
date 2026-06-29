@@ -41,6 +41,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r.Use(corsMiddleware)
 
 	prefsSvc := preferences.NewService(preferencesPath(cfgPath))
+	convStore := conversation.NewStore(conversationsPath(cfgPath))
 	mgr := session.NewManager(prefsSvc)
 
 	watcherSvc := watcher.NewWatcherService()
@@ -54,6 +55,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
+	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr)
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
@@ -73,7 +75,12 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces/{id}/specs/{name}", specsHandler.GetSpec)
 
 		r.Post("/workspaces/{id}/changes/{name}/archive", archiveHandler.Archive)
+		r.Patch("/workspaces/{id}/changes/{name}/tasks/reset", ffHandler.ResetTasks)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/{index}", taskHandler.PatchTask)
+
+		r.Post("/workspaces/{id}/changes/{name}/ff", ffHandler.TriggerFF)
+		r.Get("/workspaces/{id}/changes/{name}/conversations/{kind}", ffHandler.ListConversationRuns)
+		r.Get("/workspaces/{id}/changes/{name}/conversations/{kind}/{ts}", ffHandler.GetConversationRun)
 
 		r.Get("/workspaces/{id}/changes/{name}/explore", exploreHandler.HandleWS)
 		r.Delete("/workspaces/{id}/changes/{name}/explore", exploreHandler.StopSession)

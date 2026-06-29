@@ -10,8 +10,9 @@ import (
 )
 
 type Event struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Error string `json:"error,omitempty"`
 }
 
 type WatcherService struct {
@@ -80,6 +81,15 @@ func (s *WatcherService) Subscribe(workspaceID string) chan Event {
 		return nil
 	}
 	return ww.subscribe()
+}
+
+func (s *WatcherService) Broadcast(workspaceID string, ev Event) {
+	s.mu.Lock()
+	ww, ok := s.watchers[workspaceID]
+	s.mu.Unlock()
+	if ok {
+		ww.broadcast(ev)
+	}
 }
 
 func (s *WatcherService) Unsubscribe(workspaceID string, ch chan Event) {

@@ -52,3 +52,28 @@ export const patchPreferences = (data: Partial<Preferences>) =>
 
 export const patchTask = (workspaceId: string, changeName: string, taskIndex: number) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/${taskIndex}`)
+
+export const triggerFF = (workspaceId: string, changeName: string) =>
+  api.post(`/api/workspaces/${workspaceId}/changes/${changeName}/ff`)
+
+export const resetTasks = (workspaceId: string, changeName: string) =>
+  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/reset`)
+
+export const stopExploreSession = (workspaceId: string, changeName: string) =>
+  api.delete(`/api/workspaces/${workspaceId}/changes/${changeName}/explore`)
+
+export interface ConversationRunMeta {
+  ts: string
+  messageCount: number
+}
+
+export interface ConversationRun {
+  ts: string
+  messages: unknown[]
+}
+
+export const getConversationRuns = (workspaceId: string, changeName: string, kind: string) =>
+  api.get<ConversationRunMeta[]>(`/api/workspaces/${workspaceId}/changes/${changeName}/conversations/${kind}`).then(r => r.data)
+
+export const getConversationRun = (workspaceId: string, changeName: string, kind: string, ts: string) =>
+  api.get<ConversationRun>(`/api/workspaces/${workspaceId}/changes/${changeName}/conversations/${kind}/${ts}`).then(r => r.data)
