@@ -8,6 +8,8 @@ export interface Change {
   tasks_total: number
   created: string
   schema: string
+  days_since_activity: number
+  is_stale: boolean
 }
 
 export function useChanges(workspaceId: string | null) {

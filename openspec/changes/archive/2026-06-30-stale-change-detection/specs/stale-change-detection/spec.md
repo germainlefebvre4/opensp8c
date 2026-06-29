@@ -8,7 +8,7 @@ Le système SHALL calculer le nombre de jours écoulés depuis la dernière modi
 - **THEN** `days_since_activity` retourne le nombre exact de jours écoulés et `is_stale` vaut `false`
 
 #### Scenario: Change avec tasks.md non modifié depuis longtemps
-- **WHEN** `tasks.md` d'un change a été modifié il y a plus de `stale_threshold_days` jours
+- **WHEN** `tasks.md` d'un change a été modifié il y a au moins `stale_threshold_days` jours (`days_since_activity >= stale_threshold_days`)
 - **THEN** `days_since_activity` retourne le nombre de jours écoulés et `is_stale` vaut `true`
 
 #### Scenario: Change sans tasks.md
@@ -30,15 +30,15 @@ Le système SHALL lire `stale_threshold_days` depuis `openspec/config.yaml` du w
 Seuls les changes avec le statut `in-progress` ou `done` (non-archivé) SHALL pouvoir avoir `is_stale = true`. Les statuts `to-explore`, `todo` et `archived` SHALL toujours avoir `is_stale = false`.
 
 #### Scenario: Change in-progress stale
-- **WHEN** un change a le statut `in-progress` et `days_since_activity > stale_threshold_days`
+- **WHEN** un change a le statut `in-progress` et `days_since_activity >= stale_threshold_days`
 - **THEN** `is_stale` vaut `true`
 
 #### Scenario: Change done non-archivé stale
-- **WHEN** un change a le statut `done` et `days_since_activity > stale_threshold_days`
+- **WHEN** un change a le statut `done` et `days_since_activity >= stale_threshold_days`
 - **THEN** `is_stale` vaut `true`
 
 #### Scenario: Change todo avec longue inactivité
-- **WHEN** un change a le statut `todo` et `days_since_activity > stale_threshold_days`
+- **WHEN** un change a le statut `todo` et `days_since_activity >= stale_threshold_days`
 - **THEN** `is_stale` vaut `false` malgré l'inactivité
 
 ### Requirement: Affichage du badge stale dans ChangeCard

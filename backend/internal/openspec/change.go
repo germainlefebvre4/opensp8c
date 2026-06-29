@@ -2,21 +2,25 @@ package openspec
 
 import (
 	"bufio"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Change struct {
-	Name         string `json:"name"`
-	KanbanStatus string `json:"kanban_status"`
-	TasksDone    int    `json:"tasks_done"`
-	TasksTotal   int    `json:"tasks_total"`
-	Created      string `json:"created"`
-	Schema       string `json:"schema"`
+	Name              string `json:"name"`
+	KanbanStatus      string `json:"kanban_status"`
+	TasksDone         int    `json:"tasks_done"`
+	TasksTotal        int    `json:"tasks_total"`
+	Created           string `json:"created"`
+	Schema            string `json:"schema"`
+	DaysSinceActivity int    `json:"days_since_activity"`
+	IsStale           bool   `json:"is_stale"`
 }
 
 type Task struct {
@@ -40,7 +44,25 @@ type openspecMeta struct {
 	Created string `yaml:"created"`
 }
 
+type openspecProjectConfig struct {
+	StaleThresholdDays int `yaml:"stale_threshold_days"`
+}
+
+func readStaleThreshold(workspacePath string) int {
+	const defaultThreshold = 7
+	data, err := os.ReadFile(filepath.Join(workspacePath, "openspec", "config.yaml"))
+	if err != nil {
+		return defaultThreshold
+	}
+	var cfg openspecProjectConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil || cfg.StaleThresholdDays <= 0 {
+		return defaultThreshold
+	}
+	return cfg.StaleThresholdDays
+}
+
 func ListChanges(workspacePath string) ([]Change, error) {
+	threshold := readStaleThreshold(workspacePath)
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
 	entries, err := os.ReadDir(changesDir)
 	if err != nil {
@@ -55,7 +77,7 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
 		}
-		ch, err := loadChange(changesDir, e.Name())
+		ch, err := loadChange(changesDir, e.Name(), threshold)
 		if err != nil {
 			continue
 		}
@@ -79,11 +101,12 @@ func ListArchivedChanges(workspacePath string) ([]Change, error) {
 		if !e.IsDir() {
 			continue
 		}
-		ch, err := loadChange(archiveDir, e.Name())
+		ch, err := loadChange(archiveDir, e.Name(), math.MaxInt)
 		if err != nil {
 			continue
 		}
 		ch.KanbanStatus = "archived"
+		ch.IsStale = false
 		changes = append(changes, *ch)
 	}
 
@@ -107,7 +130,7 @@ func deriveStatus(done, total int) string {
 	}
 }
 
-func loadChange(changesDir, name string) (*Change, error) {
+func loadChange(changesDir, name string, threshold int) (*Change, error) {
 	changeDir := filepath.Join(changesDir, name)
 	metaPath := filepath.Join(changeDir, ".openspec.yaml")
 
@@ -117,15 +140,28 @@ func loadChange(changesDir, name string) (*Change, error) {
 		_ = yaml.Unmarshal(data, &meta)
 	}
 
-	done, total := parseTaskProgress(filepath.Join(changeDir, "tasks.md"))
+	tasksPath := filepath.Join(changeDir, "tasks.md")
+	done, total := parseTaskProgress(tasksPath)
+	status := deriveStatus(done, total)
+
+	daysSince := -1
+	isStale := false
+	if stat, statErr := os.Stat(tasksPath); statErr == nil {
+		daysSince = int(time.Since(stat.ModTime()).Hours() / 24)
+		if (status == "in-progress" || status == "done") && daysSince >= threshold {
+			isStale = true
+		}
+	}
 
 	return &Change{
-		Name:         name,
-		KanbanStatus: deriveStatus(done, total),
-		TasksDone:    done,
-		TasksTotal:   total,
-		Created:      meta.Created,
-		Schema:       meta.Schema,
+		Name:              name,
+		KanbanStatus:      status,
+		TasksDone:         done,
+		TasksTotal:        total,
+		Created:           meta.Created,
+		Schema:            meta.Schema,
+		DaysSinceActivity: daysSince,
+		IsStale:           isStale,
 	}, nil
 }
 
@@ -153,6 +189,7 @@ func GetChangeDetail(workspacePath, changeName string) (*ChangeDetail, error) {
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
 	changeDir := filepath.Join(changesDir, changeName)
 
+	isArchived := false
 	actualChangesDir := changesDir
 	if _, err := os.Stat(changeDir); err != nil {
 		archiveDir := filepath.Join(changesDir, "archive")
@@ -162,14 +199,17 @@ func GetChangeDetail(workspacePath, changeName string) (*ChangeDetail, error) {
 		}
 		actualChangesDir = archiveDir
 		changeDir = archivedDir
+		isArchived = true
 	}
 
-	ch, err := loadChange(actualChangesDir, changeName)
+	threshold := readStaleThreshold(workspacePath)
+	ch, err := loadChange(actualChangesDir, changeName, threshold)
 	if err != nil {
 		return nil, err
 	}
-	if actualChangesDir != changesDir {
+	if isArchived {
 		ch.KanbanStatus = "archived"
+		ch.IsStale = false
 	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))

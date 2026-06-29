@@ -85,8 +85,11 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
 
       {change.tasks_total > 0 && (
         <>
-          <div className="text-[10px] text-slate-400 font-medium">
-            {change.tasks_done}/{change.tasks_total} tasks
+          <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
+            <span>{change.tasks_done}/{change.tasks_total} tasks</span>
+            {change.is_stale && (
+              <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}j</span>
+            )}
           </div>
           <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
             <div
