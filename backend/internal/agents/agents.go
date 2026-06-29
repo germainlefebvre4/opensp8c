@@ -1,9 +1,11 @@
 package agents
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 type AgentConfig struct {
@@ -90,8 +92,9 @@ func Detect(a AgentConfig) AgentStatus {
 	}
 	status.Installed = true
 
-	args := a.VersionArgs
-	out, err := exec.Command(a.CLI, args...).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, a.CLI, a.VersionArgs...).Output()
 	if err == nil {
 		line := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0]
 		status.Version = strings.TrimSpace(line)

@@ -49,7 +49,7 @@ func (s *Service) load() (*Preferences, error) {
 			p.Sessions[k] = SessionEntry{Agent: v}
 		}
 		p.SessionAgents = nil
-		_ = s.save(p) // best-effort: persist migrated data
+		_ = s.save(&p) // best-effort: persist migrated data
 	}
 	if p.Sessions == nil {
 		p.Sessions = map[string]SessionEntry{}
