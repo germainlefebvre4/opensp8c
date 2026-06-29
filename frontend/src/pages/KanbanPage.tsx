@@ -115,8 +115,9 @@ export function KanbanPage({ workspaceId }: Props) {
                 changes={filteredArchived}
                 workspaceId={workspaceId}
                 onOpen={name => handleOpen(name, 'archived')}
-                maxVisible={5}
-                className="shrink-0"
+                maxVisible={3}
+                collapsible
+                className="max-h-[40%] overflow-y-auto"
               />
             </div>
           </div>
