@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +15,10 @@ import (
 )
 
 func main() {
+	hostFlag := flag.String("host", "", "")
+	portFlag := flag.String("port", "", "")
+	flag.Parse()
+
 	cfgPath := "config.yaml"
 	if p := os.Getenv("CONFIG_PATH"); p != "" {
 		cfgPath = p
@@ -24,15 +29,26 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	port := os.Getenv("PORT")
+	port := *portFlag
+	if port == "" {
+		port = os.Getenv("PORT")
+	}
 	if port == "" {
 		port = "8080"
+	}
+
+	host := *hostFlag
+	if host == "" {
+		host = os.Getenv("HOST")
+	}
+	if host == "" {
+		host = "0.0.0.0"
 	}
 
 	router := api.NewRouter(cfg, cfgPath)
 
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    host + ":" + port,
 		Handler: router,
 	}
 
@@ -40,7 +56,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		log.Printf("Server listening on %s:%s", host, port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
