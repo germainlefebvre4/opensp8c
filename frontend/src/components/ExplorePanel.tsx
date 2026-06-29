@@ -3,23 +3,35 @@ import { X, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useExploreSession } from '../hooks/useExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
+import { TypingBubble } from './TypingBubble'
 
 interface Props {
   workspaceId: string
   changeName: string
   onClose: () => void
+  assistantName?: string
 }
 
-export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
-  const { messages, connected, expired, send, reconnect } = useExploreSession(workspaceId, changeName)
+export function ExplorePanel({ workspaceId, changeName, onClose, assistantName = 'Claude' }: Props) {
+  const { messages, connected, expired, waiting, send, reconnect } = useExploreSession(workspaceId, changeName)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
+  const [showSlowLabel, setShowSlowLabel] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, waiting])
+
+  useEffect(() => {
+    if (!waiting) {
+      setShowSlowLabel(false)
+      return
+    }
+    const timer = setTimeout(() => setShowSlowLabel(true), 5000)
+    return () => clearTimeout(timer)
+  }, [waiting])
 
   useEffect(() => {
     const el = textareaRef.current
@@ -101,6 +113,7 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
             )}
           </div>
         ))}
+        {waiting && <TypingBubble assistantName={assistantName} showLabel={showSlowLabel} />}
         {expired && (
           <div className="text-center text-amber-600 text-xs">
             Session expirée.{' '}

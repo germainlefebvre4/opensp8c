@@ -3,29 +3,41 @@ import { X, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
+import { TypingBubble } from './TypingBubble'
 
 interface Props {
   workspaceId: string
   onClose: () => void
   onPromoted: (name: string) => void
+  assistantName?: string
 }
 
-export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Props) {
-  const { messages, connected, expired, promotedName, send, stop } = useAnonymousExploreSession(workspaceId)
+export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted, assistantName = 'Claude' }: Props) {
+  const { messages, connected, expired, waiting, promotedName, send, stop } = useAnonymousExploreSession(workspaceId)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
+  const [showSlowLabel, setShowSlowLabel] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, waiting])
 
   useEffect(() => {
     if (promotedName) {
       onPromoted(promotedName)
     }
   }, [promotedName, onPromoted])
+
+  useEffect(() => {
+    if (!waiting) {
+      setShowSlowLabel(false)
+      return
+    }
+    const timer = setTimeout(() => setShowSlowLabel(true), 5000)
+    return () => clearTimeout(timer)
+  }, [waiting])
 
   useEffect(() => {
     const el = textareaRef.current
@@ -107,6 +119,7 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Prop
             )}
           </div>
         ))}
+        {waiting && <TypingBubble assistantName={assistantName} showLabel={showSlowLabel} />}
         {expired && (
           <div className="text-center text-amber-600 text-xs">Session expirée.</div>
         )}

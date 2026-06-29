@@ -12,6 +12,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [connected, setConnected] = useState(false)
   const [expired, setExpired] = useState(false)
+  const [waiting, setWaiting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [promotedName, setPromotedName] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -32,6 +33,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
         if (data.type === 'session_expired') {
           setExpired(true)
           setConnected(false)
+          setWaiting(false)
           return
         }
 
@@ -44,6 +46,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
         const text = extractText(data)
         if (!text) return
 
+        setWaiting(false)
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
         setMessages(prev => {
@@ -58,13 +61,14 @@ export function useAnonymousExploreSession(workspaceId: string) {
         })
       } catch {
         if (ev.data) {
+          setWaiting(false)
           setMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
         }
       }
     }
 
-    ws.onclose = () => setConnected(false)
-    ws.onerror = () => setConnected(false)
+    ws.onclose = () => { setConnected(false); setWaiting(false) }
+    ws.onerror = () => { setConnected(false); setWaiting(false) }
   }, [workspaceId, queryClient])
 
   useEffect(() => {
@@ -87,6 +91,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
 
   const send = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    setWaiting(true)
     setMessages(prev => [...prev, { role: 'user', content: text }])
     const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
     wsRef.current.send(msg)
@@ -99,7 +104,7 @@ export function useAnonymousExploreSession(workspaceId: string) {
     }
   }, [workspaceId, sessionId])
 
-  return { messages, connected, expired, sessionId, promotedName, send, stop }
+  return { messages, connected, expired, waiting, sessionId, promotedName, send, stop }
 }
 
 function extractText(data: Record<string, unknown>): string {

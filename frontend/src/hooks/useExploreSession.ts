@@ -11,6 +11,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [connected, setConnected] = useState(false)
   const [expired, setExpired] = useState(false)
+  const [waiting, setWaiting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
   const connect = useCallback(() => {
@@ -28,6 +29,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         if (data.type === 'session_expired') {
           setExpired(true)
           setConnected(false)
+          setWaiting(false)
           return
         }
 
@@ -35,6 +37,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         const text = extractText(data)
         if (!text) return
 
+        setWaiting(false)
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
         setMessages(prev => {
@@ -50,13 +53,14 @@ export function useExploreSession(workspaceId: string, changeName: string) {
       } catch {
         // non-JSON line, treat as plain text
         if (ev.data) {
+          setWaiting(false)
           setMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
         }
       }
     }
 
-    ws.onclose = () => setConnected(false)
-    ws.onerror = () => setConnected(false)
+    ws.onclose = () => { setConnected(false); setWaiting(false) }
+    ws.onerror = () => { setConnected(false); setWaiting(false) }
   }, [workspaceId, changeName])
 
   useEffect(() => {
@@ -68,6 +72,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
   const send = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    setWaiting(true)
     setMessages(prev => [...prev, { role: 'user', content: text }])
     // Claude stream-json input format
     const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
@@ -77,10 +82,11 @@ export function useExploreSession(workspaceId: string, changeName: string) {
   const reconnect = useCallback(() => {
     wsRef.current?.close()
     setMessages([])
+    setWaiting(false)
     connect()
   }, [connect])
 
-  return { messages, connected, expired, send, reconnect }
+  return { messages, connected, expired, waiting, send, reconnect }
 }
 
 function extractText(data: Record<string, unknown>): string {
