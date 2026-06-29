@@ -18,8 +18,20 @@ type Subprocess struct {
 	stdout io.ReadCloser
 }
 
-func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt string) (*Subprocess, error) {
+// StartSubprocess launches the agent CLI as a subprocess.
+// claudeSessionID controls session continuity:
+//   - empty: no session flags (anonymous sessions)
+//   - non-empty, resume=false: passes --session-id <claudeSessionID>
+//   - non-empty, resume=true: passes --resume <claudeSessionID>
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool) (*Subprocess, error) {
 	args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
+	if claudeSessionID != "" {
+		if resume {
+			args = append(args, "--resume", claudeSessionID)
+		} else {
+			args = append(args, "--session-id", claudeSessionID)
+		}
+	}
 	cmd := exec.CommandContext(ctx, agentCfg.CLI, args...)
 
 	stdin, err := cmd.StdinPipe()

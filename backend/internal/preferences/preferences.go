@@ -7,9 +7,15 @@ import (
 	"sync"
 )
 
+type SessionEntry struct {
+	Agent           string `json:"agent"`
+	ClaudeSessionId string `json:"claudeSessionId,omitempty"`
+}
+
 type Preferences struct {
-	DefaultAgent  string            `json:"defaultAgent"`
-	SessionAgents map[string]string `json:"sessionAgents"`
+	DefaultAgent  string                  `json:"defaultAgent"`
+	Sessions      map[string]SessionEntry `json:"sessions,omitempty"`
+	SessionAgents map[string]string       `json:"sessionAgents,omitempty"` // legacy: migration source only
 }
 
 type Service struct {
@@ -24,7 +30,7 @@ func NewService(path string) *Service {
 func (s *Service) load() (*Preferences, error) {
 	data, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
-		return &Preferences{DefaultAgent: "claude", SessionAgents: map[string]string{}}, nil
+		return &Preferences{DefaultAgent: "claude", Sessions: map[string]SessionEntry{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -33,11 +39,20 @@ func (s *Service) load() (*Preferences, error) {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, err
 	}
-	if p.SessionAgents == nil {
-		p.SessionAgents = map[string]string{}
-	}
 	if p.DefaultAgent == "" {
 		p.DefaultAgent = "claude"
+	}
+	// Migrate from legacy sessionAgents format
+	if len(p.Sessions) == 0 && len(p.SessionAgents) > 0 {
+		p.Sessions = make(map[string]SessionEntry, len(p.SessionAgents))
+		for k, v := range p.SessionAgents {
+			p.Sessions[k] = SessionEntry{Agent: v}
+		}
+		p.SessionAgents = nil
+		_ = s.save(p) // best-effort: persist migrated data
+	}
+	if p.Sessions == nil {
+		p.Sessions = map[string]SessionEntry{}
 	}
 	return &p, nil
 }
@@ -80,23 +95,23 @@ func (s *Service) SetDefaultAgent(agentID string) error {
 	return s.save(p)
 }
 
-func (s *Service) GetSessionAgent(workspaceID, changeName string) string {
+func (s *Service) GetSession(workspaceID, changeName string) SessionEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, err := s.load()
 	if err != nil {
-		return ""
+		return SessionEntry{}
 	}
-	return p.SessionAgents[workspaceID+"/"+changeName]
+	return p.Sessions[workspaceID+"/"+changeName]
 }
 
-func (s *Service) SetSessionAgent(workspaceID, changeName, agentID string) error {
+func (s *Service) SetSession(workspaceID, changeName string, entry SessionEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, err := s.load()
 	if err != nil {
 		return err
 	}
-	p.SessionAgents[workspaceID+"/"+changeName] = agentID
+	p.Sessions[workspaceID+"/"+changeName] = entry
 	return s.save(p)
 }

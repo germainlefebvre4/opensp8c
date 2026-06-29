@@ -98,7 +98,6 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
   const reconnect = useCallback(() => {
     wsRef.current?.close()
-    setMessages([])
     setWaiting(false)
     setAgentInfo(null)
     connect()

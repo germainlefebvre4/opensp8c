@@ -11,3 +11,5 @@ workspaces:
       path: /home/glefebvre/Documents/Dev/Perso/Libtado/libtado
     - name: rubikscube-solver
       path: /home/glefebvre/Documents/Dev/Perso/RubiksCube/rubikscube-solver
+    - name: tech-watcher
+      path: /home/glefebvre/Documents/Dev/Perso/VeilleTechno/tech-watcher

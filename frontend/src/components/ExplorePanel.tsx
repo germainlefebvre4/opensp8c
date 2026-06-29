@@ -125,7 +125,7 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
               onClick={reconnect}
               className="text-blue-600 underline cursor-pointer bg-transparent border-0 text-xs"
             >
-              Relancer
+              Reprendre
             </button>
           </div>
         )}

@@ -22,10 +22,10 @@ const maxMessages = 500
 const anonSystemPrompt = `You are in free exploration mode. The user will describe what they want to build or explore. When you create a change using /opsx:ff or /opsx:new, output on its own line exactly (no extra text on that line): {"event":"change_created","name":"THE_EXACT_CHANGE_NAME"}`
 
 type Session struct {
-	proc      *Subprocess
-	cancel    context.CancelFunc
-	lastUsed  time.Time
-	mu        sync.Mutex
+	proc     *Subprocess
+	cancel   context.CancelFunc
+	lastUsed time.Time
+	mu       sync.Mutex
 
 	msgMu    sync.RWMutex
 	messages [][]byte
@@ -96,9 +96,20 @@ func anonKey(workspaceID, sessionID string) string {
 }
 
 func newSessionID() string {
+	// Used for anonymous session keys (not Claude session IDs).
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// newClaudeSessionID generates a random UUID v4 for Claude's --session-id flag.
+func newClaudeSessionID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 1
+	h := hex.EncodeToString(b[:])
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
 func (m *Manager) Get(workspaceID, changeName string) *Session {
@@ -114,17 +125,13 @@ func (m *Manager) GetAnonymous(workspaceID, sessionID string) *Session {
 }
 
 type resolvedAgent struct {
-	config          agents.AgentConfig
-	status          agents.AgentStatus
-	usedFallback    bool
-	requestedLabel  string
+	config         agents.AgentConfig
+	status         agents.AgentStatus
+	usedFallback   bool
+	requestedLabel string
 }
 
-func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
-	agentID := ""
-	if changeName != "" {
-		agentID = m.prefs.GetSessionAgent(workspaceID, changeName)
-	}
+func (m *Manager) resolveAgentFromID(agentID string) resolvedAgent {
 	if agentID == "" {
 		agentID = m.prefs.GetDefaultAgent()
 	}
@@ -132,7 +139,6 @@ func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
 	if !ok {
 		cfg, _ = agents.ByID("claude")
 	}
-
 	status := agents.Detect(cfg)
 	if !status.Installed {
 		log.Printf("[session] agent %q not installed, falling back to claude", cfg.ID)
@@ -142,6 +148,14 @@ func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
 		return resolvedAgent{config: cfg, status: claudeStatus, usedFallback: true, requestedLabel: requestedLabel}
 	}
 	return resolvedAgent{config: cfg, status: status}
+}
+
+func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
+	agentID := ""
+	if changeName != "" {
+		agentID = m.prefs.GetSession(workspaceID, changeName).Agent
+	}
+	return m.resolveAgentFromID(agentID)
 }
 
 func injectAgentInfo(s *Session, r resolvedAgent) {
@@ -184,20 +198,35 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 	}
 	m.mu.Unlock()
 
-	resolved := m.resolveAgent(workspaceID, changeName)
+	// Read persisted session entry (agent + claudeSessionId)
+	entry := m.prefs.GetSession(workspaceID, changeName)
+	resolved := m.resolveAgentFromID(entry.Agent)
 
-	// Persist agent choice for this named session (if not already set)
-	if existing := m.prefs.GetSessionAgent(workspaceID, changeName); existing == "" {
-		if err := m.prefs.SetSessionAgent(workspaceID, changeName, resolved.config.ID); err != nil {
-			log.Printf("[session] failed to persist session agent: %v", err)
-		}
+	claudeSessionID := entry.ClaudeSessionId
+	isResume := claudeSessionID != ""
+	if !isResume {
+		claudeSessionID = newClaudeSessionID()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "")
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, isResume)
+	if err != nil && isResume {
+		// Fallback: --resume failed at process start, try without resume
+		log.Printf("[session] --resume failed for %s/%s, starting fresh: %v", workspaceID, changeName, err)
+		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, false)
+	}
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+
+	// Persist after subprocess starts successfully to avoid stale --resume on next attempt
+	newEntry := preferences.SessionEntry{
+		Agent:           resolved.config.ID,
+		ClaudeSessionId: claudeSessionID,
+	}
+	if err := m.prefs.SetSession(workspaceID, changeName, newEntry); err != nil {
+		log.Printf("[session] failed to persist session entry: %v", err)
 	}
 
 	s := &Session{
@@ -216,16 +245,18 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 
 	m.startFanOut(s, key, workspaceID, false)
 
-	// Auto-inject initial /opsx:explore message (only on new session, never on resume).
-	initPayload := map[string]interface{}{
-		"type": "user",
-		"message": map[string]string{
-			"role":    "user",
-			"content": fmt.Sprintf("/opsx:explore %s", changeName),
-		},
+	// Auto-inject /opsx:explore only on first session start, not on resume
+	if !isResume {
+		initPayload := map[string]interface{}{
+			"type": "user",
+			"message": map[string]string{
+				"role":    "user",
+				"content": fmt.Sprintf("/opsx:explore %s", changeName),
+			},
+		}
+		initMsg, _ := json.Marshal(initPayload)
+		proc.Write(append(initMsg, '\n'))
 	}
-	initMsg, _ := json.Marshal(initPayload)
-	proc.Write(append(initMsg, '\n'))
 
 	return s, nil
 }
@@ -239,7 +270,8 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Se
 	resolved := m.resolveAgent(workspaceID, "")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt)
+	// Anonymous sessions use no session flags (no persistence, no resume)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false)
 	if err != nil {
 		cancel()
 		return "", nil, err
