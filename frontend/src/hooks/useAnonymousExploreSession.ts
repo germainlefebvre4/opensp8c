@@ -8,8 +8,13 @@ export interface Message {
   partial?: boolean
 }
 
+const STATIC_GREETING: Message = {
+  role: 'assistant',
+  content: 'Décris ce que tu veux explorer ou construire dans ce projet. Je peux naviguer les fichiers pour mieux comprendre le contexte.',
+}
+
 export function useAnonymousExploreSession(workspaceId: string) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>([STATIC_GREETING])
   const [connected, setConnected] = useState(false)
   const [expired, setExpired] = useState(false)
   const [waiting, setWaiting] = useState(false)

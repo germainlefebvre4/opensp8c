@@ -11,6 +11,31 @@ import (
 	"nhooyr.io/websocket"
 )
 
+// prependExploreSkill prefixes the user message content with "/opsx:explore "
+// to trigger the explore skill on the first message of an anonymous session.
+// Returns msg unchanged if parsing fails.
+func prependExploreSkill(msg []byte) []byte {
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg, &payload); err != nil {
+		return msg
+	}
+	message, ok := payload["message"].(map[string]interface{})
+	if !ok {
+		return msg
+	}
+	content, ok := message["content"].(string)
+	if !ok {
+		return msg
+	}
+	message["content"] = "/opsx:explore " + content
+	payload["message"] = message
+	result, err := json.Marshal(payload)
+	if err != nil {
+		return msg
+	}
+	return result
+}
+
 type ExploreHandler struct {
 	ws  *WorkspaceHandler
 	mgr *session.Manager
@@ -44,7 +69,7 @@ func (h *ExploreHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.serveWS(w, r, conn, sess, func() { h.mgr.Stop(workspaceID, changeName) })
+	h.serveWS(w, r, conn, sess, func() { h.mgr.Stop(workspaceID, changeName) }, false)
 }
 
 func (h *ExploreHandler) StopSession(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +118,7 @@ func (h *ExploreHandler) HandleAnonymousWS(w http.ResponseWriter, r *http.Reques
 	}
 	defer conn.CloseNow()
 
-	h.serveWS(w, r, conn, sess, func() { h.mgr.StopAnonymous(workspaceID, sessionID) })
+	h.serveWS(w, r, conn, sess, func() { h.mgr.StopAnonymous(workspaceID, sessionID) }, true)
 }
 
 // StopAnonymousSession stops an anonymous explore session.
@@ -105,7 +130,9 @@ func (h *ExploreHandler) StopAnonymousSession(w http.ResponseWriter, r *http.Req
 }
 
 // serveWS handles the bidirectional WebSocket relay for a session.
-func (h *ExploreHandler) serveWS(_ http.ResponseWriter, r *http.Request, conn *websocket.Conn, sess *session.Session, onExpire func()) {
+// When anonymous is true, the first user message is prefixed with "/opsx:explore "
+// to trigger the explore skill with the project context.
+func (h *ExploreHandler) serveWS(_ http.ResponseWriter, r *http.Request, conn *websocket.Conn, sess *session.Session, onExpire func(), anonymous bool) {
 	wsCtx, wsCancel := context.WithCancel(r.Context())
 	defer wsCancel()
 
@@ -145,10 +172,15 @@ func (h *ExploreHandler) serveWS(_ http.ResponseWriter, r *http.Request, conn *w
 	}()
 
 	// Incoming: WebSocket → subprocess stdin.
+	firstSent := anonymous && len(snapshot) > 0
 	for {
 		_, msg, err := conn.Read(wsCtx)
 		if err != nil {
 			break
+		}
+		if anonymous && !firstSent {
+			firstSent = true
+			msg = prependExploreSkill(msg)
 		}
 		msg = append(msg, '\n')
 		if _, err := io.WriteString(sess.Proc(), string(msg)); err != nil {
