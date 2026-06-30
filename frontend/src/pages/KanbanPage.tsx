@@ -52,11 +52,19 @@ export function KanbanPage({ workspaceId }: Props) {
     setDragSourceStatus(change?.kanban_status ?? null)
   }
 
+  const matchesSearch = (c: Change, q: string): boolean => {
+    const lower = q.toLowerCase()
+    if (c.name.toLowerCase().includes(lower)) return true
+    if (c.tags?.type?.toLowerCase().includes(lower)) return true
+    if (c.tags?.components?.some(comp => comp.toLowerCase().includes(lower))) return true
+    return false
+  }
+
   const filteredChanges = searchQuery
-    ? changes.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? changes.filter(c => matchesSearch(c, searchQuery))
     : changes
   const filteredArchived = searchQuery
-    ? archivedChanges.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? archivedChanges.filter(c => matchesSearch(c, searchQuery))
     : archivedChanges
 
   const handleOpen = (name: string, status: string) => {

@@ -77,3 +77,6 @@ export const getConversationRuns = (workspaceId: string, changeName: string, kin
 
 export const getConversationRun = (workspaceId: string, changeName: string, kind: string, ts: string) =>
   api.get<ConversationRun>(`/api/workspaces/${workspaceId}/changes/${changeName}/conversations/${kind}/${ts}`).then(r => r.data)
+
+export const retagChange = (workspaceId: string, changeName: string) =>
+  api.post(`/api/workspaces/${workspaceId}/changes/${changeName}/retag`)

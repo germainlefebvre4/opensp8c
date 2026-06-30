@@ -83,6 +83,21 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
         {change.name}
       </span>
 
+      {change.tags && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {change.tags.type && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium border border-blue-100">
+              {change.tags.type === 'frontend' ? '🖥' : change.tags.type === 'backend' ? '⚙' : change.tags.type === 'batch' ? '⚡' : '🔀'} {change.tags.type}
+            </span>
+          )}
+          {change.tags.complexity > 0 && (
+            <span className="text-[10px] text-slate-400 font-mono tracking-tighter">
+              {'●'.repeat(change.tags.complexity)}{'○'.repeat(5 - change.tags.complexity)}
+            </span>
+          )}
+        </div>
+      )}
+
       {change.tasks_total > 0 && (
         <>
           <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">

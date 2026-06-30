@@ -43,7 +43,11 @@ export function Layout({ children }: Props) {
           <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mr-4 select-none">
             OpenSpec
           </span>
-          {(['/', '/specs'] as const).map(path => (
+          {([
+            { path: '/', label: 'Kanban' },
+            { path: '/specs', label: 'Specs' },
+            { path: '/timeline', label: 'Timeline' },
+          ] as const).map(({ path, label }) => (
             <NavLink
               key={path}
               to={{ pathname: path, search: searchParams.toString() }}
@@ -56,7 +60,7 @@ export function Layout({ children }: Props) {
                 }`
               }
             >
-              {path === '/' ? 'Kanban' : 'Specs'}
+              {label}
             </NavLink>
           ))}
         </nav>

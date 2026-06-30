@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { X, Code, Eye, Loader2 } from 'lucide-react'
+import { X, Code, Eye, Loader2, RefreshCw } from 'lucide-react'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
 import { useToggleTask } from '../hooks/useToggleTask'
 import { useConversationRuns } from '../hooks/useConversationRuns'
 import { useConversationRun } from '../hooks/useConversationRun'
+import { useRetag } from '../hooks/useRetag'
 
 interface Props {
   workspaceId: string
@@ -21,13 +22,14 @@ const STATUS_LABELS: Record<string, string> = {
   'archived': 'Archived',
 }
 
-type Tab = 'tasks' | 'proposal' | 'design' | 'log'
+type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags'
 type ViewMode = 'raw' | 'rendered'
 
 export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
   const { data, isLoading } = useChangeDetail(workspaceId, changeName)
   const archive = useArchive(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
+  const retag = useRetag(workspaceId, changeName)
   const [archiveError, setArchiveError] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [pendingTaskIdx, setPendingTaskIdx] = useState<number | null>(null)
@@ -55,6 +57,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
     { id: 'proposal', label: 'Proposal' },
     { id: 'design', label: 'Design' },
     { id: 'log', label: 'Log' },
+    { id: 'tags', label: 'Tags' },
   ]
 
   const showViewToggle = activeTab === 'proposal' || activeTab === 'design'
@@ -253,6 +256,72 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                 ) : (
                   <p className="text-sm text-slate-400">design.md non disponible.</p>
                 )
+              )}
+
+              {activeTab === 'tags' && (
+                <div className="flex flex-col gap-3">
+                  {!data.tags ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm text-slate-400">Tags non encore générés.</p>
+                      <button
+                        onClick={() => retag.mutate()}
+                        disabled={retag.isPending}
+                        className="self-start flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {retag.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                        Générer les tags
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-600">Tags sémantiques</span>
+                        <button
+                          onClick={() => retag.mutate()}
+                          disabled={retag.isPending}
+                          title="Régénérer les tags"
+                          className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {retag.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {data.tags.type && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0">Type</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                              {data.tags.type}
+                            </span>
+                          </div>
+                        )}
+
+                        {data.tags.complexity > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0">Complexité</span>
+                            <span className="text-[11px] font-mono tracking-tighter text-slate-600">
+                              {'●'.repeat(data.tags.complexity)}{'○'.repeat(5 - data.tags.complexity)}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{data.tags.complexity}/5</span>
+                          </div>
+                        )}
+
+                        {data.tags.components && data.tags.components.length > 0 && (
+                          <div className="flex items-start gap-2">
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0 pt-0.5">Composants</span>
+                            <div className="flex flex-wrap gap-1">
+                              {data.tags.components.map(c => (
+                                <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  #{c}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

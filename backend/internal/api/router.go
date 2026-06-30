@@ -54,6 +54,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler)
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
+	tagsHandler := handlers.NewTagsHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr)
@@ -76,6 +77,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Put("/workspaces/{id}/specs/{name}", specsHandler.UpdateSpec)
 
 		r.Post("/workspaces/{id}/changes/{name}/archive", archiveHandler.Archive)
+		r.Post("/workspaces/{id}/changes/{name}/retag", tagsHandler.Retag)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/reset", ffHandler.ResetTasks)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/{index}", taskHandler.PatchTask)
 

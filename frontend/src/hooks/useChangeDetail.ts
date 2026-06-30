@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { Tags } from './useChanges'
 
 export interface TaskItem {
   text: string
@@ -18,6 +19,7 @@ export interface ChangeDetail {
     proposal: string
     design: string
   }
+  tags?: Tags
 }
 
 export function useChangeDetail(workspaceId: string | null, changeName: string | null) {

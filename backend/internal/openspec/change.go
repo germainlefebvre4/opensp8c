@@ -12,6 +12,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Tags struct {
+	Type       string   `json:"type" yaml:"type"`
+	Complexity int      `json:"complexity" yaml:"complexity"`
+	Components []string `json:"components" yaml:"components"`
+	Auto       bool     `json:"auto" yaml:"_auto"`
+	TaggedAt   string   `json:"tagged_at" yaml:"_tagged_at"`
+}
+
 type Change struct {
 	Name              string `json:"name"`
 	KanbanStatus      string `json:"kanban_status"`
@@ -21,6 +29,7 @@ type Change struct {
 	Schema            string `json:"schema"`
 	DaysSinceActivity int    `json:"days_since_activity"`
 	IsStale           bool   `json:"is_stale"`
+	Tags              *Tags  `json:"tags,omitempty"`
 }
 
 type Task struct {
@@ -42,6 +51,7 @@ type ChangeDetail struct {
 type openspecMeta struct {
 	Schema  string `yaml:"schema"`
 	Created string `yaml:"created"`
+	Tags    *Tags  `yaml:"tags"`
 }
 
 type openspecProjectConfig struct {
@@ -162,6 +172,7 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 		Schema:            meta.Schema,
 		DaysSinceActivity: daysSince,
 		IsStale:           isStale,
+		Tags:              meta.Tags,
 	}, nil
 }
 

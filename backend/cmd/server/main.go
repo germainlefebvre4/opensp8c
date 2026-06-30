@@ -7,11 +7,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/api"
 	"github.com/glefebvre/opensp8c/internal/config"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 )
 
 func main() {
@@ -47,6 +51,17 @@ func main() {
 
 	router := api.NewRouter(cfg, cfgPath)
 
+	// Background batch: tag all untagged changes in each workspace
+	go func() {
+		for _, wc := range cfg.Workspaces {
+			absPath, err := filepath.Abs(wc.Path)
+			if err != nil {
+				continue
+			}
+			tagUntaggedChanges(absPath)
+		}
+	}()
+
 	srv := &http.Server{
 		Addr:    host + ":" + port,
 		Handler: router,
@@ -71,4 +86,55 @@ func main() {
 		log.Fatalf("forced shutdown: %v", err)
 	}
 	log.Println("Server stopped")
+}
+
+func tagUntaggedChanges(workspacePath string) {
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+
+	type changeEntry struct {
+		root    string
+		created string
+	}
+
+	var entries []changeEntry
+
+	collectDir := func(dir string) {
+		dirs, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range dirs {
+			if !e.IsDir() || e.Name() == "archive" {
+				continue
+			}
+			metaPath := filepath.Join(dir, e.Name(), ".openspec.yaml")
+			data, err := os.ReadFile(metaPath)
+			if err != nil {
+				continue
+			}
+			var metaWrapper struct {
+				Tags    *openspec.Tags `yaml:"tags"`
+				Created string         `yaml:"created"`
+			}
+			if yaml.Unmarshal(data, &metaWrapper) == nil && metaWrapper.Tags != nil {
+				continue
+			}
+			created := metaWrapper.Created
+			entries = append(entries, changeEntry{
+				root:    filepath.Join(dir, e.Name()),
+				created: created,
+			})
+		}
+	}
+
+	collectDir(changesDir)
+	collectDir(filepath.Join(changesDir, "archive"))
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].created < entries[j].created
+	})
+
+	for _, e := range entries {
+		_ = openspec.TagChange(e.root, workspacePath, false)
+	}
 }

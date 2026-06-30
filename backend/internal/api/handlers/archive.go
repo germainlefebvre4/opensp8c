@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 )
 
 type ArchiveHandler struct {
@@ -41,4 +43,11 @@ func (h *ArchiveHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(out.Bytes())
+
+	// Trigger async tagging after successful archive
+	go func() {
+		changesDir := filepath.Join(path, "openspec", "changes")
+		changeRoot := filepath.Join(changesDir, "archive", name)
+		_ = openspec.TagChange(changeRoot, path, false)
+	}()
 }

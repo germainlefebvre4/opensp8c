@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { KanbanPage } from './pages/KanbanPage'
 import { SpecsPage } from './pages/SpecsPage'
+import { TimelinePage } from './pages/TimelinePage'
 import { WorkspaceSetup } from './pages/WorkspaceSetup'
 import { useWorkspaces } from './hooks/useWorkspaces'
 
@@ -28,6 +29,10 @@ function AppRoutes() {
           <Route
             path="/specs"
             element={workspaceId ? <SpecsPage workspaceId={workspaceId} /> : null}
+          />
+          <Route
+            path="/timeline"
+            element={workspaceId ? <TimelinePage workspaceId={workspaceId} /> : null}
           />
         </Routes>
       )}
