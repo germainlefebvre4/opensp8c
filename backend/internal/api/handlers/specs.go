@@ -53,6 +53,22 @@ func (h *SpecsHandler) GetSpec(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(spec)
 }
 
+func (h *SpecsHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	path, ok := h.ws.workspacePath(id)
+	if !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	overview, err := openspec.ListSpecsWithChanges(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(overview)
+}
+
 func (h *SpecsHandler) UpdateSpec(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	name := chi.URLParam(r, "name")

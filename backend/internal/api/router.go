@@ -73,6 +73,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)
+		r.Get("/workspaces/{id}/specs/overview", specsHandler.GetOverview)
 		r.Get("/workspaces/{id}/specs/{name}", specsHandler.GetSpec)
 		r.Put("/workspaces/{id}/specs/{name}", specsHandler.UpdateSpec)
 
