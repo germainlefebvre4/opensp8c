@@ -1,2 +1,15 @@
 schema: spec-driven
-created: 2026-06-25
+created: "2026-06-25"
+tags:
+    type: fullstack
+    complexity: 5
+    components:
+        - kanban-board
+        - change-status
+        - api-router
+        - task-progress
+        - workspace-management
+        - explore-session
+        - specs-view
+    _auto: true
+    _tagged_at: "2026-06-30"

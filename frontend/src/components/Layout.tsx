@@ -1,6 +1,8 @@
 import { useState, useEffect, type ReactNode } from 'react'
 import { NavLink, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
+import { LanguageSwitcher } from './LanguageSwitcher'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 
 interface Props {
@@ -8,6 +10,7 @@ interface Props {
 }
 
 export function Layout({ children }: Props) {
+  const { t } = useTranslation('navigation')
   const { data: workspaces = [] } = useWorkspaces()
   const [searchParams, setSearchParams] = useSearchParams()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -44,9 +47,9 @@ export function Layout({ children }: Props) {
             OpenSpec
           </span>
           {([
-            { path: '/', label: 'Kanban' },
-            { path: '/specs', label: 'Specs' },
-            { path: '/timeline', label: 'Timeline' },
+            { path: '/', label: t('kanban') },
+            { path: '/specs', label: t('specs') },
+            { path: '/timeline', label: t('timeline') },
           ] as const).map(({ path, label }) => (
             <NavLink
               key={path}
@@ -63,6 +66,7 @@ export function Layout({ children }: Props) {
               {label}
             </NavLink>
           ))}
+          <LanguageSwitcher />
         </nav>
 
         <div className="flex-1 flex overflow-hidden">

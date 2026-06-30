@@ -1,0 +1,33 @@
+{
+  "tabs": {
+    "tasks": "Tâches",
+    "proposal": "Proposal",
+    "design": "Design",
+    "log": "Log",
+    "tags": "Tags"
+  },
+  "status": {
+    "toExplore": "To Explore",
+    "toDo": "To Do",
+    "inProgress": "In Progress",
+    "done": "Done",
+    "archived": "Archived"
+  },
+  "markdownRendered": "Markdown rendu",
+  "rawText": "Texte brut",
+  "run": "Run",
+  "archive": "Archiver",
+  "archiving": "Archivage...",
+  "emptyLog": "Log vide.",
+  "emptyTasks": "Aucune tâche définie.",
+  "emptyRuns": "Aucun run ff pour l'instant.",
+  "proposalUnavailable": "proposal.md non disponible.",
+  "designUnavailable": "design.md non disponible.",
+  "tagsNotGenerated": "Tags non encore générés.",
+  "generateTags": "Générer les tags",
+  "regenerateTags": "Régénérer les tags",
+  "semanticTags": "Tags sémantiques",
+  "type": "Type",
+  "complexity": "Complexité",
+  "components": "Composants"
+}

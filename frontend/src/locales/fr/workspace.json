@@ -1,0 +1,12 @@
+{
+  "projects": "Projets",
+  "closeMenu": "Fermer le menu",
+  "openMenu": "Ouvrir le menu",
+  "projectPathPlaceholder": "Chemin du projet",
+  "projectNamePlaceholder": "Nom du projet (optionnel)",
+  "addProject": "Ajouter un projet",
+  "adding": "Ajout...",
+  "projectPathExample": "Chemin du projet (ex: /home/user/mon-projet)",
+  "welcome": "Bienvenue dans OpenSP8C",
+  "welcomeSubtitle": "Ajoutez votre premier projet pour commencer."
+}

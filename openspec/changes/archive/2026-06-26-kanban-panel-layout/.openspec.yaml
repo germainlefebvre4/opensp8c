@@ -1,2 +1,11 @@
 schema: spec-driven
-created: 2026-06-26
+created: "2026-06-26"
+tags:
+    type: ""
+    complexity: 2
+    components:
+        - kanban-board
+        - explore-session
+        - specs-view
+    _auto: true
+    _tagged_at: "2026-06-30"

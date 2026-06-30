@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { X, Code, Eye, Loader2, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
 import { useToggleTask } from '../hooks/useToggleTask'
@@ -14,18 +15,13 @@ interface Props {
   onClose: () => void
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  'to-explore': 'To Explore',
-  'todo': 'To Do',
-  'in-progress': 'In Progress',
-  'done': 'Done',
-  'archived': 'Archived',
-}
-
 type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags'
 type ViewMode = 'raw' | 'rendered'
 
 export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
+  const { t } = useTranslation('detailPanel')
+  const { t: tCommon } = useTranslation('common')
+
   const { data, isLoading } = useChangeDetail(workspaceId, changeName)
   const archive = useArchive(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
@@ -53,12 +49,14 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
   }
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'tasks', label: 'Tâches' },
-    { id: 'proposal', label: 'Proposal' },
-    { id: 'design', label: 'Design' },
-    { id: 'log', label: 'Log' },
-    { id: 'tags', label: 'Tags' },
+    { id: 'tasks', label: t('tabs.tasks') },
+    { id: 'proposal', label: t('tabs.proposal') },
+    { id: 'design', label: t('tabs.design') },
+    { id: 'log', label: t('tabs.log') },
+    { id: 'tags', label: t('tabs.tags') },
   ]
+
+  const statusLabel = data ? (t(`status.${data.kanban_status.replace('-', '')}`, { defaultValue: data.kanban_status })) : ''
 
   const showViewToggle = activeTab === 'proposal' || activeTab === 'design'
 
@@ -70,7 +68,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
           <p className="text-sm font-semibold text-slate-800 break-words leading-snug">{changeName}</p>
           {data && (
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {STATUS_LABELS[data.kanban_status] ?? data.kanban_status}
+              {statusLabel}
               {data.tasks_total > 0 && ` · ${data.tasks_done}/${data.tasks_total} tasks`}
             </p>
           )}
@@ -84,7 +82,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
       </div>
 
       {isLoading && (
-        <div className="p-4 text-sm text-slate-400">Chargement...</div>
+        <div className="p-4 text-sm text-slate-400">{tCommon('loading')}</div>
       )}
 
       {data && (
@@ -112,7 +110,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
               <div className="flex items-center gap-0.5 mr-1 bg-slate-100 rounded-md p-0.5">
                 <button
                   onClick={() => setViewMode('rendered')}
-                  title="Markdown rendu"
+                  title={t('markdownRendered')}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     viewMode === 'rendered'
                       ? 'bg-white text-blue-600 shadow-sm'
@@ -123,7 +121,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                 </button>
                 <button
                   onClick={() => setViewMode('raw')}
-                  title="Texte brut"
+                  title={t('rawText')}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     viewMode === 'raw'
                       ? 'bg-white text-blue-600 shadow-sm'
@@ -142,7 +140,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
               {/* Run selector */}
               {ffRuns && ffRuns.length > 1 && (
                 <div className="shrink-0 px-3 py-2 border-b border-slate-100 flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400">Run</span>
+                  <span className="text-[10px] text-slate-400">{t('run')}</span>
                   <select
                     value={activeRunTs ?? ''}
                     onChange={e => setSelectedRunTs(e.target.value)}
@@ -159,14 +157,14 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
                 {!ffRuns || ffRuns.length === 0 ? (
-                  <p className="text-xs text-slate-400 pt-2">Aucun run ff pour l'instant.</p>
+                  <p className="text-xs text-slate-400 pt-2">{t('emptyRuns')}</p>
                 ) : runLoading ? (
                   <div className="flex items-center gap-2 text-xs text-slate-400 pt-2">
                     <Loader2 size={12} className="animate-spin" />
-                    Chargement...
+                    {tCommon('loading')}
                   </div>
                 ) : !ffRun || ffRun.messages.length === 0 ? (
-                  <p className="text-xs text-slate-400 pt-2">Log vide.</p>
+                  <p className="text-xs text-slate-400 pt-2">{t('emptyLog')}</p>
                 ) : (
                   ffRun.messages.map((msg, i) => (
                     <div
@@ -194,13 +192,13 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
               {activeTab === 'tasks' && (
                 <div className="flex flex-col gap-2">
                   {data.tasks.length === 0 && (
-                    <p className="text-sm text-slate-400">Aucune tâche définie.</p>
+                    <p className="text-sm text-slate-400">{t('emptyTasks')}</p>
                   )}
-                  {data.tasks.map((t, i) => (
+                  {data.tasks.map((task, i) => (
                     <label key={i} className="flex gap-2 items-start text-xs cursor-pointer group">
                       <input
                         type="checkbox"
-                        checked={t.done}
+                        checked={task.done}
                         disabled={pendingTaskIdx === i}
                         onChange={() => {
                           setToggleError(null)
@@ -215,8 +213,8 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                         }}
                         className="shrink-0 mt-0.5 accent-emerald-500 cursor-pointer disabled:cursor-wait"
                       />
-                      <span className={t.done ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-slate-900'}>
-                        {t.text}
+                      <span className={task.done ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-slate-900'}>
+                        {task.text}
                       </span>
                     </label>
                   ))}
@@ -238,7 +236,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                     </pre>
                   )
                 ) : (
-                  <p className="text-sm text-slate-400">proposal.md non disponible.</p>
+                  <p className="text-sm text-slate-400">{t('proposalUnavailable')}</p>
                 )
               )}
 
@@ -254,7 +252,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                     </pre>
                   )
                 ) : (
-                  <p className="text-sm text-slate-400">design.md non disponible.</p>
+                  <p className="text-sm text-slate-400">{t('designUnavailable')}</p>
                 )
               )}
 
@@ -262,24 +260,24 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                 <div className="flex flex-col gap-3">
                   {!data.tags ? (
                     <div className="flex flex-col gap-2">
-                      <p className="text-sm text-slate-400">Tags non encore générés.</p>
+                      <p className="text-sm text-slate-400">{t('tagsNotGenerated')}</p>
                       <button
                         onClick={() => retag.mutate()}
                         disabled={retag.isPending}
                         className="self-start flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
                       >
                         {retag.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                        Générer les tags
+                        {t('generateTags')}
                       </button>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-slate-600">Tags sémantiques</span>
+                        <span className="text-xs font-medium text-slate-600">{t('semanticTags')}</span>
                         <button
                           onClick={() => retag.mutate()}
                           disabled={retag.isPending}
-                          title="Régénérer les tags"
+                          title={t('regenerateTags')}
                           className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
                         >
                           {retag.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -289,7 +287,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                       <div className="flex flex-col gap-2">
                         {data.tags.type && (
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-400 w-20 shrink-0">Type</span>
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0">{t('type')}</span>
                             <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">
                               {data.tags.type}
                             </span>
@@ -298,7 +296,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
 
                         {data.tags.complexity > 0 && (
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-400 w-20 shrink-0">Complexité</span>
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0">{t('complexity')}</span>
                             <span className="text-[11px] font-mono tracking-tighter text-slate-600">
                               {'●'.repeat(data.tags.complexity)}{'○'.repeat(5 - data.tags.complexity)}
                             </span>
@@ -308,7 +306,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
 
                         {data.tags.components && data.tags.components.length > 0 && (
                           <div className="flex items-start gap-2">
-                            <span className="text-[11px] text-slate-400 w-20 shrink-0 pt-0.5">Composants</span>
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0 pt-0.5">{t('components')}</span>
                             <div className="flex flex-wrap gap-1">
                               {data.tags.components.map(c => (
                                 <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
@@ -334,7 +332,7 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                 disabled={archive.isPending}
                 className="text-xs px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors cursor-pointer disabled:opacity-50"
               >
-                {archive.isPending ? '⏳ Archivage...' : 'Archiver'}
+                {archive.isPending ? `⏳ ${t('archiving')}` : t('archive')}
               </button>
               {archiveError && (
                 <p className="text-[11px] text-red-600 w-full whitespace-pre-wrap">{archiveError}</p>

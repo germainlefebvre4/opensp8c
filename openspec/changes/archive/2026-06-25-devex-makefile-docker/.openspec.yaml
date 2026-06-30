@@ -1,2 +1,10 @@
 schema: spec-driven
-created: 2026-06-25
+created: "2026-06-25"
+tags:
+    type: fullstack
+    complexity: 3
+    components:
+        - api-router
+        - developer-tooling
+    _auto: true
+    _tagged_at: "2026-06-30"

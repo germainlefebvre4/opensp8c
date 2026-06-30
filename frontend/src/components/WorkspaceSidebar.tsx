@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { FolderOpen, PlusCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Workspace } from '../hooks/useWorkspaces'
 import { useAddWorkspace, useRemoveWorkspace } from '../hooks/useWorkspaces'
 import { AgentSelector } from './AgentSelector'
@@ -22,6 +23,9 @@ interface Props {
 }
 
 export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onToggle }: Props) {
+  const { t } = useTranslation('workspace')
+  const { t: tCommon } = useTranslation('common')
+
   const [newPath, setNewPath] = useState('')
   const [adding, setAdding] = useState(false)
   const add = useAddWorkspace()
@@ -40,12 +44,12 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
       <div className="px-2 pt-4 pb-2 shrink-0 flex items-center justify-between min-w-0">
         {isOpen && (
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 pl-2">
-            Projets
+            {t('projects')}
           </span>
         )}
         <button
           onClick={onToggle}
-          aria-label={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+          aria-label={isOpen ? t('closeMenu') : t('openMenu')}
           className={`p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors shrink-0 ${!isOpen ? 'mx-auto' : 'ml-auto'}`}
         >
           {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
@@ -91,7 +95,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
                   <button
                     onClick={() => remove.mutate(ws.id)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-300 hover:text-red-400 transition-all"
-                    title="Supprimer"
+                    title={tCommon('delete')}
                   >
                     <X size={11} />
                   </button>
@@ -114,7 +118,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
             <input
               autoFocus
               type="text"
-              placeholder="Chemin du projet"
+              placeholder={t('projectPathPlaceholder')}
               value={newPath}
               onChange={e => setNewPath(e.target.value)}
               className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400"
@@ -124,14 +128,14 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
                 type="submit"
                 className="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors cursor-pointer"
               >
-                Ajouter
+                {tCommon('add')}
               </button>
               <button
                 type="button"
                 onClick={() => setAdding(false)}
                 className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                Annuler
+                {tCommon('cancel')}
               </button>
             </div>
           </form>
@@ -141,7 +145,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
             className="w-full flex items-center gap-2 px-2.5 py-2 text-xs text-slate-500 hover:text-slate-700 hover:bg-white rounded-md transition-colors font-medium cursor-pointer"
           >
             <PlusCircle size={13} className="shrink-0" />
-            Ajouter un projet
+            {t('addProject')}
           </button>
         )}
       </div>

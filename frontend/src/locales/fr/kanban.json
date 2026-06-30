@@ -1,0 +1,10 @@
+{
+  "searchPlaceholder": "Rechercher un change...",
+  "columns": {
+    "toExplore": "To Explore",
+    "toDo": "To Do",
+    "inProgress": "In Progress",
+    "done": "Done",
+    "archived": "Archived"
+  }
+}

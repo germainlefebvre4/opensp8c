@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { useTranslation } from 'react-i18next'
 import { useExploreSession } from '../hooks/useExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
+  const { t } = useTranslation('explore')
   const { messages, connected, expired, waiting, agentInfo, send, reconnect } = useExploreSession(workspaceId, changeName)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
@@ -57,9 +59,11 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-slate-800 truncate">Explorer : {changeName}</span>
+          <span className="text-sm font-semibold text-slate-800 truncate">
+            {t('headerExplore', { name: changeName })}
+          </span>
           <span className={`text-[10px] font-semibold shrink-0 ${connected ? 'text-emerald-500' : 'text-amber-500'}`}>
-            {connected ? '● connecté' : '○ déconnecté'}
+            {connected ? t('connected') : t('disconnected')}
           </span>
           {agentInfo && (
             <span className="text-[10px] font-medium text-slate-400 shrink-0 bg-slate-100 px-1.5 py-0.5 rounded">
@@ -71,14 +75,14 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
           <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
             <button
               onClick={() => setMode('raw')}
-              title="Texte brut"
+              title={t('rawText', { ns: 'detailPanel' })}
               className={`p-1 rounded transition-colors cursor-pointer ${mode === 'raw' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
             >
               <Code size={13} />
             </button>
             <button
               onClick={() => setMode('rendered')}
-              title="Markdown rendu"
+              title={t('markdownRendered', { ns: 'detailPanel' })}
               className={`p-1 rounded transition-colors cursor-pointer ${mode === 'rendered' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
             >
               <Eye size={13} />
@@ -120,12 +124,12 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
         {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
         {expired && (
           <div className="text-center text-amber-600 text-xs">
-            Session expirée.{' '}
+            {t('sessionExpired')}{' '}
             <button
               onClick={reconnect}
               className="text-blue-600 underline cursor-pointer bg-transparent border-0 text-xs"
             >
-              Reprendre
+              {t('resume')}
             </button>
           </div>
         )}
@@ -140,7 +144,7 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Votre message... (Shift+Enter pour aller à la ligne)"
+          placeholder={t('messagePlaceholder')}
           disabled={!connected}
           className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 placeholder:text-slate-400 resize-none overflow-y-auto"
           style={{ maxHeight: '160px' }}
@@ -150,7 +154,7 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
           disabled={!connected || !input.trim()}
           className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
-          Envoyer
+          {t('send')}
         </button>
       </div>
     </div>

@@ -1,0 +1,9 @@
+{
+  "resetTasks": {
+    "title": "Réinitialiser les tâches ?",
+    "bodyWithProgress": "{{done}} tâche(s) complétée(s) sur {{total}} seront perdues. Le proposal et le design seront conservés.",
+    "bodyNoProgress": "Les tâches de \"{{name}}\" seront effacées. Le proposal et le design seront conservés.",
+    "confirm": "Réinitialiser",
+    "cancel": "Annuler"
+  }
+}

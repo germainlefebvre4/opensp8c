@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
+  const { t } = useTranslation('dialogs')
   const hasProgress = change.tasks_done > 0
 
   return (
@@ -19,12 +21,12 @@ export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
           )}
           <div className="flex flex-col gap-1">
             <p className="text-sm font-semibold text-slate-800">
-              {hasProgress ? 'Réinitialiser les tâches ?' : 'Réinitialiser les tâches ?'}
+              {t('resetTasks.title')}
             </p>
             <p className="text-xs text-slate-500">
               {hasProgress
-                ? `${change.tasks_done} tâche${change.tasks_done > 1 ? 's' : ''} complétée${change.tasks_done > 1 ? 's' : ''} sur ${change.tasks_total} seront perdues. Le proposal et le design seront conservés.`
-                : `Les tâches de "${change.name}" seront effacées. Le proposal et le design seront conservés.`
+                ? t('resetTasks.bodyWithProgress', { done: change.tasks_done, total: change.tasks_total })
+                : t('resetTasks.bodyNoProgress', { name: change.name })
               }
             </p>
           </div>
@@ -34,7 +36,7 @@ export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
             onClick={onCancel}
             className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
           >
-            Annuler
+            {t('resetTasks.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -44,7 +46,7 @@ export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
                 : 'bg-slate-700 hover:bg-slate-800'
             }`}
           >
-            Réinitialiser
+            {t('resetTasks.confirm')}
           </button>
         </div>
       </div>

@@ -1,2 +1,10 @@
 schema: spec-driven
-created: 2026-06-28
+created: "2026-06-28"
+tags:
+    type: backend
+    complexity: 2
+    components:
+        - explore-session
+        - developer-tooling
+    _auto: true
+    _tagged_at: "2026-06-30"

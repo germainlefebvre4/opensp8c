@@ -1,0 +1,9 @@
+{
+  "resetTasks": {
+    "title": "Reset tasks?",
+    "bodyWithProgress": "{{done}} completed task(s) out of {{total}} will be lost. The proposal and design will be kept.",
+    "bodyNoProgress": "Tasks for \"{{name}}\" will be cleared. The proposal and design will be kept.",
+    "confirm": "Reset",
+    "cancel": "Cancel"
+  }
+}

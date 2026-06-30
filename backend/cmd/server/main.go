@@ -9,9 +9,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
-	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/glefebvre/opensp8c/internal/api"
 	"github.com/glefebvre/opensp8c/internal/config"

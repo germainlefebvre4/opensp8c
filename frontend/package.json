@@ -21,9 +21,11 @@
     "@types/diff": "^7.0.2",
     "axios": "^1.18.1",
     "diff": "^9.0.0",
+    "i18next": "^26.3.4",
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-i18next": "^17.0.8",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.0",
     "tailwindcss": "^4.3.1"

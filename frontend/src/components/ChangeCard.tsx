@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { useDraggable } from '@dnd-kit/core'
+import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { useArchive } from '../hooks/useArchive'
 
@@ -14,6 +15,9 @@ interface Props {
 const DRAGGABLE_STATUSES = new Set(['to-explore', 'todo', 'in-progress'])
 
 export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
+  const { t } = useTranslation('detailPanel')
+  const { t: tCommon } = useTranslation('common')
+
   const progressPct = change.tasks_total > 0
     ? Math.round((change.tasks_done / change.tasks_total) * 100)
     : 0
@@ -60,7 +64,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
       <div className="bg-white border border-red-200 rounded-lg px-3 py-2.5 flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md transition-all group" onClick={() => onOpen(change.name)}>
         <AlertCircle size={12} className="text-red-400 shrink-0" />
         <span className="text-xs text-slate-700 font-semibold truncate group-hover:text-blue-700">{change.name}</span>
-        <span className="text-[10px] text-red-400 ml-auto shrink-0">ff échoué</span>
+        <span className="text-[10px] text-red-400 ml-auto shrink-0">ff failed</span>
       </div>
     )
   }
@@ -103,7 +107,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
           <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
             <span>{change.tasks_done}/{change.tasks_total} tasks</span>
             {change.is_stale && (
-              <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}j</span>
+              <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}d</span>
             )}
           </div>
           <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
@@ -121,7 +125,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
           {archive.isPending ? (
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
               <Loader2 size={11} className="animate-spin" />
-              Archivage...
+              {t('archiving')}
             </div>
           ) : archiveError ? (
             <div className="flex flex-col gap-1">
@@ -130,7 +134,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
                 onClick={handleArchive}
                 className="self-start text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
               >
-                Réessayer
+                {tCommon('retry')}
               </button>
             </div>
           ) : (

@@ -1,0 +1,11 @@
+{
+  "headerExplore": "Explore: {{name}}",
+  "headerNew": "New exploration",
+  "connected": "● connected",
+  "disconnected": "○ disconnected",
+  "sessionExpired": "Session expired.",
+  "resume": "Resume",
+  "messagePlaceholder": "Your message... (Shift+Enter for new line)",
+  "anonymousPlaceholder": "Describe what you want to explore... (Shift+Enter for new line)",
+  "send": "Send"
+}

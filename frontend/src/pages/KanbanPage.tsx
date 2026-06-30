@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { KanbanColumn } from '../components/KanbanColumn'
@@ -14,12 +15,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { triggerFF, resetTasks, stopExploreSession } from '../lib/api'
 import type { Change } from '../hooks/useChanges'
 
-const LEADING_COLUMNS = [
-  { title: 'To Explore', status: 'to-explore' },
-  { title: 'To Do', status: 'todo' },
-  { title: 'In Progress', status: 'in-progress' },
-]
-
 // Maps source status -> allowed drop target statuses
 const VALID_DROPS: Record<string, string[]> = {
   'to-explore': ['todo'],
@@ -32,6 +27,9 @@ interface Props {
 }
 
 export function KanbanPage({ workspaceId }: Props) {
+  const { t } = useTranslation('kanban')
+  const { t: tCommon } = useTranslation('common')
+
   const { data: changes = [], isLoading } = useChanges(workspaceId)
   const { data: archivedChanges = [] } = useArchivedChanges(workspaceId)
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
@@ -46,6 +44,12 @@ export function KanbanPage({ workspaceId }: Props) {
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const leadingColumns = [
+    { title: t('columns.toExplore'), status: 'to-explore' },
+    { title: t('columns.toDo'), status: 'todo' },
+    { title: t('columns.inProgress'), status: 'in-progress' },
+  ] as const
 
   const handleDragStart = (event: DragStartEvent) => {
     const change = changes.find(c => c.name === (event.active.id as string))
@@ -127,7 +131,7 @@ export function KanbanPage({ workspaceId }: Props) {
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
-      Chargement...
+      {tCommon('loading')}
     </div>
   )
 
@@ -141,7 +145,7 @@ export function KanbanPage({ workspaceId }: Props) {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Rechercher un change..."
+              placeholder={t('searchPlaceholder')}
               className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 pr-8 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
             />
             {searchQuery && (
@@ -159,7 +163,7 @@ export function KanbanPage({ workspaceId }: Props) {
         <div className="flex-1 flex flex-row overflow-hidden min-h-0">
           <div className="flex-1 overflow-x-auto min-h-0 p-4">
             <div className="flex gap-3 h-full min-w-max">
-              {LEADING_COLUMNS.map(col => (
+              {leadingColumns.map(col => (
                 <KanbanColumn
                   key={col.status}
                   title={col.title}
@@ -179,7 +183,7 @@ export function KanbanPage({ workspaceId }: Props) {
               {/* Done + Archived stacked in shared slot */}
               <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
                 <KanbanColumn
-                  title="Done"
+                  title={t('columns.done')}
                   status="done"
                   changes={filteredChanges.filter(c => c.kanban_status === 'done')}
                   workspaceId={workspaceId}
@@ -191,7 +195,7 @@ export function KanbanPage({ workspaceId }: Props) {
                 />
                 <div className="h-px bg-slate-200 shrink-0" />
                 <KanbanColumn
-                  title="Archived"
+                  title={t('columns.archived')}
                   status="archived"
                   changes={filteredArchived}
                   workspaceId={workspaceId}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
+import { useTranslation } from 'react-i18next'
 import { useSpec, useSpecs } from '../hooks/useSpecs'
 import { useSpecsOverview } from '../hooks/useSpecsOverview'
 import { TableOfContents, type Heading } from '../components/TableOfContents'
@@ -57,6 +58,8 @@ function makeHeadingComponent(tag: 'h1' | 'h2' | 'h3', seen: Map<string, number>
 type Mode = 'content' | 'history'
 
 export function SpecsPage({ workspaceId }: Props) {
+  const { t } = useTranslation('specs')
+  const { t: tCommon } = useTranslation('common')
   const [mode, setMode] = useState<Mode>('content')
   const { data: specs = [], isLoading } = useSpecs(workspaceId)
   const { data: overview } = useSpecsOverview(workspaceId)
@@ -98,7 +101,7 @@ export function SpecsPage({ workspaceId }: Props) {
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
-      Chargement...
+      {tCommon('loading')}
     </div>
   )
 
@@ -108,7 +111,7 @@ export function SpecsPage({ workspaceId }: Props) {
       <aside className="w-44 shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col">
         <div className="px-4 pt-4 pb-2 shrink-0 flex flex-col gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-            Spécifications
+            {t('title')}
           </span>
           {/* Mode toggle */}
           <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5 self-start">
@@ -120,7 +123,7 @@ export function SpecsPage({ workspaceId }: Props) {
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              Contenu
+              {t('modeContent')}
             </button>
             <button
               onClick={() => setMode('history')}
@@ -130,7 +133,7 @@ export function SpecsPage({ workspaceId }: Props) {
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              Historique
+              {t('modeHistory')}
             </button>
           </div>
         </div>
@@ -139,7 +142,7 @@ export function SpecsPage({ workspaceId }: Props) {
             <div className="px-2 pb-2 flex flex-col gap-0.5">
               {specs.length === 0 && (
                 <p className="text-xs text-slate-400 px-2 py-2">
-                  Aucune spécification actée pour ce workspace
+                  {t('emptyState')}
                 </p>
               )}
               {specs.map(s => (
@@ -175,7 +178,7 @@ export function SpecsPage({ workspaceId }: Props) {
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
-              Chargement...
+              {tCommon('loading')}
             </div>
           )}
           {historyDetailOpen && (
@@ -207,7 +210,7 @@ export function SpecsPage({ workspaceId }: Props) {
                   onClick={handleEdit}
                   className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors"
                 >
-                  Éditer
+                  {t('edit')}
                 </button>
               </div>
 
@@ -238,7 +241,7 @@ export function SpecsPage({ workspaceId }: Props) {
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-slate-400">
-            Sélectionnez une spécification pour en afficher le contenu.
+            {t('selectPrompt')}
           </p>
         </div>
       )}

@@ -1,2 +1,9 @@
 schema: spec-driven
-created: 2026-06-29
+created: "2026-06-29"
+tags:
+    type: ""
+    complexity: 2
+    components:
+        - kanban-board
+    _auto: true
+    _tagged_at: "2026-06-30"

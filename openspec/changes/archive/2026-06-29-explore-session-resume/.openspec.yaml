@@ -1,2 +1,10 @@
 schema: spec-driven
-created: 2026-06-29
+created: "2026-06-29"
+tags:
+    type: ""
+    complexity: 3
+    components:
+        - explore-session
+        - workspace-management
+    _auto: true
+    _tagged_at: "2026-06-30"

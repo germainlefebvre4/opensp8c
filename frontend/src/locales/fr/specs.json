@@ -1,0 +1,8 @@
+{
+  "title": "Spécifications",
+  "emptyState": "Aucune spécification actée pour ce workspace",
+  "selectPrompt": "Sélectionnez une spécification pour en afficher le contenu.",
+  "edit": "Éditer",
+  "modeContent": "Contenu",
+  "modeHistory": "Historique"
+}
