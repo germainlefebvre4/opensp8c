@@ -73,6 +73,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)
 		r.Get("/workspaces/{id}/specs/{name}", specsHandler.GetSpec)
+		r.Put("/workspaces/{id}/specs/{name}", specsHandler.UpdateSpec)
 
 		r.Post("/workspaces/{id}/changes/{name}/archive", archiveHandler.Archive)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/reset", ffHandler.ResetTasks)
@@ -135,7 +136,7 @@ func serveIndex(w http.ResponseWriter, distFS fs.FS) {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

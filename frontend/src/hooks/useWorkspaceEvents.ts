@@ -26,6 +26,11 @@ export function useWorkspaceEvents(workspaceId: string | null) {
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     })
 
+    es.addEventListener('spec_updated', (e: MessageEvent) => {
+      const data = JSON.parse(e.data) as { name: string }
+      qc.invalidateQueries({ queryKey: ['spec', workspaceId, data.name] })
+    })
+
     return () => {
       es.close()
     }

@@ -52,3 +52,29 @@ func (h *SpecsHandler) GetSpec(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(spec)
 }
+
+func (h *SpecsHandler) UpdateSpec(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	name := chi.URLParam(r, "name")
+
+	path, ok := h.ws.workspacePath(id)
+	if !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := openspec.WriteSpec(path, name, body.Content); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

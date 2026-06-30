@@ -1,0 +1,9 @@
+{
+  "defaultAgent": "claude",
+  "sessions": {
+    "8b4a8cb8/change-semantic-tags": {
+      "agent": "claude",
+      "claudeSessionId": "ee4dd659-c2ec-4ca3-a700-f57153ff603f"
+    }
+  }
+}

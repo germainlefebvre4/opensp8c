@@ -55,6 +55,9 @@ func (s *WatcherService) StartWatching(workspaceID, workspacePath string) error 
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
 	ww.tryAddChangesDir(changesDir)
 
+	specsDir := filepath.Join(workspacePath, "openspec", "specs")
+	ww.tryAddSpecsDir(specsDir)
+
 	s.watchers[workspaceID] = ww
 	go ww.run()
 	return nil
@@ -166,6 +169,24 @@ func (ww *workspaceWatcher) stop() {
 	ww.fw.Close()
 }
 
+func (ww *workspaceWatcher) tryAddSpecsDir(specsDir string) {
+	if _, err := os.Stat(specsDir); err != nil {
+		return
+	}
+	_ = ww.fw.Add(specsDir)
+
+	entries, err := os.ReadDir(specsDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		_ = ww.fw.Add(filepath.Join(specsDir, e.Name()))
+	}
+}
+
 func (ww *workspaceWatcher) tryAddChangesDir(changesDir string) {
 	if _, err := os.Stat(changesDir); err != nil {
 		return
@@ -193,6 +214,7 @@ func (ww *workspaceWatcher) run() {
 	openspecDir := filepath.Join(ww.workspacePath, "openspec")
 	changesDir := filepath.Join(openspecDir, "changes")
 	archiveDir := filepath.Join(changesDir, "archive")
+	specsDir := filepath.Join(openspecDir, "specs")
 
 	for {
 		select {
@@ -200,7 +222,7 @@ func (ww *workspaceWatcher) run() {
 			if !ok {
 				return
 			}
-			ww.handleEvent(ev, changesDir, archiveDir)
+			ww.handleEvent(ev, changesDir, archiveDir, specsDir)
 		case _, ok := <-ww.fw.Errors:
 			if !ok {
 				return
@@ -209,12 +231,16 @@ func (ww *workspaceWatcher) run() {
 	}
 }
 
-func (ww *workspaceWatcher) handleEvent(ev fsnotify.Event, changesDir, archiveDir string) {
+func (ww *workspaceWatcher) handleEvent(ev fsnotify.Event, changesDir, archiveDir, specsDir string) {
 	path := ev.Name
 
-	// openspec/ → watch changes/ when created
+	// openspec/ → watch changes/ or specs/ when created
 	if path == changesDir && ev.Has(fsnotify.Create) {
 		ww.tryAddChangesDir(changesDir)
+		return
+	}
+	if path == specsDir && ev.Has(fsnotify.Create) {
+		ww.tryAddSpecsDir(specsDir)
 		return
 	}
 
@@ -262,6 +288,25 @@ func (ww *workspaceWatcher) handleEvent(ev fsnotify.Event, changesDir, archiveDi
 			if name == "tasks.md" || name == ".openspec.yaml" {
 				ww.debounce(changeName, Event{Type: "change_updated", Name: changeName})
 			}
+		}
+	}
+
+	// specs/ → watch new spec dirs dynamically
+	if parentDir == specsDir {
+		if ev.Has(fsnotify.Create) {
+			info, err := os.Stat(path)
+			if err == nil && info.IsDir() {
+				_ = ww.fw.Add(path)
+			}
+		}
+		return
+	}
+
+	// specs/<name>/ → debounce on spec.md writes
+	if filepath.Dir(parentDir) == specsDir {
+		specName := filepath.Base(parentDir)
+		if name == "spec.md" && (ev.Has(fsnotify.Write) || ev.Has(fsnotify.Create)) {
+			ww.debounce("spec:"+specName, Event{Type: "spec_updated", Name: specName})
 		}
 	}
 }

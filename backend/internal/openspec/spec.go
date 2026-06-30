@@ -38,3 +38,8 @@ func ReadSpec(workspacePath, specName string) (*Spec, error) {
 	}
 	return &Spec{Name: specName, Content: string(data)}, nil
 }
+
+func WriteSpec(workspacePath, specName, content string) error {
+	specPath := filepath.Join(workspacePath, "openspec", "specs", specName, "spec.md")
+	return os.WriteFile(specPath, []byte(content), 0644)
+}
