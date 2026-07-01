@@ -11,9 +11,34 @@ type WorkspaceConfig struct {
 	Path string `yaml:"path"`
 }
 
+const (
+	defaultChangeLogRetentionDays  = 15
+	defaultExploreLogRetentionDays = 15
+)
+
 type Config struct {
-	Workspaces []WorkspaceConfig `yaml:"workspaces"`
-	configPath string
+	Workspaces              []WorkspaceConfig `yaml:"workspaces"`
+	ChangeLogRetentionDays  int               `yaml:"changeLogRetentionDays,omitempty"`
+	ExploreLogRetentionDays int               `yaml:"exploreLogRetentionDays,omitempty"`
+	configPath              string
+}
+
+// ChangeLogRetentionDaysOrDefault returns the configured retention window for
+// change conversation logs, falling back to the default when unset or invalid.
+func (c *Config) ChangeLogRetentionDaysOrDefault() int {
+	if c.ChangeLogRetentionDays <= 0 {
+		return defaultChangeLogRetentionDays
+	}
+	return c.ChangeLogRetentionDays
+}
+
+// ExploreLogRetentionDaysOrDefault returns the configured retention window for
+// unpromoted exploration conversation logs, falling back to the default when unset or invalid.
+func (c *Config) ExploreLogRetentionDaysOrDefault() int {
+	if c.ExploreLogRetentionDays <= 0 {
+		return defaultExploreLogRetentionDays
+	}
+	return c.ExploreLogRetentionDays
 }
 
 func Load(path string) (*Config, error) {

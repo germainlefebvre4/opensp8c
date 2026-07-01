@@ -1,2 +1,11 @@
 schema: spec-driven
-created: 2026-07-01
+created: "2026-07-01"
+tags:
+    type: backend
+    complexity: 4
+    components:
+        - explore-session
+        - conversation-store
+        - session-log-retention
+    _auto: true
+    _tagged_at: "2026-07-01"

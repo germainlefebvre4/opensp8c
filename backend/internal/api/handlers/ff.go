@@ -87,7 +87,7 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil)
 	if err != nil {
 		cancel()
 		logFile.Close()

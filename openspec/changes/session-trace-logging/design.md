@@ -17,7 +17,7 @@ Trois composants existants sont concernés :
 - Permettre la suppression immédiate d'un log sur suppression explicite d'un ghost.
 
 **Non-Goals:**
-- Fix des bugs identifiés durant l'investigation (ghost card non créée, hang après le 2e message) — cette trace est l'outil de diagnostic, pas la correction. Change séparée une fois la cause confirmée via les logs.
+- Fix des bugs identifiés durant l'investigation (ghost card non créée, hang après le 2e message) — cette trace est l'outil de diagnostic, pas la correction. Change séparée une fois la cause confirmée via les logs. **Exception ciblée** : D7 fait remonter `resumeGhostId` au backend et corrige la création d'un ghost dupliqué à la reprise — un gap distinct découvert en implémentant la tâche 5.3 (aucun point d'accroche backend pour `lastActivityAt` à la reprise), pas une tentative de corriger le bug de création de ghost card lui-même, qui reste ouvert.
 - Exposer ces logs de chat dans une UI (l'onglet "Log" existant reste scopé aux runs `ff` pour l'instant) — lecture prévue en V1 via accès disque direct.
 - Journaliser la sortie du subprocess FF lancé depuis `runPromoteFF` (`explore.go`) — actuellement non capturée du tout ; laissé hors scope, notée en Impact de suivi.
 - Compaction/rotation par taille de fichier — seule la rétention par âge (jours) est traitée.
@@ -84,6 +84,16 @@ Un ticker (période raisonnable : 1h, largement suffisant pour une granularité 
 2. `preferences.json` → explorations du workspace, compare `LastActivityAt` à `exploreLogRetentionDays`, supprime `conversations/<wsID>/_explore/<ghostId>/` si expiré (le ghost record lui-même n'est pas touché — il suit son propre cycle de vie, potentiellement déjà nettoyé par ailleurs).
 
 Même famille de pattern que `reapLoop` déjà présent dans `session/manager.go`, dans un nouveau fichier `backend/internal/conversation/retention.go` pour ne pas alourdir `store.go`.
+
+### D7 — Reprise : transmission de l'id du ghost au backend, réutilisation comme id de session
+
+Constat en cours d'implémentation : `CreateAnonymousSession` ne recevait jusqu'ici aucune information sur une éventuelle reprise — chaque appel démarrait une session anonyme avec un id généré aléatoirement, sans lien avec le ghost d'origine. Sans ce lien, `TouchExplorationActivity` (D4) n'a aucun ghost à mettre à jour lors d'une reprise, et une reprise créait en pratique un second ghost card orphelin (une fois le bug de création de ghost card corrigé séparément).
+
+Décision : le frontend transmet `resumeGhostId` dans le corps de `POST /explore/sessions`. Le backend valide qu'un `ExplorationRecord` existe pour cet id dans le workspace ; si oui, il est réutilisé comme id de la nouvelle session anonyme (`Manager.StartAnonymous(workspaceID, workspacePath, sessionID)`) au lieu d'un id généré. `StartAnonymous` réutilise une session déjà vivante sous cet id si elle existe (même sémantique de réutilisation que `Manager.Start` pour les sessions nommées), sinon démarre un nouveau subprocess sous le même id.
+
+**Conséquence directe pour cette change** : le nouveau (ou réutilisé) log de conversation atterrit naturellement sous le même `_explore/<ghostId>/chat/` que la session d'origine — aucune logique de fusion supplémentaire n'est nécessaire au niveau du `ConversationStore` pour ce cas (contrairement à la promotion, où la destination change de nom).
+
+**Pourquoi pas une table de correspondance séparée** (id de session ↔ id de ghost) : réutiliser directement l'id du ghost comme id de session élimine le besoin d'indirection — c'est déjà l'invariant implicite du reste du code (`createGhostRecord(workspaceID, sessionID)` pose `record.ID = sessionID`).
 
 ## Risks / Trade-offs
 

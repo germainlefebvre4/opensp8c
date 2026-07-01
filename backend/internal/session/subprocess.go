@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 )
 
 const baseSystemPrompt = "Never use AskUserQuestion or interactive choice prompts. Communicate only through plain conversational text."
@@ -23,7 +24,10 @@ type Subprocess struct {
 //   - empty: no session flags (anonymous sessions)
 //   - non-empty, resume=false: passes --session-id <claudeSessionID>
 //   - non-empty, resume=true: passes --resume <claudeSessionID>
-func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool) (*Subprocess, error) {
+//
+// sessionLog is optional (nil-safe): when provided, stderr lines are also
+// written to it in addition to the existing log.Printf.
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog) (*Subprocess, error) {
 	args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
 	if claudeSessionID != "" {
 		if resume {
@@ -56,7 +60,9 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			log.Printf("[subprocess stderr] %s", scanner.Text())
+			text := scanner.Text()
+			log.Printf("[subprocess stderr] %s", text)
+			sessionLog.WriteErr(text)
 		}
 	}()
 

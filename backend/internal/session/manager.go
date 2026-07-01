@@ -8,11 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
@@ -35,7 +37,13 @@ type Session struct {
 	messages [][]byte
 	notify   chan struct{} // buffered(1): signals new messages available
 	done     chan struct{} // closed when subprocess stdout ends
+
+	log *conversation.SessionLog
 }
+
+// Log returns the session's conversation log (may be nil if logging is disabled
+// or failed to open). All SessionLog methods are nil-safe.
+func (s *Session) Log() *conversation.SessionLog { return s.log }
 
 func (s *Session) Proc() *Subprocess {
 	s.mu.Lock()
@@ -48,6 +56,7 @@ func (s *Session) Stop() {
 	s.cancel()
 	s.proc.CloseStdin()
 	s.proc.Wait()
+	s.log.Close()
 }
 
 // Snapshot returns a copy of the message buffer and the cursor (buffer length at snapshot time).
@@ -77,18 +86,35 @@ func (s *Session) Notify() <-chan struct{} { return s.notify }
 func (s *Session) Done() <-chan struct{}   { return s.done }
 
 type Manager struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-	prefs    *preferences.Service
+	mu        sync.Mutex
+	sessions  map[string]*Session
+	prefs     *preferences.Service
+	convStore *conversation.Store
 }
 
-func NewManager(prefs *preferences.Service) *Manager {
+func NewManager(prefs *preferences.Service, convStore *conversation.Store) *Manager {
 	m := &Manager{
-		sessions: make(map[string]*Session),
-		prefs:    prefs,
+		sessions:  make(map[string]*Session),
+		prefs:     prefs,
+		convStore: convStore,
 	}
 	go m.reapLoop()
 	return m
+}
+
+// openSessionLog opens a chat SessionLog via resolve, logging (not failing) on error.
+// Returns nil if convStore is unset or the file could not be opened.
+func (m *Manager) openSessionLog(resolve func(ts string) (*os.File, error), ctxLabel string) *conversation.SessionLog {
+	if m.convStore == nil {
+		return nil
+	}
+	ts := time.Now().UTC().Format("2006-01-02T15-04-05Z")
+	f, err := resolve(ts)
+	if err != nil {
+		log.Printf("[session] failed to open chat log for %s: %v", ctxLabel, err)
+		return nil
+	}
+	return conversation.NewSessionLog(f)
 }
 
 func sessionKey(workspaceID, changeName string) string {
@@ -212,15 +238,20 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 		claudeSessionID = newClaudeSessionID()
 	}
 
+	sessLog := m.openSessionLog(func(ts string) (*os.File, error) {
+		return m.convStore.OpenRun(workspaceID, changeName, "chat", ts)
+	}, key)
+
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, isResume)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, isResume, sessLog)
 	if err != nil && isResume {
 		// Fallback: --resume failed at process start, try without resume
 		log.Printf("[session] --resume failed for %s/%s, starting fresh: %v", workspaceID, changeName, err)
-		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, false)
+		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, false, sessLog)
 	}
 	if err != nil {
 		cancel()
+		sessLog.Close()
 		return nil, err
 	}
 
@@ -239,6 +270,7 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 		lastUsed: time.Now(),
 		notify:   make(chan struct{}, 1),
 		done:     make(chan struct{}),
+		log:      sessLog,
 	}
 
 	injectAgentInfo(s, resolved)
@@ -259,25 +291,47 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 			},
 		}
 		initMsg, _ := json.Marshal(initPayload)
+		s.log.WriteLine("in", initMsg)
 		proc.Write(append(initMsg, '\n'))
 	}
 
 	return s, nil
 }
 
-// StartAnonymous creates a session without a known changeName, identified by a UUID.
-// The session will be promoted to a named session when the LLM emits the change_created marker.
-func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Session, error) {
-	sessionID := newSessionID()
+// StartAnonymous creates a session without a known changeName, identified by
+// sessionID if given, or a freshly generated one otherwise. The session will
+// be promoted to a named session when the LLM emits the change_created marker.
+//
+// Passing an existing ghost id as sessionID resumes it: if a live session
+// still exists under that id it is returned as-is (mirrors Start's
+// reuse-if-active semantics), otherwise a new subprocess is started reusing
+// the same id, so its conversation log lands in the same _explore/<id>/
+// directory as the original session.
+func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (string, *Session, error) {
+	if sessionID == "" {
+		sessionID = newSessionID()
+	}
 	key := anonKey(workspaceID, sessionID)
+
+	m.mu.Lock()
+	if s, ok := m.sessions[key]; ok {
+		m.mu.Unlock()
+		return sessionID, s, nil
+	}
+	m.mu.Unlock()
 
 	resolved := m.resolveAgent(workspaceID, "")
 
+	sessLog := m.openSessionLog(func(ts string) (*os.File, error) {
+		return m.convStore.OpenExploreRun(workspaceID, sessionID, "chat", ts)
+	}, key)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	// Anonymous sessions use no session flags (no persistence, no resume)
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog)
 	if err != nil {
 		cancel()
+		sessLog.Close()
 		return "", nil, err
 	}
 
@@ -287,6 +341,7 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath string) (string, *Se
 		lastUsed: time.Now(),
 		notify:   make(chan struct{}, 1),
 		done:     make(chan struct{}),
+		log:      sessLog,
 	}
 
 	injectAgentInfo(s, resolved)
@@ -325,6 +380,7 @@ func (m *Manager) startFanOut(s *Session, key string, workspaceID string, anonym
 		for scanner.Scan() {
 			b := make([]byte, len(scanner.Bytes()))
 			copy(b, scanner.Bytes())
+			s.log.WriteLine("out", b)
 
 			s.msgMu.Lock()
 			if len(s.messages) >= maxMessages {

@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
@@ -53,14 +55,15 @@ func extractGhostNamed(line []byte) string {
 }
 
 type ExploreHandler struct {
-	ws      *WorkspaceHandler
-	mgr     *session.Manager
-	prefs   *preferences.Service
-	watcher *watcher.WatcherService
+	ws        *WorkspaceHandler
+	mgr       *session.Manager
+	prefs     *preferences.Service
+	watcher   *watcher.WatcherService
+	convStore *conversation.Store
 }
 
-func NewExploreHandler(ws *WorkspaceHandler, mgr *session.Manager, prefs *preferences.Service, watcherSvc *watcher.WatcherService) *ExploreHandler {
-	return &ExploreHandler{ws: ws, mgr: mgr, prefs: prefs, watcher: watcherSvc}
+func NewExploreHandler(ws *WorkspaceHandler, mgr *session.Manager, prefs *preferences.Service, watcherSvc *watcher.WatcherService, convStore *conversation.Store) *ExploreHandler {
+	return &ExploreHandler{ws: ws, mgr: mgr, prefs: prefs, watcher: watcherSvc, convStore: convStore}
 }
 
 func (h *ExploreHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +101,10 @@ func (h *ExploreHandler) StopSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateAnonymousSession creates an anonymous explore session and returns its sessionId.
+// If the request body carries a resumeGhostId matching an existing exploration
+// for this workspace, the session reuses that id (reattaching to a still-live
+// subprocess, or starting a fresh one under the same id) instead of minting a
+// new, unrelated ghost.
 func (h *ExploreHandler) CreateAnonymousSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
 
@@ -107,10 +114,25 @@ func (h *ExploreHandler) CreateAnonymousSession(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	sessionID, _, err := h.mgr.StartAnonymous(workspaceID, workspacePath)
+	var body struct {
+		ResumeGhostID string `json:"resumeGhostId,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	resumeID := ""
+	if body.ResumeGhostID != "" && h.prefs != nil {
+		if h.prefs.GetExploration(body.ResumeGhostID, workspaceID) != nil {
+			resumeID = body.ResumeGhostID
+		}
+	}
+
+	sessionID, _, err := h.mgr.StartAnonymous(workspaceID, workspacePath, resumeID)
 	if err != nil {
 		http.Error(w, "failed to start session: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if resumeID != "" {
+		_ = h.prefs.TouchExplorationActivity(resumeID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -218,6 +240,13 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 				h.createGhostRecord(workspaceID, sessionID)
 			}
 		}
+		if anonymous && h.prefs != nil {
+			// Anchored on the user-message side only: an assistant turn never
+			// happens without a preceding user message, so this is enough to
+			// track recency without touching preferences.json on every streamed delta.
+			_ = h.prefs.TouchExplorationActivity(sessionID)
+		}
+		sess.Log().WriteLine("in", msg)
 		msg = append(msg, '\n')
 		if _, err := io.WriteString(sess.Proc(), string(msg)); err != nil {
 			break
@@ -296,6 +325,9 @@ func (h *ExploreHandler) DeleteGhost(w http.ResponseWriter, r *http.Request) {
 
 	h.mgr.StopAnonymous(workspaceID, ghostID)
 	_ = h.prefs.DeleteExploration(ghostID)
+	if h.convStore != nil {
+		_ = h.convStore.DeleteExplorationLogs(workspaceID, ghostID)
+	}
 	if h.watcher != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "exploration_deleted", Name: ghostID})
 	}
@@ -349,7 +381,7 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil)
 	if err != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: err.Error()})
 		return
@@ -374,6 +406,14 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	if err := proc.Wait(); err != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: err.Error()})
 		return
+	}
+
+	// FF succeeded: move the exploration's conversation logs under the new change
+	// before clearing the ghost record, so they survive the promotion.
+	if h.convStore != nil {
+		if err := h.convStore.MoveExplorationLogs(workspaceID, ghostID, ghostName); err != nil {
+			log.Printf("[explore] failed to move exploration logs for %s -> %s: %v", ghostID, ghostName, err)
+		}
 	}
 
 	// FF succeeded: clean up ghost record before broadcasting done

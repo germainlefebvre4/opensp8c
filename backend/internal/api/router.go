@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -42,13 +43,15 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 	prefsSvc := preferences.NewService(preferencesPath(cfgPath))
 	convStore := conversation.NewStore(conversationsPath(cfgPath))
-	mgr := session.NewManager(prefsSvc)
+	mgr := session.NewManager(prefsSvc, convStore)
 
 	watcherSvc := watcher.NewWatcherService()
 	for _, wc := range cfg.Workspaces {
 		absPath, _ := filepath.Abs(wc.Path)
 		_ = watcherSvc.StartWatching(workspace.StableID(absPath), absPath)
 	}
+
+	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, time.Hour)
 
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath)
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc)
@@ -57,7 +60,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
-	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc)
+	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore)
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 

@@ -173,7 +173,10 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     let cancelled = false
     const ctx = resumeGhostId ? getStoredContext(resumeGhostId) : undefined
 
-    api.post<{ sessionId: string }>(`/api/workspaces/${workspaceId}/explore/sessions`)
+    api.post<{ sessionId: string }>(
+      `/api/workspaces/${workspaceId}/explore/sessions`,
+      resumeGhostId ? { resumeGhostId } : undefined
+    )
       .then(res => {
         if (cancelled) return
         const sid = res.data.sessionId

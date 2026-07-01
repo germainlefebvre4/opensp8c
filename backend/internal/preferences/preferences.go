@@ -14,11 +14,12 @@ type SessionEntry struct {
 }
 
 type ExplorationRecord struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspaceId"`
-	Name        string `json:"name"`
-	SessionID   string `json:"sessionId"`
-	CreatedAt   string `json:"createdAt"`
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspaceId"`
+	Name           string `json:"name"`
+	SessionID      string `json:"sessionId"`
+	CreatedAt      string `json:"createdAt"`
+	LastActivityAt string `json:"lastActivityAt"`
 }
 
 type Preferences struct {
@@ -136,8 +137,29 @@ func (s *Service) AddExploration(record ExplorationRecord) error {
 	if record.CreatedAt == "" {
 		record.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	if record.LastActivityAt == "" {
+		record.LastActivityAt = record.CreatedAt
+	}
 	p.Explorations = append(p.Explorations, record)
 	return s.save(p)
+}
+
+// TouchExplorationActivity updates LastActivityAt to now for the given exploration.
+// Used as the anchor for exploreLogRetentionDays; a no-op if the id is unknown.
+func (s *Service) TouchExplorationActivity(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	for i, e := range p.Explorations {
+		if e.ID == id {
+			p.Explorations[i].LastActivityAt = time.Now().UTC().Format(time.RFC3339)
+			return s.save(p)
+		}
+	}
+	return nil
 }
 
 func (s *Service) UpdateExplorationName(id, name string) error {

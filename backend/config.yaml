@@ -1,3 +1,7 @@
+# Days to keep conversation logs after a change is archived / an exploration
+# goes inactive without being promoted. Defaults to 15 if omitted or <= 0.
+changeLogRetentionDays: 15
+exploreLogRetentionDays: 15
 workspaces:
     - name: opensp8c
       path: /home/glefebvre/Documents/Dev/Perso/OpenSpec/opensp8c

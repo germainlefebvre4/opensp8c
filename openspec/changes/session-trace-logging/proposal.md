@@ -15,6 +15,7 @@ Quand une session de chat (change nommé ou exploration anonyme) reste bloquée 
 - Un job de purge périodique parcourt les logs existants et applique ces deux règles.
 - Le ghost record (`preferences.json`) gagne un champ `lastActivityAt`, mis à jour à chaque message et à la reprise de session, utilisé comme ancre du TTL `exploreLogRetentionDays`.
 - `backend/config.yaml` gagne deux nouveaux champs optionnels : `changeLogRetentionDays` et `exploreLogRetentionDays`.
+- **Scope étendu en cours d'implémentation** : la reprise d'une exploration transmet désormais l'id du ghost au backend, qui réutilise cet id comme identifiant de la nouvelle session anonyme (au lieu d'en générer un nouveau sans lien). Nécessaire pour que `lastActivityAt` puisse réellement être mis à jour à la reprise (le point d'accroche n'existait pas côté backend) ; corrige au passage la création d'un ghost dupliqué à chaque reprise.
 
 ## Capabilities
 
@@ -28,13 +29,16 @@ Quand une session de chat (change nommé ou exploration anonyme) reste bloquée 
 - `conversation-store` : ajout du kind `chat`, support d'un emplacement de stockage pré-promotion (hors `changeName`) pour les sessions d'exploration.
 - `exploration-promote-to-change` : la promotion déplace le dossier de logs de l'exploration vers celui du change créé au lieu de le laisser orphelin.
 - `explore-ghost-card` : le ghost record persiste `lastActivityAt`, mis à jour à chaque activité et à la reprise.
+- `exploration-conversation-persistence` : la reprise transmet l'id du ghost au backend, qui réutilise cet id pour la nouvelle session au lieu d'en générer un nouveau.
 
 ## Impact
 
 - `backend/internal/conversation/store.go` : nouveau kind `chat`, méthode de résolution de chemin pour les sessions d'exploration pré-promotion, méthode de déplacement de dossier (promotion).
 - `backend/internal/session/subprocess.go` : le goroutine de lecture stderr écrit désormais aussi vers le conversation store (en plus du `log.Printf` existant).
 - `backend/internal/session/manager.go` : le fan-out stdout et l'écriture stdin passent par le conversation store pour les sessions nommées et anonymes.
-- `backend/internal/api/handlers/explore.go` : `createGhostRecord`/`applyGhostName` mettent à jour `lastActivityAt` ; `PromoteGhost` déclenche le déplacement des logs ; `DeleteGhost` déclenche la suppression immédiate des logs.
+- `backend/internal/api/handlers/explore.go` : `createGhostRecord`/`applyGhostName` mettent à jour `lastActivityAt` ; `PromoteGhost` déclenche le déplacement des logs ; `DeleteGhost` déclenche la suppression immédiate des logs ; `CreateAnonymousSession` accepte et valide un `resumeGhostId`.
+- `backend/internal/session/manager.go` : `StartAnonymous` accepte un id de session explicite (reprise) et réutilise une session déjà vivante sous cet id.
+- `frontend/src/hooks/useAnonymousExploreSession.ts` : transmet `resumeGhostId` au backend à la création de session.
 - `backend/internal/preferences/preferences.go` : `ExplorationRecord.LastActivityAt`, méthode de mise à jour.
 - `backend/internal/config/config.go` : champs `ChangeLogRetentionDays`, `ExploreLogRetentionDays` avec défauts.
 - Nouveau composant `backend/internal/conversation/retention.go` (ou similaire) : job de purge périodique, lecture des dates d'archivage (`openspec/changes/archive/`) et de `lastActivityAt`.

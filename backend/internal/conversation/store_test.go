@@ -99,3 +99,114 @@ func TestStore_PartialFile(t *testing.T) {
 		t.Fatalf("expected 1 line from partial file, got %d", len(lines))
 	}
 }
+
+func TestStore_OpenExploreRun(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+
+	f, err := s.OpenExploreRun("ws1", "ghost1", "chat", "2026-07-01T10-00-00Z")
+	if err != nil {
+		t.Fatalf("OpenExploreRun: %v", err)
+	}
+	f.Write([]byte(`{"a":1}` + "\n"))
+	f.Close()
+
+	path := filepath.Join(dir, "ws1", "_explore", "ghost1", "chat", "2026-07-01T10-00-00Z.jsonl")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected file at %s: %v", path, err)
+	}
+}
+
+func TestStore_MoveExplorationLogs_NoExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+
+	f, _ := s.OpenExploreRun("ws1", "ghost1", "chat", "2026-07-01T10-00-00Z")
+	f.Write([]byte(`{"a":1}` + "\n"))
+	f.Close()
+
+	if err := s.MoveExplorationLogs("ws1", "ghost1", "my-change"); err != nil {
+		t.Fatalf("MoveExplorationLogs: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "ws1", "_explore", "ghost1")); !os.IsNotExist(err) {
+		t.Fatalf("expected source dir removed, got err=%v", err)
+	}
+
+	lines, err := s.Load("ws1", "my-change", "chat", "2026-07-01T10-00-00Z")
+	if err != nil {
+		t.Fatalf("Load moved run: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+}
+
+func TestStore_MoveExplorationLogs_MergesIntoExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+
+	ff, _ := s.OpenRun("ws1", "my-change", "ff", "2026-07-01T09-00-00Z")
+	ff.Write([]byte(`{"existing":true}` + "\n"))
+	ff.Close()
+
+	f, _ := s.OpenExploreRun("ws1", "ghost1", "chat", "2026-07-01T10-00-00Z")
+	f.Write([]byte(`{"a":1}` + "\n"))
+	f.Close()
+
+	if err := s.MoveExplorationLogs("ws1", "ghost1", "my-change"); err != nil {
+		t.Fatalf("MoveExplorationLogs: %v", err)
+	}
+
+	ffLines, err := s.Load("ws1", "my-change", "ff", "2026-07-01T09-00-00Z")
+	if err != nil || len(ffLines) != 1 {
+		t.Fatalf("expected pre-existing ff run intact, lines=%v err=%v", ffLines, err)
+	}
+	chatLines, err := s.Load("ws1", "my-change", "chat", "2026-07-01T10-00-00Z")
+	if err != nil || len(chatLines) != 1 {
+		t.Fatalf("expected moved chat run, lines=%v err=%v", chatLines, err)
+	}
+}
+
+func TestStore_MoveExplorationLogs_NothingToMove(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if err := s.MoveExplorationLogs("ws1", "ghost-never-wrote", "my-change"); err != nil {
+		t.Fatalf("expected no-op for exploration with no logs, got: %v", err)
+	}
+}
+
+func TestStore_DeleteExplorationLogs_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+
+	f, _ := s.OpenExploreRun("ws1", "ghost1", "chat", "2026-07-01T10-00-00Z")
+	f.Close()
+
+	if err := s.DeleteExplorationLogs("ws1", "ghost1"); err != nil {
+		t.Fatalf("DeleteExplorationLogs: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ws1", "_explore", "ghost1")); !os.IsNotExist(err) {
+		t.Fatalf("expected dir removed")
+	}
+	if err := s.DeleteExplorationLogs("ws1", "ghost1"); err != nil {
+		t.Fatalf("expected idempotent delete, got: %v", err)
+	}
+}
+
+func TestStore_DeleteChangeLogs_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+
+	f, _ := s.OpenRun("ws1", "my-change", "ff", "2026-07-01T09-00-00Z")
+	f.Close()
+
+	if err := s.DeleteChangeLogs("ws1", "my-change"); err != nil {
+		t.Fatalf("DeleteChangeLogs: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ws1", "my-change")); !os.IsNotExist(err) {
+		t.Fatalf("expected dir removed")
+	}
+	if err := s.DeleteChangeLogs("ws1", "my-change"); err != nil {
+		t.Fatalf("expected idempotent delete, got: %v", err)
+	}
+}
