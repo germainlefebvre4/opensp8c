@@ -22,5 +22,6 @@ The Matrice view of the Timeline hard-codes one column per calendar day and caps
 ## Impact
 
 - `frontend/src/components/TimelineSpecMatrix.tsx`: column/bucket computation (`useMemo`), cell sizing, intensity scale, date label formatting, granularity selector UI.
-- New: a width-measurement mechanism (e.g. `ResizeObserver`-based hook) — first use of this pattern in the frontend; scope it as a small local hook rather than a shared utility unless another consumer emerges.
+- New: a width-measurement mechanism (`ResizeObserver`-based `useContainerWidth` hook, in `frontend/src/hooks/` alongside the project's other hooks) — first use of this pattern in the frontend.
+- New: `frontend/src/lib/bucketing.ts` (bucket key/label derivation) and `frontend/src/lib/gridSizing.ts` (elastic cell-width math), each with unit tests (`vitest`, added as a new devDependency).
 - No API or data-shape changes — `ChangeRef.date` (`YYYY-MM-DD`) remains the source field; bucketing is purely client-side derivation.

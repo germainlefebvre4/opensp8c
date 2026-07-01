@@ -32,8 +32,8 @@ Alternative considered: key every granularity by its bucket-start date (e.g. wee
 
 Alternatives considered: fixed cell width + always scroll (simpler, but never visually "fills" the space as requested); pure elastic with no floor (illegible at fine granularity over long history — reintroduces the original problem in a different form).
 
-**3. Width measurement via a small local `ResizeObserver` hook.**
-First use of `ResizeObserver` in this codebase. Scoped as a local hook (e.g. `useContainerWidth`) inside/near the component rather than a shared utility, since there's no second consumer yet — avoid premature abstraction.
+**3. Width measurement via a `ResizeObserver` hook, placed alongside the project's other hooks.**
+First use of `ResizeObserver` in this codebase. Implemented as `useContainerWidth` in `frontend/src/hooks/`, the same directory every other hook in this project already lives in — following that established convention outweighs the originally-planned "keep it local to avoid premature abstraction," since it's not actually a new pattern for *where hooks live*, only for what one hook does internally.
 
 **4. Default granularity computed once at mount.**
 Evaluate Jour → Semaine → Mois → Trimestre (finest first) against the full history span and the width measured at mount; pick the finest one whose full bucket count fits at `MIN_CELL_PX` without requiring scroll. Falls back to Trimestre (coarsest) if even that needs scroll. Recomputed only if the underlying data materially changes the history span — never on a pure layout resize.
