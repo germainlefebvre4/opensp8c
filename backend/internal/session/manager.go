@@ -19,7 +19,11 @@ import (
 const inactivityTimeout = 30 * time.Minute
 const maxMessages = 500
 
-const anonSystemPrompt = `You are in free exploration mode. The user will describe what they want to build or explore. When you create a change using /opsx:ff or /opsx:new, output on its own line exactly (no extra text on that line): {"event":"change_created","name":"THE_EXACT_CHANGE_NAME"}`
+const anonSystemPrompt = `You are in free exploration mode. The user will describe what they want to build or explore. Navigate files and explore the codebase to help them think through their ideas.
+At the very START of your FIRST response, output on its own line exactly (no other text on that line):
+{"event":"ghost_named","name":"THE_KEBAB_CASE_NAME"}
+where THE_KEBAB_CASE_NAME is a concise kebab-case name (3-5 words) derived from the user's intent.
+Do NOT call /opsx:ff or /opsx:new autonomously. You are in exploration mode only. Wait for explicit instruction from the user to create a change.`
 
 type Session struct {
 	proc     *Subprocess
@@ -313,34 +317,14 @@ func (m *Manager) Promote(oldKey, workspaceID, changeName string) {
 }
 
 // startFanOut launches the goroutine that reads subprocess stdout into the message buffer.
-// When anonymous=true, it also scans for the change_created marker and triggers Promote.
 func (m *Manager) startFanOut(s *Session, key string, workspaceID string, anonymous bool) {
 	go func() {
 		defer close(s.done)
 		scanner := bufio.NewScanner(s.proc.Stdout())
 		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-		promoted := false
 		for scanner.Scan() {
 			b := make([]byte, len(scanner.Bytes()))
 			copy(b, scanner.Bytes())
-
-			if anonymous && !promoted {
-				if name := extractChangeCreated(b); name != "" {
-					promoted = true
-					m.Promote(key, workspaceID, name)
-					notification, _ := json.Marshal(map[string]string{
-						"type": "change_created",
-						"name": name,
-					})
-					s.msgMu.Lock()
-					s.messages = append(s.messages, notification)
-					s.msgMu.Unlock()
-					select {
-					case s.notify <- struct{}{}:
-					default:
-					}
-				}
-			}
 
 			s.msgMu.Lock()
 			if len(s.messages) >= maxMessages {
@@ -355,6 +339,29 @@ func (m *Manager) startFanOut(s *Session, key string, workspaceID string, anonym
 			}
 		}
 	}()
+}
+
+// ExtractGhostNamed parses a line for the ghost_named marker emitted by the LLM.
+// Tries JSON first, falls back to substring search for tolerance.
+func ExtractGhostNamed(line []byte) string {
+	var data map[string]interface{}
+	if err := json.Unmarshal(line, &data); err == nil {
+		if event, ok := data["event"].(string); ok && event == "ghost_named" {
+			if name, ok := data["name"].(string); ok && name != "" {
+				return name
+			}
+		}
+	}
+	s := string(line)
+	if strings.Contains(s, `"event":"ghost_named"`) || strings.Contains(s, `"event": "ghost_named"`) {
+		if idx := strings.Index(s, `"name":"`); idx != -1 {
+			rest := s[idx+8:]
+			if end := strings.Index(rest, `"`); end != -1 && end > 0 {
+				return rest[:end]
+			}
+		}
+	}
+	return ""
 }
 
 // extractChangeCreated parses a line for the change_created marker.

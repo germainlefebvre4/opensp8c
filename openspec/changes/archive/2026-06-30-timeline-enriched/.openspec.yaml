@@ -1,2 +1,10 @@
 schema: spec-driven
-created: 2026-06-30
+created: "2026-06-30"
+tags:
+    type: frontend
+    complexity: 3
+    components:
+        - specs-view
+        - task-progress
+    _auto: true
+    _tagged_at: "2026-07-01"

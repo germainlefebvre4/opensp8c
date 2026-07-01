@@ -39,11 +39,20 @@ export function useWorkspaceLiveState(workspaceId: string | null): {
     es.addEventListener('ff_done', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as { name: string }
       setFfMap(prev => ({ ...prev, [data.name]: null }))
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     })
 
     es.addEventListener('ff_failed', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as { name: string }
       setFfMap(prev => ({ ...prev, [data.name]: 'failed' }))
+    })
+
+    es.addEventListener('ghost_named', () => {
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+    })
+
+    es.addEventListener('exploration_deleted', () => {
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     })
 
     return () => es.close()

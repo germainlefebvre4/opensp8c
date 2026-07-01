@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Code, Eye } from 'lucide-react'
+import { X, Code, Eye, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
@@ -8,13 +8,15 @@ import { TypingBubble } from './TypingBubble'
 
 interface Props {
   workspaceId: string
+  resumeGhostId?: string
   onClose: () => void
-  onPromoted: (name: string) => void
+  onDelete?: () => void
+  onGhostReady?: (ghostId: string) => void
 }
 
-export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Props) {
+export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, onClose, onDelete, onGhostReady }: Props) {
   const { t } = useTranslation('explore')
-  const { messages, connected, expired, waiting, promotedName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId)
+  const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
   const [showSlowLabel, setShowSlowLabel] = useState(false)
@@ -26,10 +28,8 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Prop
   }, [messages, waiting])
 
   useEffect(() => {
-    if (promotedName) {
-      onPromoted(promotedName)
-    }
-  }, [promotedName, onPromoted])
+    if (ghostId) onGhostReady?.(ghostId)
+  }, [ghostId, onGhostReady])
 
   useEffect(() => {
     if (!waiting) {
@@ -60,12 +60,14 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Prop
     }
   }, [handleSend])
 
+  const displayName = ghostName ?? resumeGhostId ?? null
+
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-semibold text-slate-800 truncate">
-            {promotedName ? t('headerExplore', { name: promotedName }) : t('headerNew')}
+            {displayName ? t('headerExplore', { name: displayName }) : t('headerNew')}
           </span>
           <span className={`text-[10px] font-semibold shrink-0 ${connected ? 'text-emerald-500' : 'text-amber-500'}`}>
             {connected ? t('connected') : t('disconnected')}
@@ -93,6 +95,15 @@ export function ExploreAnonymousPanel({ workspaceId, onClose, onPromoted }: Prop
               <Eye size={13} />
             </button>
           </div>
+          {ghostId && onDelete && (
+            <button
+              onClick={onDelete}
+              title={t('deleteExploration')}
+              className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
           <button
             onClick={() => { stop(); onClose() }}
             className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"

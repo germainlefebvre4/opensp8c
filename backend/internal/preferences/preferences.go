@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type SessionEntry struct {
@@ -12,10 +13,19 @@ type SessionEntry struct {
 	ClaudeSessionId string `json:"claudeSessionId,omitempty"`
 }
 
+type ExplorationRecord struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspaceId"`
+	Name        string `json:"name"`
+	SessionID   string `json:"sessionId"`
+	CreatedAt   string `json:"createdAt"`
+}
+
 type Preferences struct {
 	DefaultAgent  string                  `json:"defaultAgent"`
 	Sessions      map[string]SessionEntry `json:"sessions,omitempty"`
 	SessionAgents map[string]string       `json:"sessionAgents,omitempty"` // legacy: migration source only
+	Explorations  []ExplorationRecord     `json:"explorations,omitempty"`
 }
 
 type Service struct {
@@ -114,4 +124,83 @@ func (s *Service) SetSession(workspaceID, changeName string, entry SessionEntry)
 	}
 	p.Sessions[workspaceID+"/"+changeName] = entry
 	return s.save(p)
+}
+
+func (s *Service) AddExploration(record ExplorationRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	if record.CreatedAt == "" {
+		record.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	p.Explorations = append(p.Explorations, record)
+	return s.save(p)
+}
+
+func (s *Service) UpdateExplorationName(id, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	for i, e := range p.Explorations {
+		if e.ID == id {
+			p.Explorations[i].Name = name
+			return s.save(p)
+		}
+	}
+	return nil
+}
+
+func (s *Service) GetExploration(id, workspaceID string) *ExplorationRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return nil
+	}
+	for _, e := range p.Explorations {
+		if e.ID == id && e.WorkspaceID == workspaceID {
+			r := e
+			return &r
+		}
+	}
+	return nil
+}
+
+func (s *Service) DeleteExploration(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	updated := p.Explorations[:0]
+	for _, e := range p.Explorations {
+		if e.ID != id {
+			updated = append(updated, e)
+		}
+	}
+	p.Explorations = updated
+	return s.save(p)
+}
+
+func (s *Service) ListExplorations(workspaceID string) []ExplorationRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return nil
+	}
+	var result []ExplorationRecord
+	for _, e := range p.Explorations {
+		if e.WorkspaceID == workspaceID {
+			result = append(result, e)
+		}
+	}
+	return result
 }

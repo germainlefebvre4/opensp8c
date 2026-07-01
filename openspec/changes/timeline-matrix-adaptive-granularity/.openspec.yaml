@@ -1,9 +1,10 @@
 schema: spec-driven
-created: "2026-06-30"
+created: "2026-07-01"
 tags:
     type: ""
-    complexity: 1
+    complexity: 3
     components:
-        - workspace-management
+        - specs-view
+        - ui-layout-modes
     _auto: true
     _tagged_at: "2026-07-01"

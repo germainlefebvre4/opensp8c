@@ -51,13 +51,13 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	}
 
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath)
-	kanbanHandler := handlers.NewKanbanHandler(wsHandler)
+	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc)
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
-	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr)
+	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc)
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 
@@ -92,6 +92,9 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Post("/workspaces/{id}/explore/sessions", exploreHandler.CreateAnonymousSession)
 		r.Get("/workspaces/{id}/explore/sessions/{sessionId}", exploreHandler.HandleAnonymousWS)
 		r.Delete("/workspaces/{id}/explore/sessions/{sessionId}", exploreHandler.StopAnonymousSession)
+
+		r.Post("/workspaces/{id}/explorations/{ghostId}/promote", exploreHandler.PromoteGhost)
+		r.Delete("/workspaces/{id}/explorations/{ghostId}", exploreHandler.DeleteGhost)
 
 		r.Get("/workspaces/{id}/events", eventsHandler.HandleSSE)
 

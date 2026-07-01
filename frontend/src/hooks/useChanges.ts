@@ -19,6 +19,8 @@ export interface Change {
   days_since_activity: number
   is_stale: boolean
   tags?: Tags
+  is_ghost?: boolean
+  ghost_id?: string
 }
 
 export function useChanges(workspaceId: string | null) {

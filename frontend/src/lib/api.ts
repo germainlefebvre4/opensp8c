@@ -80,3 +80,9 @@ export const getConversationRun = (workspaceId: string, changeName: string, kind
 
 export const retagChange = (workspaceId: string, changeName: string) =>
   api.post(`/api/workspaces/${workspaceId}/changes/${changeName}/retag`)
+
+export const promoteGhost = (workspaceId: string, ghostId: string, context: string) =>
+  api.post(`/api/workspaces/${workspaceId}/explorations/${ghostId}/promote`, { context })
+
+export const deleteGhost = (workspaceId: string, ghostId: string) =>
+  api.delete(`/api/workspaces/${workspaceId}/explorations/${ghostId}`)

@@ -1,6 +1,6 @@
 ## Purpose
 
-Permettre l'ouverture d'un chat d'exploration sans change préexistant, via une session anonyme identifiée par un UUID. Lorsque le LLM crée un change pendant la session, celle-ci est promue vers une session nommée sans interruption.
+Permettre l'ouverture d'un chat d'exploration sans change préexistant, via une session anonyme identifiée par un UUID. Le LLM nomme le ghost card via `ghost_named` sur le premier message, puis la promotion vers un change réel se fait uniquement via l'action explicite de l'utilisateur (`/promote`).
 
 ## Requirements
 
@@ -28,19 +28,19 @@ L'utilisateur SHALL pouvoir ouvrir un chat d'exploration depuis la colonne "To E
 - **THEN** `waiting` passe à `false` immédiatement
 
 ### Requirement: Promotion de session anonyme vers session nommée
-Quand le LLM crée un change pendant une session anonyme, la session SHALL être promue vers une session nommée sans interruption du chat ni perte du buffer de messages.
+La promotion automatique via `change_created` est remplacée par un mécanisme en deux temps : nommage du ghost card via `ghost_named` sur premier message, puis promotion explicite vers un change réel uniquement quand l'utilisateur déclenche FF.
 
-#### Scenario: LLM émet le marqueur de création de change
-- **WHEN** le subprocess de la session anonyme produit une ligne contenant `{"event":"change_created","name":"<changeName>"}` sur stdout
-- **THEN** le backend promeut la session (rekeying UUID → workspaceID/changeName), envoie `{"type":"change_created","name":"<changeName>"}` au WebSocket client, et continue le stream sans interruption
+#### Scenario: LLM émet ghost_named — ghost card renommé, session reste anonyme
+- **WHEN** le subprocess de la session anonyme produit une ligne contenant `{"event":"ghost_named","name":"<name>"}` sur stdout
+- **THEN** le backend met à jour le ghost record dans `preferences.json` avec le nouveau nom, émet un event SSE `ghost_named`, et la session reste une session anonyme — elle n'est PAS rekeyed vers une session nommée à ce stade
 
-#### Scenario: Promotion sans perte du buffer
-- **WHEN** la session est promue après N messages échangés
-- **THEN** le buffer de N messages est conservé intégralement sous la nouvelle clé
+#### Scenario: change_created ignoré en mode exploration anonyme
+- **WHEN** le subprocess d'une session anonyme produit une ligne contenant `{"event":"change_created","name":"<name>"}` sur stdout
+- **THEN** le backend ignore cet event — aucune promotion automatique, aucun change créé ; le ghost card reste inchangé dans "to-explore"
 
-#### Scenario: Marqueur JSON invalide ou partiel ignoré
-- **WHEN** le subprocess produit une ligne qui ressemble à `change_created` mais ne peut pas être parsée en JSON valide
-- **THEN** la ligne est ignorée pour la promotion (buffer normal) et le scan continue
+#### Scenario: Promotion vers change réel uniquement via /promote
+- **WHEN** l'endpoint `POST /api/workspaces/{id}/explorations/{ghostId}/promote` est appelé
+- **THEN** FF est déclenché (session existante ou contexte injecté) et le change est créé — c'est le seul chemin vers la création d'un change depuis une exploration anonyme
 
 ### Requirement: Notification frontend de création de change
 À la promotion d'une session, le frontend SHALL recevoir une notification via WebSocket et mettre à jour le kanban.

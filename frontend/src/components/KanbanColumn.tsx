@@ -11,6 +11,7 @@ interface Props {
   workspaceId: string
   onOpen: (name: string) => void
   onNew?: () => void
+  onDeleteGhost?: (ghostId: string) => void
   maxVisible?: number
   collapsible?: boolean
   className?: string
@@ -27,7 +28,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNew, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNew, onDeleteGhost, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
   const [collapsed, setCollapsed] = useState(false)
@@ -88,6 +89,7 @@ export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNe
               workspaceId={workspaceId}
               onOpen={onOpen}
               ffStatus={getFfStatus(ch.name)}
+              onDelete={onDeleteGhost}
             />
           ))}
           {hasMore && (

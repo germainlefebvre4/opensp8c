@@ -12,7 +12,8 @@ import { useChanges } from '../hooks/useChanges'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost } from '../lib/api'
+import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import type { Change } from '../hooks/useChanges'
 
 // Maps source status -> allowed drop target statuses
@@ -39,8 +40,12 @@ export function KanbanPage({ workspaceId }: Props) {
   const [detailOpen, setDetailOpen] = useState<{ name: string } | null>(null)
   const [exploreOpen, setExploreOpen] = useState<{ name: string } | null>(null)
   const [anonymousExploreOpen, setAnonymousExploreOpen] = useState(false)
+  const [resumeGhostId, setResumeGhostId] = useState<string | undefined>(undefined)
+  const [activeGhostId, setActiveGhostId] = useState<string | undefined>(undefined)
   const [panelHeight, setPanelHeight] = useState(320)
   const [resetDialog, setResetDialog] = useState<Change | null>(null)
+  const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
+  const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -73,7 +78,16 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const handleOpen = (name: string, status: string) => {
     if (status === 'to-explore') {
-      setExploreOpen({ name })
+      const change = changes.find(c => c.name === name)
+      if (change?.is_ghost) {
+        setResumeGhostId(change.ghost_id ?? undefined)
+        setActiveGhostId(change.ghost_id ?? undefined)
+        setExploreOpen(null)
+        setAnonymousExploreOpen(true)
+      } else {
+        setAnonymousExploreOpen(false)
+        setExploreOpen({ name })
+      }
     } else {
       setDetailOpen({ name })
     }
@@ -81,12 +95,9 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const handleNewExplore = () => {
     setExploreOpen(null)
+    setResumeGhostId(undefined)
+    setActiveGhostId(undefined)
     setAnonymousExploreOpen(true)
-  }
-
-  const handleAnonymousPromoted = (name: string) => {
-    setAnonymousExploreOpen(false)
-    setExploreOpen({ name })
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -106,6 +117,10 @@ export function KanbanPage({ workspaceId }: Props) {
     if (getFfStatus(changeName) === 'running') return
 
     if (targetStatus === 'todo') {
+      if (change.is_ghost) {
+        setPromoteDialog(change)
+        return
+      }
       if (exploreOpen?.name === changeName) {
         setExploreOpen(null)
         try { await stopExploreSession(workspaceId, changeName) } catch { /* ignore */ }
@@ -117,6 +132,42 @@ export function KanbanPage({ workspaceId }: Props) {
     } else if (targetStatus === 'to-explore') {
       setResetDialog(change)
     }
+  }
+
+  const handlePromoteConfirm = async () => {
+    if (!promoteDialog) return
+    const ghost = promoteDialog
+    setPromoteDialog(null)
+    if (!ghost.ghost_id) return
+    setFfRunning(ghost.name)
+    const context = getStoredContext(ghost.ghost_id)
+    try {
+      await promoteGhost(workspaceId, ghost.ghost_id, context)
+      clearStoredMessages(ghost.ghost_id)
+      setAnonymousExploreOpen(false)
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+    } catch { /* ignore */ }
+  }
+
+  const handleDeleteGhostById = async (ghostId: string) => {
+    try {
+      await deleteGhost(workspaceId, ghostId)
+      clearStoredMessages(ghostId)
+      setDeleteGhostDialog(null)
+      setAnonymousExploreOpen(false)
+      setActiveGhostId(undefined)
+      setResumeGhostId(undefined)
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+    } catch { /* ignore */ }
+  }
+
+  const handleDeleteGhostRequest = (ghostId: string) => {
+    setDeleteGhostDialog({ ghostId })
+  }
+
+  const handleDeleteFromPanel = () => {
+    const id = activeGhostId
+    if (id) setDeleteGhostDialog({ ghostId: id })
   }
 
   const handleResetConfirm = async () => {
@@ -172,6 +223,7 @@ export function KanbanPage({ workspaceId }: Props) {
                   workspaceId={workspaceId}
                   onOpen={name => handleOpen(name, col.status)}
                   onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
+                  onDeleteGhost={handleDeleteGhostRequest}
                   getFfStatus={getFfStatus}
                   dragSourceStatus={dragSourceStatus}
                   validDropSources={Object.entries(VALID_DROPS)
@@ -222,14 +274,16 @@ export function KanbanPage({ workspaceId }: Props) {
           )}
         </div>
 
-        {/* Bottom: ExploreBottomPanel (named) or ExploreAnonymousBottomPanel (new) */}
+        {/* Bottom: ExploreBottomPanel (named) or ExploreAnonymousBottomPanel (new/resume) */}
         {anonymousExploreOpen && (
           <ExploreAnonymousBottomPanel
             workspaceId={workspaceId}
+            resumeGhostId={resumeGhostId}
             height={panelHeight}
             onResize={setPanelHeight}
             onClose={() => setAnonymousExploreOpen(false)}
-            onPromoted={handleAnonymousPromoted}
+            onDelete={handleDeleteFromPanel}
+            onGhostReady={setActiveGhostId}
           />
         )}
         {exploreOpen && !anonymousExploreOpen && (
@@ -240,6 +294,65 @@ export function KanbanPage({ workspaceId }: Props) {
             onResize={setPanelHeight}
             onClose={() => setExploreOpen(null)}
           />
+        )}
+
+        {/* Promote ghost confirmation dialog */}
+        {promoteDialog && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-sm font-semibold text-slate-800">Créer un change ?</h2>
+                <p className="text-xs text-slate-500">
+                  L'exploration <span className="font-medium text-violet-700">{promoteDialog.name}</span> va être transformée en change et ajoutée à la colonne <span className="font-medium">À faire</span>.
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  L'agent Fast-Forward va générer les artéfacts (proposal, design, specs, tâches) à partir du contexte de l'exploration.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setPromoteDialog(null)}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handlePromoteConfirm}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors cursor-pointer font-medium"
+                >
+                  Créer le change
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete ghost confirmation dialog */}
+        {deleteGhostDialog && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-sm font-semibold text-slate-800">Abandonner cette exploration ?</h2>
+                <p className="text-xs text-slate-500">
+                  La conversation sera perdue. Cette action est irréversible.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setDeleteGhostDialog(null)}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => handleDeleteGhostById(deleteGhostDialog.ghostId)}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer font-medium"
+                >
+                  Abandonner
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {resetDialog && (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2 } from 'lucide-react'
 import { useDraggable } from '@dnd-kit/core'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
@@ -10,11 +10,12 @@ interface Props {
   workspaceId: string
   onOpen: (name: string) => void
   ffStatus: 'running' | 'failed' | null
+  onDelete?: (ghostId: string) => void
 }
 
 const DRAGGABLE_STATUSES = new Set(['to-explore', 'todo', 'in-progress'])
 
-export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
+export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete }: Props) {
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
 
@@ -25,7 +26,9 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
   const archive = useArchive(workspaceId)
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
-  const isDraggable = DRAGGABLE_STATUSES.has(change.kanban_status) && ffStatus !== 'running'
+  const isGhost = !!change.is_ghost
+  const isGhostNaming = isGhost && /^explore-[a-z0-9]{6}$/.test(change.name)
+  const isDraggable = DRAGGABLE_STATUSES.has(change.kanban_status) && ffStatus !== 'running' && !isGhostNaming
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: change.name,
     disabled: !isDraggable,
@@ -43,6 +46,11 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
       const axiosData = (err as { response?: { data?: string } })?.response?.data
       setArchiveError(axiosData || (err instanceof Error ? err.message : String(err)))
     }
+  }
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (change.ghost_id && onDelete) onDelete(change.ghost_id)
   }
 
   const dragStyle = transform
@@ -65,6 +73,35 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
         <AlertCircle size={12} className="text-red-400 shrink-0" />
         <span className="text-xs text-slate-700 font-semibold truncate group-hover:text-blue-700">{change.name}</span>
         <span className="text-[10px] text-red-400 ml-auto shrink-0">ff failed</span>
+      </div>
+    )
+  }
+
+  if (isGhost) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={dragStyle}
+        {...(isDraggable ? { ...listeners, ...attributes } : {})}
+        onClick={() => onOpen(change.name)}
+        className={`border-2 border-dashed border-violet-300 bg-violet-50/40 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer hover:border-violet-400 hover:bg-violet-50 transition-all group ${isDragging ? 'opacity-40 shadow-lg' : ''}`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-xs font-semibold text-violet-700 break-words leading-snug truncate">
+            {change.name}
+          </span>
+          {onDelete && change.ghost_id && (
+            <button
+              onClick={handleDeleteClick}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer shrink-0"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full self-start bg-violet-100 text-violet-600 font-medium border border-violet-200">
+          exploring
+        </span>
       </div>
     )
   }
@@ -119,7 +156,6 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus }: Props) {
         </>
       )}
 
-      {/* Sync & Archive quick-action — Done cards only */}
       {isDone && (
         <div className="overflow-hidden">
           {archive.isPending ? (

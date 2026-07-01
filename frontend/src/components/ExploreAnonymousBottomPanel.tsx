@@ -6,13 +6,15 @@ const MAX_HEIGHT_RATIO = 0.7
 
 interface Props {
   workspaceId: string
+  resumeGhostId?: string
   height: number
   onResize: (newHeight: number) => void
   onClose: () => void
-  onPromoted: (name: string) => void
+  onDelete?: () => void
+  onGhostReady?: (ghostId: string) => void
 }
 
-export function ExploreAnonymousBottomPanel({ workspaceId, height, onResize, onClose, onPromoted }: Props) {
+export function ExploreAnonymousBottomPanel({ workspaceId, resumeGhostId, height, onResize, onClose, onDelete, onGhostReady }: Props) {
   const isDragging = useRef(false)
   const startY = useRef(0)
   const startHeight = useRef(0)
@@ -60,8 +62,10 @@ export function ExploreAnonymousBottomPanel({ workspaceId, height, onResize, onC
       <div className="flex-1 min-h-0 overflow-hidden">
         <ExploreAnonymousPanel
           workspaceId={workspaceId}
+          resumeGhostId={resumeGhostId}
           onClose={onClose}
-          onPromoted={onPromoted}
+          onDelete={onDelete}
+          onGhostReady={onGhostReady}
         />
       </div>
     </div>

@@ -30,6 +30,8 @@ type Change struct {
 	DaysSinceActivity int    `json:"days_since_activity"`
 	IsStale           bool   `json:"is_stale"`
 	Tags              *Tags  `json:"tags,omitempty"`
+	IsGhost           bool   `json:"is_ghost,omitempty"`
+	GhostID           string `json:"ghost_id,omitempty"`
 }
 
 type Task struct {

@@ -7,14 +7,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 type KanbanHandler struct {
-	ws *WorkspaceHandler
+	ws    *WorkspaceHandler
+	prefs *preferences.Service
 }
 
-func NewKanbanHandler(ws *WorkspaceHandler) *KanbanHandler {
-	return &KanbanHandler{ws: ws}
+func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service) *KanbanHandler {
+	return &KanbanHandler{ws: ws, prefs: prefs}
 }
 
 func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +35,20 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 	if changes == nil {
 		changes = []openspec.Change{}
 	}
+
+	// Merge ghost records (app-level explorations) into the changes list.
+	if h.prefs != nil {
+		for _, e := range h.prefs.ListExplorations(id) {
+			changes = append(changes, openspec.Change{
+				Name:         e.Name,
+				KanbanStatus: "to-explore",
+				Created:      e.CreatedAt,
+				IsGhost:      true,
+				GhostID:      e.ID,
+			})
+		}
+	}
+
 	json.NewEncoder(w).Encode(changes)
 }
 
@@ -76,4 +92,3 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(detail)
 }
-
