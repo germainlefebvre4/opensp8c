@@ -55,18 +55,13 @@ La TOC SHALL mettre en évidence l'item correspondant à la section de la spec a
 - **WHEN** l'utilisateur fait défiler jusqu'à une nouvelle section
 - **THEN** la mise en évidence se déplace vers l'item de TOC de la nouvelle section visible
 
-### Requirement: Toggle de mode Contenu/Historique
-La vue Specs SHALL proposer un toggle [Contenu | Historique] en haut de page permettant de basculer entre la vue de contenu existante et la nouvelle vue Historique.
+### Requirement: Lien de navigation vers l'historique d'une spec dans la Timeline
+La vue Specs SHALL afficher un lien "Voir l'historique →" dans le panneau de détail d'une spec sélectionnée, permettant à l'utilisateur de naviguer directement vers la Timeline en mode Matrice avec cette spec pré-sélectionnée.
 
-#### Scenario: Activation du mode Historique
-- **WHEN** l'utilisateur clique sur "Historique" dans le toggle
-- **THEN** la vue bascule vers le mode Historique affichant la timeline des changes par spec
-- **AND** le panneau de contenu de spec et la TOC sont remplacés par la vue historique
+#### Scenario: Clic sur "Voir l'historique →"
+- **WHEN** l'utilisateur a sélectionné une spec et clique sur le lien "Voir l'historique →"
+- **THEN** l'application navigue vers `/timeline?workspace=<id>&spec=<spec-name>`, ouvrant la Timeline en mode Matrice avec le panel de cette spec affiché
 
-#### Scenario: Retour au mode Contenu
-- **WHEN** l'utilisateur clique sur "Contenu" dans le toggle
-- **THEN** la vue revient au mode Contenu avec la liste de sélection de spec et l'affichage du contenu
-
-#### Scenario: Mode Contenu actif par défaut
-- **WHEN** l'utilisateur navigue vers la vue Specs
-- **THEN** le mode Contenu est actif par défaut
+#### Scenario: Lien absent si aucune spec sélectionnée
+- **WHEN** aucune spec n'est sélectionnée dans la liste
+- **THEN** le lien "Voir l'historique →" n'est pas affiché

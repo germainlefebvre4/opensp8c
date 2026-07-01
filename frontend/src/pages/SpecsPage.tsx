@@ -2,12 +2,10 @@ import { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useSpec, useSpecs } from '../hooks/useSpecs'
-import { useSpecsOverview } from '../hooks/useSpecsOverview'
 import { TableOfContents, type Heading } from '../components/TableOfContents'
 import { SpecEditor } from '../components/SpecEditor'
-import { SpecHistoryView } from '../components/SpecHistoryView'
-import { DetailPanel } from '../components/DetailPanel'
 
 interface Props {
   workspaceId: string
@@ -55,18 +53,14 @@ function makeHeadingComponent(tag: 'h1' | 'h2' | 'h3', seen: Map<string, number>
   }
 }
 
-type Mode = 'content' | 'history'
-
 export function SpecsPage({ workspaceId }: Props) {
   const { t } = useTranslation('specs')
   const { t: tCommon } = useTranslation('common')
-  const [mode, setMode] = useState<Mode>('content')
+  const [searchParams] = useSearchParams()
   const { data: specs = [], isLoading } = useSpecs(workspaceId)
-  const { data: overview } = useSpecsOverview(workspaceId)
   const [selectedSpec, setSelectedSpec] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editBaseContent, setEditBaseContent] = useState('')
-  const [historyDetailOpen, setHistoryDetailOpen] = useState<string | null>(null)
   const { data: specDetail } = useSpec(workspaceId, selectedSpec)
   // callback ref: receives the DOM element once mounted, triggers re-render for TOC
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
@@ -109,33 +103,10 @@ export function SpecsPage({ workspaceId }: Props) {
     <div className="flex-1 flex overflow-hidden">
       {/* Spec list sidebar */}
       <aside className="w-44 shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col">
-        <div className="px-4 pt-4 pb-2 shrink-0 flex flex-col gap-2">
+        <div className="px-4 pt-4 pb-2 shrink-0">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
             {t('title')}
           </span>
-          {/* Mode toggle */}
-          <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5 self-start">
-            <button
-              onClick={() => setMode('content')}
-              className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                mode === 'content'
-                  ? 'bg-white text-slate-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t('modeContent')}
-            </button>
-            <button
-              onClick={() => setMode('history')}
-              className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                mode === 'history'
-                  ? 'bg-white text-slate-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t('modeHistory')}
-            </button>
-          </div>
         </div>
         <ScrollArea.Root className="flex-1 overflow-hidden">
           <ScrollArea.Viewport className="h-full w-full">
@@ -168,30 +139,7 @@ export function SpecsPage({ workspaceId }: Props) {
       </aside>
 
       {/* Main content */}
-      {mode === 'history' ? (
-        <>
-          {overview ? (
-            <SpecHistoryView
-              overview={overview}
-              onChangeClick={name => setHistoryDetailOpen(name)}
-              selectedChangeName={historyDetailOpen}
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
-              {tCommon('loading')}
-            </div>
-          )}
-          {historyDetailOpen && (
-            <div className="w-[420px] shrink-0 border-l border-slate-200 overflow-hidden">
-              <DetailPanel
-                workspaceId={workspaceId}
-                changeName={historyDetailOpen}
-                onClose={() => setHistoryDetailOpen(null)}
-              />
-            </div>
-          )}
-        </>
-      ) : specDetail ? (
+      {specDetail ? (
         isEditing ? (
           <SpecEditor
             workspaceId={workspaceId}
@@ -204,8 +152,14 @@ export function SpecsPage({ workspaceId }: Props) {
         ) : (
           <>
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Edit button header */}
-              <div className="shrink-0 flex justify-end px-6 pt-4 pb-0">
+              {/* Header: edit + history link */}
+              <div className="shrink-0 flex items-center justify-between px-6 pt-4 pb-0">
+                <Link
+                  to={`/timeline?${(() => { const p = new URLSearchParams(searchParams); p.set('spec', selectedSpec!); return p.toString() })()}`}
+                  className="text-[11px] text-slate-400 hover:text-blue-600 transition-colors"
+                >
+                  Voir l'historique →
+                </Link>
                 <button
                   onClick={handleEdit}
                   className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors"
