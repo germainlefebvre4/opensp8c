@@ -2,16 +2,20 @@ REGISTRY  ?= docker.io/germainlefebvre4
 IMAGE     ?= opensp8c
 TAG       ?= latest
 
+# Port configuration for development
+BACKEND_PORT  ?= 8080
+FRONTEND_PORT ?= 5173
+
 .PHONY: dev dev-backend dev-frontend build build-backend build-frontend docker-build docker-build-push
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend:
-	cd backend && go run ./cmd/server
+	cd backend && PORT=$(BACKEND_PORT) go run ./cmd/server
 
 dev-frontend:
-	cd frontend && npm run dev
+	cd frontend && VITE_API_URL=http://localhost:$(BACKEND_PORT) npm run dev -- --port $(FRONTEND_PORT)
 
 build: build-frontend build-backend
 

@@ -1,0 +1,9 @@
+schema: spec-driven
+created: "2026-07-22"
+tags:
+    type: ""
+    complexity: 2
+    components:
+        - developer-tooling
+    _auto: true
+    _tagged_at: "2026-07-22"
