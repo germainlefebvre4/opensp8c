@@ -1,0 +1,9 @@
+schema: spec-driven
+created: "2026-07-23"
+tags:
+    type: backend
+    complexity: 3
+    components:
+        - explore-session
+    _auto: true
+    _tagged_at: "2026-07-23"

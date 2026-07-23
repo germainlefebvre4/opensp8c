@@ -3,8 +3,8 @@ IMAGE     ?= opensp8c
 TAG       ?= latest
 
 # Port configuration for development
-BACKEND_PORT  ?= 8080
-FRONTEND_PORT ?= 5173
+BACKEND_PORT  ?= 8081
+FRONTEND_PORT ?= 5174
 
 .PHONY: dev dev-backend dev-frontend build build-backend build-frontend docker-build docker-build-push
 

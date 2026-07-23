@@ -1,5 +1,5 @@
 {
-  "defaultAgent": "claude",
+  "defaultAgent": "gemini",
   "sessions": {
     "8b4a8cb8/change-semantic-tags": {
       "agent": "claude",

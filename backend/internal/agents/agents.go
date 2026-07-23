@@ -26,6 +26,14 @@ type AgentStatus struct {
 // Claude uses stream-json format; other agents use the same flags as placeholders
 // until their actual CLI interfaces are validated.
 func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []string {
+	if a.ID == "gemini" {
+		return []string{
+			"--output-format", "stream-json",
+			"--approval-mode", "auto_edit",
+			"--skip-trust",
+		}
+	}
+
 	args := []string{
 		"--print",
 		"--verbose",

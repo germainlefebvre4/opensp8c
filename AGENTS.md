@@ -50,7 +50,15 @@ Fichier de configuration `config.yaml` à la racine du projet.
 - Ajouter un projet via son full path (gestion multi projets avec Kanban dédiés)
   - Fichier de configuration
   - Bouton pour ajouter un projet avec un explorateur de fichiers pour sélectionner le répertoire du projet
-- 
+
+#### Configuration de l'Agent Gemini
+
+L'agent Gemini nécessite d'avoir accès aux variables d'environnement Google Cloud, en particulier `GOOGLE_CLOUD_PROJECT`.
+Comme le backend Go propage de manière transparente l'environnement du processus parent à ses sous-processus d'agent (le paramètre `cmd.Env` est conservé par défaut), il vous suffit de définir la variable `GOOGLE_CLOUD_PROJECT` dans l'environnement de lancement d'opensp8c :
+
+```bash
+export GOOGLE_CLOUD_PROJECT="votre-projet-gcp"
+```
 
 ## Technologies
 
