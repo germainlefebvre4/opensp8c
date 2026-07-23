@@ -25,4 +25,4 @@ L'application utilise Claude comme seul et unique agent de code, hardcodé dans 
 - **Backend** : `internal/session/subprocess.go` (CLI router), `internal/api/handlers/` (nouveaux endpoints), nouveau package `internal/preferences/`
 - **Frontend** : Menu gauche (dropdown agent selector), `ExplorePanel.tsx`, `ExploreAnonymousPanel.tsx`, `TypingBubble.tsx` (badge agent)
 - **Stockage** : Nouveau fichier `preferences.json` dans le répertoire de config de l'app (hors fichiers projet)
-- **Agents supportés** : Claude, Codex, Gemini, Antigravity v2, Copilot (détection dynamique via CLI)
+- **Agents supportés** : Claude, Codex, Gemini, Antigravity, Copilot (détection dynamique via CLI)

@@ -13,7 +13,7 @@ Le système SHALL exposer un endpoint qui probe chaque agent CLI supporté et re
 
 #### Scenario: Liste complète
 - **WHEN** `GET /api/agents` est appelé
-- **THEN** la réponse contient une entrée pour chacun des agents supportés : Claude, Codex, Gemini, Antigravity v2, Copilot
+- **THEN** la réponse contient une entrée pour chacun des agents supportés : Claude, Codex, Gemini, Antigravity, Copilot
 
 ---
 

@@ -86,7 +86,7 @@ var SupportedAgents = []AgentConfig{
     {ID: "claude",      Label: "Claude",         CLI: "claude",   VersionArg: "--version"},
     {ID: "codex",       Label: "Codex",           CLI: "codex",    VersionArg: "--version"},
     {ID: "gemini",      Label: "Gemini",          CLI: "gemini",   VersionArg: "--version"},
-    {ID: "antigravity", Label: "Antigravity v2",  CLI: "antigravity", VersionArg: "--version"},
+    {ID: "antigravity", Label: "Antigravity",  CLI: "agy", VersionArg: "--version"},
     {ID: "copilot",     Label: "Copilot",         CLI: "gh",       VersionArg: "copilot --version"},
 }
 ```
@@ -99,7 +99,7 @@ var SupportedAgents = []AgentConfig{
 
 - **Copilot via `gh` CLI** → Copilot n'a pas son propre binaire, il passe par `gh copilot`. La commande de version est `gh copilot --version`, pas `gh --version`. Cas spécial à gérer dans la config.
 
-- **Antigravity v2 CLI** → Interface inconnue à ce stade. Le nom du binaire et les arguments sont à confirmer. Mitigation : structure `AgentConfig` extensible, peut être ajouté progressivement.
+- **Antigravity CLI** → Interface inconnue à ce stade. Le nom du binaire et les arguments sont à confirmer. Mitigation : structure `AgentConfig` extensible, peut être ajouté progressivement.
 
 - **Concurrent writes sur preferences.json** → Si plusieurs workspaces sont ouverts simultanément, des écritures concurrentes sont possibles. Mitigation : mutex en lecture/écriture dans le package preferences.
 

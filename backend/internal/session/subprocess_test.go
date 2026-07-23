@@ -2,10 +2,15 @@ package session
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
 )
 
 func TestTranslateGeminiLine(t *testing.T) {
@@ -30,9 +35,9 @@ func TestTranslateGeminiLine(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "Result event (should be skipped)",
+			name:     "Result event (should translate to message_complete)",
 			input:    `{"type":"result","status":"success"}`,
-			expected: "",
+			expected: `{"type":"message_complete","result":" "}`,
 		},
 		{
 			name:     "User message (should be skipped)",
@@ -115,6 +120,7 @@ func TestGeminiStdoutReader(t *testing.T) {
 		`[ERROR] Failed to connect to IDE companion extension.`,
 		`{"delta":{"text":"Hello! How"},"type":"content_block_delta"}`,
 		`{"delta":{"text":" can I help?"},"type":"content_block_delta"}`,
+		`{"type":"message_complete","result":" "}`,
 	}
 
 	if len(lines) != len(expectedLines) {
@@ -170,7 +176,7 @@ func TestSubprocessWrite(t *testing.T) {
 			t.Fatal("expected non-zero bytes written")
 		}
 
-		expected := "/opsx:explore change-name\n"
+		expected := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}` + "\n"
 		got := mockIn.String()
 		if got != expected {
 			t.Errorf("expected: %q, got: %q", expected, got)
@@ -190,7 +196,7 @@ func TestSubprocessWrite(t *testing.T) {
 			t.Fatalf("Write failed: %v", err)
 		}
 
-		expected := "plain text prompt"
+		expected := "plain text prompt\n"
 		got := mockIn.String()
 		if got != expected {
 			t.Errorf("expected: %q, got: %q", expected, got)
@@ -216,4 +222,62 @@ func TestSubprocessWrite(t *testing.T) {
 			t.Errorf("expected: %q, got: %q", expected, got)
 		}
 	})
+}
+
+func TestStartSubprocessGeminiBridge(t *testing.T) {
+	// Create a mock executable script that acts like a mock gemini CLI
+	// but ignores all command line flags (like --output-format) and just cats stdin to stdout.
+	tmpDir := t.TempDir()
+	mockCLIPath := filepath.Join(tmpDir, "mock-gemini")
+	mockCLIScript := "#!/bin/sh\ncat\n"
+	err := os.WriteFile(mockCLIPath, []byte(mockCLIScript), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock CLI: %v", err)
+	}
+
+	agentCfg := agents.AgentConfig{
+		ID:    "gemini",
+		Label: "Gemini",
+		CLI:   mockCLIPath,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil)
+	if err != nil {
+		t.Fatalf("StartSubprocess failed: %v", err)
+	}
+
+	// We write a mock prompt line.
+	// Since we are mocking gemini, whatever prompt content is written to mock CLI's stdin
+	// will be output to its stdout as-is.
+	// Note: newGeminiStdoutReader (used internally) expects JSON line stream, and will skip non-JSON.
+	// So we write a mocked stream-json Gemini assistant response to mock prompt!
+	mockResponseJSON := `{"type":"message","role":"assistant","content":"hello from mock gemini"}`
+	
+	// We send this as the user content, and since our mock CLI echoes it, geminiStdoutReader will parse it,
+	// translate it to content_block_delta, and send it to stdout.
+	userMsg := `{"type":"user","message":{"role":"user","content":"` + strings.ReplaceAll(mockResponseJSON, `"`, `\"`) + `"}}`
+
+	_, err = proc.Write([]byte(userMsg))
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Read and verify translated stdout
+	buf := make([]byte, 4096)
+	n, err := proc.Stdout().Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	got := string(buf[:n])
+	expected := `{"delta":{"text":"hello from mock gemini"},"type":"content_block_delta"}` + "\n"
+	if got != expected {
+		t.Errorf("expected: %q, got: %q", expected, got)
+	}
+
+	_ = proc.CloseStdin()
+	_ = proc.Wait()
 }
