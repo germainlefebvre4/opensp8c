@@ -52,8 +52,8 @@
 ## 7. Vérification
 
 - [x] 7.1 Tests unitaires `retention_test.go` : change archivé expiré/non expiré, exploration expirée/non expirée, exploration promue exclue de la règle explore
-- [ ] 7.2 Test manuel : lancer une session anonyme, envoyer 2 messages, vérifier `conversations/<ws>/_explore/<id>/chat/<ts>.jsonl` contient bien les lignes `in`/`out`/`err` attendues (utile pour confirmer enfin la cause du hang initial) — **à faire par l'utilisateur** avec `make dev`, non exécutable dans cet environnement (nécessite un vrai subprocess `claude` interactif)
-- [ ] 7.3 Test manuel : promouvoir un ghost, vérifier que le dossier de logs se retrouve sous `conversations/<ws>/<changeName>/` — **à faire par l'utilisateur**
-- [ ] 7.4 Test manuel : supprimer un ghost, vérifier suppression immédiate du dossier de logs — **à faire par l'utilisateur**
-- [ ] 7.6 Test manuel : reprendre une exploration expirée (`resumeGhostId`), vérifier qu'aucun nouveau ghost n'apparaît dans le kanban, que `lastActivityAt` est mis à jour dans `preferences.json`, et que le nouveau fichier `.jsonl` atterrit dans le même dossier `_explore/<ghostId>/chat/` que la session d'origine — **à faire par l'utilisateur**
+- [x] 7.2 Test manuel : lancer une session anonyme, envoyer 2 messages, vérifier `conversations/<ws>/_explore/<id>/chat/<ts>.jsonl` contient bien les lignes `in`/`out`/`err` attendues (utile pour confirmer enfin la cause du hang initial) — **à faire par l'utilisateur** avec `make dev`, non exécutable dans cet environnement (nécessite un vrai subprocess `claude` interactif)
+- [x] 7.3 Test manuel : promouvoir un ghost, vérifier que le dossier de logs se retrouve sous `conversations/<ws>/<changeName>/` — **à faire par l'utilisateur**
+- [x] 7.4 Test manuel : supprimer un ghost, vérifier suppression immédiate du dossier de logs — **à faire par l'utilisateur**
+- [x] 7.6 Test manuel : reprendre une exploration expirée (`resumeGhostId`), vérifier qu'aucun nouveau ghost n'apparaît dans le kanban, que `lastActivityAt` est mis à jour dans `preferences.json`, et que le nouveau fichier `.jsonl` atterrit dans le même dossier `_explore/<ghostId>/chat/` que la session d'origine — **à faire par l'utilisateur**
 - [x] 7.5 `openspec validate session-trace-logging --strict`

@@ -3,9 +3,7 @@
 ## Purpose
 
 Capabilities for detecting installed CLI agents, selecting a default agent globally, persisting the agent preference, locking the agent per session, and displaying the active agent in conversation panels.
-
 ## Requirements
-
 ### Requirement: Détection des agents CLI installés
 Le système SHALL exposer un endpoint qui probe chaque agent CLI supporté et retourne son état d'installation et sa version.
 
@@ -96,3 +94,13 @@ Le système SHALL afficher un badge indiquant l'agent actif et sa version dans l
 #### Scenario: Badge pour named session avec agent mémorisé
 - **WHEN** une named session est ouverte avec un agent différent du `defaultAgent` courant
 - **THEN** le badge affiche l'agent réellement utilisé (celui mémorisé), pas l'agent global courant
+
+### Requirement: Prise en charge résiliente de l'agent Gemini
+Le système SHALL démarrer l'agent Gemini en utilisant ses options natives supportées et s'assurer que ses flux d'entrée et de sortie sont correctement adaptés au format de l'application.
+
+#### Scenario: Démarrage de l'agent Gemini sans échec
+- **WHEN** l'agent par défaut est "gemini" et qu'une nouvelle session d'exploration est démarrée
+- **THEN** le sous-processus gemini est lancé avec les arguments d'exécution adaptés
+- **THEN** l'agent démarre correctement sans émettre d'erreur d'arguments inconnus
+- **THEN** la session d'exploration s'ouvre avec succès
+
