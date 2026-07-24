@@ -10,7 +10,7 @@ L'utilisateur SHALL pouvoir ouvrir une session de chat avec Claude Code depuis u
 - **THEN** le panneau de chat existant est affiché (pas de nouveau subprocess spawné)
 
 ### Requirement: Envoyer et recevoir des messages
-L'utilisateur SHALL pouvoir envoyer des messages texte dans le chat. Les messages du subprocess SHALL être streamés en temps réel vers l'interface via WebSocket. Le hook SHALL exposer un état `waiting` indiquant qu'un message a été envoyé et qu'aucun token de réponse non-vide n'a encore été reçu.
+L'utilisateur SHALL pouvoir envoyer des messages texte dans le chat. Les messages du subprocess SHALL être streamés en temps réel vers l'interface via WebSocket. Le hook SHALL exposer un état `waiting` indiquant qu'un message a été envoyé et qu'aucun token de réponse non-vide n'a encore été reçu. Les événements de type `session_warning` SHALL être isolés comme des messages assistant complets distincts, et tout delta de réponse subséquent SHALL être inséré dans un nouveau message indépendant.
 
 #### Scenario: Envoi d'un message utilisateur
 - **WHEN** l'utilisateur soumet un message dans le champ de saisie
@@ -23,6 +23,10 @@ L'utilisateur SHALL pouvoir envoyer des messages texte dans le chat. Les message
 #### Scenario: Waiting réinitialisé sur déconnexion
 - **WHEN** la connexion WebSocket se ferme ou produit une erreur alors que `waiting` est `true`
 - **THEN** `waiting` passe à `false` immédiatement
+
+#### Scenario: Réception d'une réponse streamée après un avertissement
+- **WHEN** un événement `session_warning` est reçu puis des chunks de réponse stdout arrivent
+- **THEN** l'avertissement est affiché dans son propre bloc de message avec `partial: false` et les chunks subséquents sont assemblés dans un nouveau bloc de message assistant séparé
 
 ### Requirement: Interdire les interactions à choix multiples
 Le subprocess Claude SHALL être configuré pour ne jamais produire de questions à choix multiples ou utiliser l'outil `AskUserQuestion`. Seul le chat textuel est autorisé.

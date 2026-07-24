@@ -46,7 +46,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         }
 
         if (data.type === 'session_warning' && typeof data.text === 'string') {
-          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}` }])
+          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
           setWaiting(false)
           return
         }
@@ -60,7 +60,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
         setMessages(prev => {
           const last = prev[prev.length - 1]
-          if (last?.role === 'assistant' && (last.partial || isPartial)) {
+          if (last?.role === 'assistant' && last.partial) {
             return [
               ...prev.slice(0, -1),
               { role: 'assistant', content: last.content + text, partial: isPartial },

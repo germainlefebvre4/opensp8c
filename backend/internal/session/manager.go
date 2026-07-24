@@ -281,13 +281,13 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 
 	m.startFanOut(s, key, workspaceID, false)
 
-	// Auto-inject /openspec-explore only on first session start, not on resume
+	// Auto-inject /opsx:explore only on first session start, not on resume
 	if !isResume {
 		initPayload := map[string]interface{}{
 			"type": "user",
 			"message": map[string]string{
 				"role":    "user",
-				"content": fmt.Sprintf("/openspec-explore %s", changeName),
+				"content": fmt.Sprintf("/opsx:explore %s", changeName),
 			},
 		}
 		initMsg, _ := json.Marshal(initPayload)

@@ -167,7 +167,7 @@ func TestSubprocessWrite(t *testing.T) {
 			agentID: "gemini",
 		}
 
-		inputPayload := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}`
+		inputPayload := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}`
 		n, err := proc.Write([]byte(inputPayload))
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
@@ -176,7 +176,7 @@ func TestSubprocessWrite(t *testing.T) {
 			t.Fatal("expected non-zero bytes written")
 		}
 
-		expected := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}` + "\n"
+		expected := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}` + "\n"
 		got := mockIn.String()
 		if got != expected {
 			t.Errorf("expected: %q, got: %q", expected, got)
@@ -210,7 +210,7 @@ func TestSubprocessWrite(t *testing.T) {
 			agentID: "claude",
 		}
 
-		inputPayload := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}`
+		inputPayload := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}`
 		_, err := proc.Write([]byte(inputPayload))
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
