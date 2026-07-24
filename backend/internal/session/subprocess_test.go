@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -335,5 +336,131 @@ func TestStartSubprocessGeminiBridge_StderrErrors(t *testing.T) {
 		t.Errorf("expected output to contain %q, got: %q", expectedText, got)
 	}
 
+	expectedFatal := `"fatal":true`
+	if !strings.Contains(got, expectedFatal) {
+		t.Errorf("expected output to contain %q, got: %q", expectedFatal, got)
+	}
+
 	_ = proc.Wait()
+}
+
+func TestStartSubprocessGeminiBridge_ThrottledIDEWarning(t *testing.T) {
+	// Create a mock executable script that writes the companion connection error to stderr and exits
+	tmpDir := t.TempDir()
+	mockCLIPath := filepath.Join(tmpDir, "mock-gemini-ide-err")
+	mockCLIScript := "#!/bin/sh\necho 'Failed to connect to IDE companion extension' >&2\necho '{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"response chunk\"}'\n"
+	err := os.WriteFile(mockCLIPath, []byte(mockCLIScript), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock CLI: %v", err)
+	}
+
+	agentCfg := agents.AgentConfig{
+		ID:    "gemini",
+		Label: "Gemini",
+		CLI:   mockCLIPath,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-789", false, nil)
+	if err != nil {
+		t.Fatalf("StartSubprocess failed: %v", err)
+	}
+
+	scanner := bufio.NewScanner(proc.Stdout())
+
+	// === FIRST TURN ===
+	userMsg1 := `{"type":"user","message":{"role":"user","content":"hello 1"}}`
+	_, err = proc.Write([]byte(userMsg1))
+	if err != nil {
+		t.Fatalf("First Write failed: %v", err)
+	}
+
+	// First turn expects 2 lines: session_warning and content_block_delta, in any order due to concurrency
+	if !scanner.Scan() {
+		t.Fatalf("First scan failed")
+	}
+	line1 := scanner.Text()
+
+	if !scanner.Scan() {
+		t.Fatalf("Second scan failed")
+	}
+	line2 := scanner.Text()
+
+	hasWarning := false
+	hasWarningNonFatal := false
+	hasDelta := false
+
+	checkLine := func(l string) {
+		if strings.Contains(l, `"type":"session_warning"`) {
+			hasWarning = true
+			if strings.Contains(l, `"fatal":false`) {
+				hasWarningNonFatal = true
+			}
+		}
+		if strings.Contains(l, `content_block_delta`) {
+			hasDelta = true
+		}
+	}
+
+	checkLine(line1)
+	checkLine(line2)
+
+	if !hasWarning {
+		t.Errorf("expected first turn to contain a warning, got: %q and %q", line1, line2)
+	} else if !hasWarningNonFatal {
+		t.Errorf("expected warning to be non-fatal, got: %q and %q", line1, line2)
+	}
+	if !hasDelta {
+		t.Errorf("expected first turn to contain a content delta, got: %q and %q", line1, line2)
+	}
+
+	// === SECOND TURN ===
+	userMsg2 := `{"type":"user","message":{"role":"user","content":"hello 2"}}`
+	_, err = proc.Write([]byte(userMsg2))
+	if err != nil {
+		t.Fatalf("Second Write failed: %v", err)
+	}
+
+	// Second turn expects only 1 line: content_block_delta (warning is throttled)
+	if !scanner.Scan() {
+		t.Fatalf("Third scan failed (expected content delta line)")
+	}
+	line3 := scanner.Text()
+	if strings.Contains(line3, `"type":"session_warning"`) {
+		t.Errorf("expected warning to be throttled, but got warning line: %q", line3)
+	}
+	if !strings.Contains(line3, `content_block_delta`) {
+		t.Errorf("expected content delta line, got: %q", line3)
+	}
+
+	_ = proc.CloseStdin()
+	_ = proc.Wait()
+}
+
+func TestSessionInjectMessage(t *testing.T) {
+	s := &Session{
+		messages: make([][]byte, 0),
+		notify:   make(chan struct{}, 10),
+	}
+
+	msg := []byte(`{"type":"ghost_card_created","name":"test"}`)
+	s.InjectMessage(msg)
+
+	s.msgMu.RLock()
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.messages))
+	}
+	if string(s.messages[0]) != string(msg) {
+		t.Errorf("expected %s, got %s", string(msg), string(s.messages[0]))
+	}
+	s.msgMu.RUnlock()
+
+	select {
+	case <-s.Notify():
+		// Success
+	default:
+		t.Errorf("expected notification on notify channel")
+	}
 }

@@ -1,7 +1,7 @@
 schema: spec-driven
 created: "2026-07-24"
 tags:
-    type: frontend
+    type: fullstack
     complexity: 0
     components: []
     _auto: true

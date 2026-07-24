@@ -4,6 +4,10 @@
     "8b4a8cb8/change-semantic-tags": {
       "agent": "claude",
       "claudeSessionId": "ee4dd659-c2ec-4ca3-a700-f57153ff603f"
+    },
+    "8b4a8cb8/fix-gemini-ide-warning-loop": {
+      "agent": "gemini",
+      "claudeSessionId": "4021548b-ef0a-4f12-b302-0b0b9e3f4244"
     }
   }
 }

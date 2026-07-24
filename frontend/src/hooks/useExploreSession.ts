@@ -47,7 +47,9 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
         if (data.type === 'session_warning' && typeof data.text === 'string') {
           setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
-          setWaiting(false)
+          if (data.fatal !== false) {
+            setWaiting(false)
+          }
           return
         }
 

@@ -157,6 +157,8 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 			defer dummyStdin.Close()
 			defer virtualStdoutWriter.Close()
 
+			sentIDEWarning := false
+
 			scanner := bufio.NewScanner(virtualStdinReader)
 			for scanner.Scan() {
 				line := scanner.Text()
@@ -242,24 +244,30 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 						// Detect common fatal errors and forward to UI gracefully
 						if strings.Contains(text, "TerminalQuotaError") {
 							warning := map[string]interface{}{
-								"type": "session_warning",
-								"text": "Vous avez épuisé votre quota pour ce modèle (Quota Exhausted). Veuillez sélectionner un autre agent via le sélecteur en bas de la barre latérale, puis cliquez sur Relancer/Reconnecter.",
+								"type":  "session_warning",
+								"text":  "Vous avez épuisé votre quota pour ce modèle (Quota Exhausted). Veuillez sélectionner un autre agent via le sélecteur en bas de la barre latérale, puis cliquez sur Relancer/Reconnecter.",
+								"fatal": true,
 							}
 							if b, err := json.Marshal(warning); err == nil {
 								_, _ = virtualStdoutWriter.Write(append(b, '\n'))
 							}
 						} else if strings.Contains(text, "Failed to connect to IDE companion extension") {
-							warning := map[string]interface{}{
-								"type": "session_warning",
-								"text": "Impossible de se connecter à l'extension IDE. Veuillez vérifier qu'elle est installée et lancée dans votre éditeur.",
-							}
-							if b, err := json.Marshal(warning); err == nil {
-								_, _ = virtualStdoutWriter.Write(append(b, '\n'))
+							if !sentIDEWarning {
+								warning := map[string]interface{}{
+									"type":  "session_warning",
+									"text":  "Impossible de se connecter à l'extension IDE. Veuillez vérifier qu'elle est installée et lancée dans votre éditeur.",
+									"fatal": false,
+								}
+								if b, err := json.Marshal(warning); err == nil {
+									_, _ = virtualStdoutWriter.Write(append(b, '\n'))
+								}
+								sentIDEWarning = true
 							}
 						} else if strings.Contains(text, "ProjectIdRequiredError") || strings.Contains(text, "GOOGLE_CLOUD_PROJECT") {
 							warning := map[string]interface{}{
-								"type": "session_warning",
-								"text": "Erreur d'authentification Google Cloud : l'identifiant du projet (ProjectId) est requis pour ce compte. Veuillez définir la variable d'environnement GOOGLE_CLOUD_PROJECT ou GOOGLE_CLOUD_PROJECT_ID.",
+								"type":  "session_warning",
+								"text":  "Erreur d'authentification Google Cloud : l'identifiant du projet (ProjectId) est requis pour ce compte. Veuillez définir la variable d'environnement GOOGLE_CLOUD_PROJECT ou GOOGLE_CLOUD_PROJECT_ID.",
+								"fatal": true,
 							}
 							if b, err := json.Marshal(warning); err == nil {
 								_, _ = virtualStdoutWriter.Write(append(b, '\n'))

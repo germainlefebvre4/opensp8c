@@ -112,7 +112,9 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
 
         if (data.type === 'session_warning' && typeof data.text === 'string') {
           setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
-          setWaiting(false)
+          if (data.fatal !== false) {
+            setWaiting(false)
+          }
           return
         }
 

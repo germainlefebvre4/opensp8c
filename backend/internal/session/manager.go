@@ -85,6 +85,22 @@ func (s *Session) MessagesSince(cursor int) ([][]byte, int) {
 func (s *Session) Notify() <-chan struct{} { return s.notify }
 func (s *Session) Done() <-chan struct{}   { return s.done }
 
+// InjectMessage inserts a custom message into the session's message buffer
+// and notifies any listeners that new messages are available.
+func (s *Session) InjectMessage(msg []byte) {
+	s.msgMu.Lock()
+	if len(s.messages) >= maxMessages {
+		s.messages = s.messages[1:]
+	}
+	s.messages = append(s.messages, msg)
+	s.msgMu.Unlock()
+
+	select {
+	case s.notify <- struct{}{}:
+	default:
+	}
+}
+
 type Manager struct {
 	mu        sync.Mutex
 	sessions  map[string]*Session
