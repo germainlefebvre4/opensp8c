@@ -210,6 +210,11 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 							if name := extractGhostNamed(msg); name != "" {
 								ghostNamed = true
 								h.applyGhostName(workspaceID, sessionID, name)
+								evtMsg, _ := json.Marshal(map[string]string{
+									"type": "ghost_named",
+									"name": name,
+								})
+								_ = conn.Write(wsCtx, websocket.MessageText, evtMsg)
 							}
 						}
 						if draft := extractGhostDraft(msg); draft != nil {
@@ -231,6 +236,11 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 							if name := extractGhostNamed(msg); name != "" {
 								ghostNamed = true
 								h.applyGhostName(workspaceID, sessionID, name)
+								evtMsg, _ := json.Marshal(map[string]string{
+									"type": "ghost_named",
+									"name": name,
+								})
+								_ = conn.Write(wsCtx, websocket.MessageText, evtMsg)
 							}
 						}
 						if draft := extractGhostDraft(msg); draft != nil {
@@ -246,8 +256,15 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 	}()
 
 	// Incoming: WebSocket → subprocess stdin.
-	firstSent := anonymous && len(snapshot) > 0
-	ghostCreated := len(snapshot) > 0 // ghost already created if we're reconnecting
+	ghostCreated := len(snapshot) > 0
+	if anonymous && h.prefs != nil {
+		if rec := h.prefs.GetExploration(sessionID, workspaceID); rec != nil {
+			ghostCreated = true
+		} else {
+			ghostCreated = false
+		}
+	}
+	firstSent := ghostCreated
 	for {
 		_, msg, err := conn.Read(wsCtx)
 		if err != nil {
@@ -258,7 +275,7 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 			msg = prependExploreSkill(msg)
 			if !ghostCreated {
 				ghostCreated = true
-				h.createGhostRecord(workspaceID, sessionID)
+				h.createGhostRecord(workspaceID, sessionID, sess)
 			}
 		}
 		if anonymous && h.prefs != nil {
@@ -276,7 +293,7 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 }
 
 // createGhostRecord creates a ghost record in preferences and broadcasts ghost_card_created.
-func (h *ExploreHandler) createGhostRecord(workspaceID, sessionID string) {
+func (h *ExploreHandler) createGhostRecord(workspaceID, sessionID string, sess *session.Session) {
 	if h.prefs == nil {
 		return
 	}
@@ -295,6 +312,13 @@ func (h *ExploreHandler) createGhostRecord(workspaceID, sessionID string) {
 	_ = h.prefs.AddExploration(record)
 	if h.watcher != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ghost_card_created", Name: tempName})
+	}
+	if sess != nil {
+		evt, _ := json.Marshal(map[string]string{
+			"type": "ghost_card_created",
+			"name": tempName,
+		})
+		sess.InjectMessage(evt)
 	}
 }
 

@@ -414,7 +414,7 @@ func (m *Manager) startFanOut(s *Session, key string, workspaceID string, anonym
 }
 
 // ExtractGhostNamed parses a line for the ghost_named marker emitted by the LLM.
-// Tries JSON first, falls back to substring search for tolerance.
+// Tries JSON first, falls back to substring search for tolerance, including Gemini-translated delta format.
 func ExtractGhostNamed(line []byte) string {
 	var data map[string]interface{}
 	if err := json.Unmarshal(line, &data); err == nil {
@@ -423,12 +423,43 @@ func ExtractGhostNamed(line []byte) string {
 				return name
 			}
 		}
+		// Also handle translated Claude/Gemini content_block_delta format
+		if delta, ok := data["delta"].(map[string]interface{}); ok {
+			if text, ok := delta["text"].(string); ok && text != "" {
+				var inner map[string]interface{}
+				if err := json.Unmarshal([]byte(text), &inner); err == nil {
+					if event, ok := inner["event"].(string); ok && event == "ghost_named" {
+						if name, ok := inner["name"].(string); ok && name != "" {
+							return name
+						}
+					}
+				}
+				// Substring search on unescaped text content
+				if strings.Contains(text, `"event":"ghost_named"`) || strings.Contains(text, `"event": "ghost_named"`) {
+					if idx := strings.Index(text, `"name":"`); idx != -1 {
+						rest := text[idx+8:]
+						if end := strings.Index(rest, `"`); end != -1 && end > 0 {
+							return rest[:end]
+						}
+					}
+				}
+			}
+		}
 	}
 	s := string(line)
 	if strings.Contains(s, `"event":"ghost_named"`) || strings.Contains(s, `"event": "ghost_named"`) {
 		if idx := strings.Index(s, `"name":"`); idx != -1 {
 			rest := s[idx+8:]
 			if end := strings.Index(rest, `"`); end != -1 && end > 0 {
+				return rest[:end]
+			}
+		}
+	}
+	// Fallback for escaped quotes (e.g. inside raw string representation of content_block_delta)
+	if strings.Contains(s, `\"event\":\"ghost_named\"`) || strings.Contains(s, `\"event\": \"ghost_named\"`) {
+		if idx := strings.Index(s, `\"name\":\"`); idx != -1 {
+			rest := s[idx+11:]
+			if end := strings.Index(rest, `\"`); end != -1 && end > 0 {
 				return rest[:end]
 			}
 		}

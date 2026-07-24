@@ -464,3 +464,46 @@ func TestSessionInjectMessage(t *testing.T) {
 		t.Errorf("expected notification on notify channel")
 	}
 }
+
+func TestExtractGhostNamed(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Untranslated top-level JSON",
+			input:    `{"event":"ghost_named","name":"untranslated-name"}`,
+			expected: "untranslated-name",
+		},
+		{
+			name:     "Translated Gemini content_block_delta with JSON text",
+			input:    `{"type":"content_block_delta","delta":{"text":"{\"event\":\"ghost_named\",\"name\":\"translated-json-name\"}\n"}}`,
+			expected: "translated-json-name",
+		},
+		{
+			name:     "Translated Gemini content_block_delta with raw text",
+			input:    `{"type":"content_block_delta","delta":{"text":"some text containing \"event\":\"ghost_named\" and \"name\":\"translated-raw-name\""}}`,
+			expected: "translated-raw-name",
+		},
+		{
+			name:     "Fallback with escaped quotes",
+			input:    `{\"event\":\"ghost_named\",\"name\":\"escaped-fallback-name\"}`,
+			expected: "escaped-fallback-name",
+		},
+		{
+			name:     "No match",
+			input:    `{"type":"content_block_delta","delta":{"text":"hello world"}}`,
+			expected: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtractGhostNamed([]byte(tc.input))
+			if got != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, got)
+			}
+		})
+	}
+}
