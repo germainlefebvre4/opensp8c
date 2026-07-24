@@ -10,5 +10,7 @@
   "send": "Envoyer",
   "deleteExploration": "Supprimer cette exploration",
   "maximize": "Agrandir",
-  "minimize": "Réduire"
+  "minimize": "Réduire",
+  "createChange": "Créer le change",
+  "createChangeTooltip": "Créer un change à partir de cette exploration"
 }

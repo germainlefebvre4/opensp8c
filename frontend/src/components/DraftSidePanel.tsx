@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Save, FileText, CheckSquare, Square, Check, Loader2 } from 'lucide-react'
-import { getGhostDraft, updateGhostDraft, ExplorationDraft, DraftTask } from '../lib/api'
+import { getGhostDraft, updateGhostDraft } from '../lib/api'
+import type { ExplorationDraft, DraftTask } from '../lib/api'
 
 interface Props {
   workspaceId: string
@@ -14,7 +15,7 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
   const [tasks, setTasks] = useState<DraftTask[]>([])
   const [isSaved, setIsSaved] = useState(true)
   const [showSavedIndicator, setShowSavedIndicator] = useState(false)
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 1. Fetch Draft from Backend
   const { data: draft, isLoading, isError } = useQuery({

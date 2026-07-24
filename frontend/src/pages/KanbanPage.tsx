@@ -171,6 +171,14 @@ export function KanbanPage({ workspaceId }: Props) {
     if (id) setDeleteGhostDialog({ ghostId: id })
   }
 
+  const handlePromoteFromPanel = () => {
+    if (!activeGhostId) return
+    const ghostChange = changes.find(c => c.is_ghost && c.ghost_id === activeGhostId)
+    if (ghostChange) {
+      setPromoteDialog(ghostChange)
+    }
+  }
+
   const handleResetConfirm = async () => {
     if (!resetDialog) return
     const name = resetDialog.name
@@ -291,6 +299,7 @@ export function KanbanPage({ workspaceId }: Props) {
             onClose={() => { setAnonymousExploreOpen(false); setPanelMaximized(false); }}
             onDelete={handleDeleteFromPanel}
             onGhostReady={setActiveGhostId}
+            onPromote={handlePromoteFromPanel}
           />
         )}
         {exploreOpen && !anonymousExploreOpen && (

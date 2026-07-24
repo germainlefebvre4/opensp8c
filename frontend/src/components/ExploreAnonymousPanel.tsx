@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Code, Eye, Trash2, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Code, Eye, Trash2, Maximize2, Minimize2, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
@@ -15,9 +15,10 @@ interface Props {
   onClose: () => void
   onDelete?: () => void
   onGhostReady?: (ghostId: string) => void
+  onPromote?: () => void
 }
 
-export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized, onMaximizeToggle, onClose, onDelete, onGhostReady }: Props) {
+export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized, onMaximizeToggle, onClose, onDelete, onGhostReady, onPromote }: Props) {
   const { t } = useTranslation('explore')
   const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
   const { mode, setMode } = useExploreViewMode()
@@ -66,7 +67,7 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
   const displayName = ghostName ?? resumeGhostId ?? null
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white @container">
       <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-semibold text-slate-800 truncate">
@@ -98,6 +99,16 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
               <Eye size={13} />
             </button>
           </div>
+          {ghostId && ghostName && onPromote && (
+            <button
+              onClick={onPromote}
+              title={t('createChangeTooltip')}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors cursor-pointer border border-violet-100 text-xs font-semibold"
+            >
+              <Sparkles size={13} className="text-violet-500 shrink-0" />
+              <span className="hidden @[350px]:inline">{t('createChange')}</span>
+            </button>
+          )}
           {ghostId && onDelete && (
             <button
               onClick={onDelete}

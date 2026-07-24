@@ -14,9 +14,10 @@ interface Props {
   onClose: () => void
   onDelete?: () => void
   onGhostReady?: (ghostId: string) => void
+  onPromote?: () => void
 }
 
-export function ExploreAnonymousBottomPanel({ workspaceId, resumeGhostId, height, isMaximized, onMaximizeToggle, onResize, onClose, onDelete, onGhostReady }: Props) {
+export function ExploreAnonymousBottomPanel({ workspaceId, resumeGhostId, height, isMaximized, onMaximizeToggle, onResize, onClose, onDelete, onGhostReady, onPromote }: Props) {
   const isDragging = useRef(false)
   const startY = useRef(0)
   const startHeight = useRef(0)
@@ -71,6 +72,7 @@ export function ExploreAnonymousBottomPanel({ workspaceId, resumeGhostId, height
           onClose={onClose}
           onDelete={onDelete}
           onGhostReady={onGhostReady}
+          onPromote={onPromote}
         />
       </div>
     </div>
