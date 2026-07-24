@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
+	"github.com/go-chi/chi/v5"
 	"nhooyr.io/websocket"
 )
 
-// prependExploreSkill prefixes the user message content with "/opsx:explore "
+// prependExploreSkill prefixes the user message content with "/openspec-explore "
 // to trigger the explore skill on the first message of an anonymous session.
 // Returns msg unchanged if parsing fails.
 func prependExploreSkill(msg []byte) []byte {
@@ -36,7 +36,7 @@ func prependExploreSkill(msg []byte) []byte {
 	if !ok {
 		return msg
 	}
-	message["content"] = "/opsx:explore " + content
+	message["content"] = "/openspec-explore " + content
 	payload["message"] = message
 	result, err := json.Marshal(payload)
 	if err != nil {
@@ -170,7 +170,7 @@ func (h *ExploreHandler) StopAnonymousSession(w http.ResponseWriter, r *http.Req
 }
 
 // serveWS handles the bidirectional WebSocket relay for a session.
-// When anonymous=true, the first user message is prefixed with "/opsx:explore ",
+// When anonymous=true, the first user message is prefixed with "/openspec-explore ",
 // a ghost record is created, and ghost_named is detected in the outgoing stream.
 func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *session.Session, onExpire func(), anonymous bool, workspaceID, sessionID string) {
 	wsCtx, wsCancel := context.WithCancel(r.Context())

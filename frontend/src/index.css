@@ -15,18 +15,18 @@
   --color-slate-900: var(--color-zinc-900);
   --color-slate-950: var(--color-zinc-950);
 
-  /* Remap blue (default accent) to indigo (luxurious, modern brand indigo) */
-  --color-blue-50: var(--color-indigo-50);
-  --color-blue-100: var(--color-indigo-100);
-  --color-blue-200: var(--color-indigo-200);
-  --color-blue-300: var(--color-indigo-300);
-  --color-blue-400: var(--color-indigo-400);
-  --color-blue-500: var(--color-indigo-500);
-  --color-blue-600: var(--color-indigo-600);
-  --color-blue-700: var(--color-indigo-700);
-  --color-blue-800: var(--color-indigo-800);
-  --color-blue-900: var(--color-indigo-900);
-  --color-blue-950: var(--color-indigo-950);
+  /* Remap blue (default accent) to orange (vibrant, modern brand orange) */
+  --color-blue-50: var(--color-orange-50);
+  --color-blue-100: var(--color-orange-100);
+  --color-blue-200: var(--color-orange-200);
+  --color-blue-300: var(--color-orange-300);
+  --color-blue-400: var(--color-orange-400);
+  --color-blue-500: var(--color-orange-500);
+  --color-blue-600: var(--color-orange-600);
+  --color-blue-700: var(--color-orange-700);
+  --color-blue-800: var(--color-orange-800);
+  --color-blue-900: var(--color-orange-900);
+  --color-blue-950: var(--color-orange-950);
 }
 
 body {

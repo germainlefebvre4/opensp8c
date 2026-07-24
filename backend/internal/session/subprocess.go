@@ -248,6 +248,14 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 							if b, err := json.Marshal(warning); err == nil {
 								_, _ = virtualStdoutWriter.Write(append(b, '\n'))
 							}
+						} else if strings.Contains(text, "ProjectIdRequiredError") || strings.Contains(text, "GOOGLE_CLOUD_PROJECT") {
+							warning := map[string]interface{}{
+								"type": "session_warning",
+								"text": "Erreur d'authentification Google Cloud : l'identifiant du projet (ProjectId) est requis pour ce compte. Veuillez définir la variable d'environnement GOOGLE_CLOUD_PROJECT ou GOOGLE_CLOUD_PROJECT_ID.",
+							}
+							if b, err := json.Marshal(warning); err == nil {
+								_, _ = virtualStdoutWriter.Write(append(b, '\n'))
+							}
 						}
 					}
 				}()

@@ -167,7 +167,7 @@ func TestSubprocessWrite(t *testing.T) {
 			agentID: "gemini",
 		}
 
-		inputPayload := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}`
+		inputPayload := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}`
 		n, err := proc.Write([]byte(inputPayload))
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
@@ -176,7 +176,7 @@ func TestSubprocessWrite(t *testing.T) {
 			t.Fatal("expected non-zero bytes written")
 		}
 
-		expected := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}` + "\n"
+		expected := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}` + "\n"
 		got := mockIn.String()
 		if got != expected {
 			t.Errorf("expected: %q, got: %q", expected, got)
@@ -210,7 +210,7 @@ func TestSubprocessWrite(t *testing.T) {
 			agentID: "claude",
 		}
 
-		inputPayload := `{"type":"user","message":{"role":"user","content":"/opsx:explore change-name"}}`
+		inputPayload := `{"type":"user","message":{"role":"user","content":"/openspec-explore change-name"}}`
 		_, err := proc.Write([]byte(inputPayload))
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
@@ -255,7 +255,7 @@ func TestStartSubprocessGeminiBridge(t *testing.T) {
 	// Note: newGeminiStdoutReader (used internally) expects JSON line stream, and will skip non-JSON.
 	// So we write a mocked stream-json Gemini assistant response to mock prompt!
 	mockResponseJSON := `{"type":"message","role":"assistant","content":"hello from mock gemini"}`
-	
+
 	// We send this as the user content, and since our mock CLI echoes it, geminiStdoutReader will parse it,
 	// translate it to content_block_delta, and send it to stdout.
 	userMsg := `{"type":"user","message":{"role":"user","content":"` + strings.ReplaceAll(mockResponseJSON, `"`, `\"`) + `"}}`
@@ -279,5 +279,61 @@ func TestStartSubprocessGeminiBridge(t *testing.T) {
 	}
 
 	_ = proc.CloseStdin()
+	_ = proc.Wait()
+}
+
+func TestStartSubprocessGeminiBridge_StderrErrors(t *testing.T) {
+	// Create a mock executable script that writes an error to stderr and exits
+	tmpDir := t.TempDir()
+	mockCLIPath := filepath.Join(tmpDir, "mock-gemini-err")
+	mockCLIScript := "#!/bin/sh\necho 'ProjectIdRequiredError: This account requires setting GOOGLE_CLOUD_PROJECT' >&2\ncat\n"
+	err := os.WriteFile(mockCLIPath, []byte(mockCLIScript), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock CLI: %v", err)
+	}
+
+	agentCfg := agents.AgentConfig{
+		ID:    "gemini",
+		Label: "Gemini",
+		CLI:   mockCLIPath,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil)
+	if err != nil {
+		t.Fatalf("StartSubprocess failed: %v", err)
+	}
+
+	// We trigger a turn by writing to the subprocess.
+	// This will start the cmd and run our mock script, which will write the error to stderr.
+	userMsg := `{"type":"user","message":{"role":"user","content":"hello"}}`
+	_, err = proc.Write([]byte(userMsg))
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Close stdin immediately so the virtual runner scanner knows there are no more turns.
+	_ = proc.CloseStdin()
+
+	// Read all output until EOF. This unblocks any concurrent writes to virtualStdoutWriter.
+	var outBuf bytes.Buffer
+	_, err = io.Copy(&outBuf, proc.Stdout())
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	got := outBuf.String()
+	expectedSub := `"type":"session_warning"`
+	if !strings.Contains(got, expectedSub) {
+		t.Errorf("expected output to contain %q, got: %q", expectedSub, got)
+	}
+
+	expectedText := "Erreur d'authentification Google Cloud"
+	if !strings.Contains(got, expectedText) {
+		t.Errorf("expected output to contain %q, got: %q", expectedText, got)
+	}
+
 	_ = proc.Wait()
 }
