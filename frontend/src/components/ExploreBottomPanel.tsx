@@ -2,27 +2,30 @@ import { useCallback, useEffect, useRef } from 'react'
 import { ExplorePanel } from './ExplorePanel'
 
 const MIN_HEIGHT = 200
-const MAX_HEIGHT_RATIO = 0.7
+const MAX_HEIGHT_RATIO = 0.9
 
 interface Props {
   workspaceId: string
   changeName: string
-  height: number
+  height: number | string
+  isMaximized?: boolean
+  onMaximizeToggle?: () => void
   onResize: (newHeight: number) => void
   onClose: () => void
 }
 
-export function ExploreBottomPanel({ workspaceId, changeName, height, onResize, onClose }: Props) {
+export function ExploreBottomPanel({ workspaceId, changeName, height, isMaximized, onMaximizeToggle, onResize, onClose }: Props) {
   const isDragging = useRef(false)
   const startY = useRef(0)
   const startHeight = useRef(0)
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isMaximized) return
     e.preventDefault()
     isDragging.current = true
     startY.current = e.clientY
-    startHeight.current = height
-  }, [height])
+    startHeight.current = typeof height === 'number' ? height : parseInt(height.toString()) || 0
+  }, [height, isMaximized])
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -53,7 +56,7 @@ export function ExploreBottomPanel({ workspaceId, changeName, height, onResize, 
       {/* Drag handle */}
       <div
         onMouseDown={handleMouseDown}
-        className="h-1.5 shrink-0 cursor-row-resize bg-slate-100 hover:bg-blue-200 transition-colors flex items-center justify-center"
+        className={`h-1.5 shrink-0 ${isMaximized ? 'cursor-default bg-slate-100' : 'cursor-row-resize bg-slate-100 hover:bg-blue-200'} transition-colors flex items-center justify-center`}
       >
         <div className="w-8 h-0.5 rounded-full bg-slate-300" />
       </div>
@@ -63,6 +66,8 @@ export function ExploreBottomPanel({ workspaceId, changeName, height, onResize, 
         <ExplorePanel
           workspaceId={workspaceId}
           changeName={changeName}
+          isMaximized={isMaximized}
+          onMaximizeToggle={onMaximizeToggle}
           onClose={onClose}
         />
       </div>

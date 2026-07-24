@@ -21,6 +21,21 @@ Le panel d'exploration d'un ghost card SHALL afficher un bouton delete dans son 
 - **WHEN** l'utilisateur clique sur [Annuler] dans la dialog de confirmation
 - **THEN** la dialog se ferme et le panel d'exploration reste ouvert sans modification
 
+### Requirement: Bouton de maximisation dans le header du panel d'exploration
+Le header du panel d'exploration (qu'il soit named ou anonymous) SHALL afficher un bouton de maximisation/minimisation (icônes Maximize2 / Minimize2) à côté des boutons de mode de rendu et avant le bouton de fermeture (X).
+
+#### Scenario: Clic sur maximiser agrandit le panel
+- **WHEN** le panel est en taille normale et l'utilisateur clique sur le bouton de maximisation
+- **THEN** le panel passe en mode maximisé, occupant toute la hauteur de l'espace disponible sous la barre de navigation globale, et l'icône du bouton change pour indiquer le retour à la taille normale
+
+#### Scenario: Clic sur minimiser restaure la taille normale
+- **WHEN** le panel est en mode maximisé et l'utilisateur clique sur le bouton de minimisation
+- **THEN** le panel quitte le mode maximisé et reprend sa hauteur redimensionnée précédente (ou la hauteur par défaut)
+
+#### Scenario: Le drag handle est désactivé en mode maximisé
+- **WHEN** le panel est en mode maximisé
+- **THEN** le drag handle du bord supérieur n'est plus draggable et l'icône de curseur de redimensionnement vertical n'est pas affichée
+
 ### Requirement: Afficher l'ExplorePanel en bottom panel
 Lorsqu'une session d'exploration est active, le chat SHALL s'afficher dans un panneau ancré en bas de la page, sous les colonnes Kanban. Les colonnes Kanban SHALL occuper toute la largeur disponible indépendamment de l'état du bottom panel.
 
@@ -37,15 +52,15 @@ Lorsqu'une session d'exploration est active, le chat SHALL s'afficher dans un pa
 - **THEN** le panneau disparaît et les colonnes reprennent toute la hauteur disponible
 
 ### Requirement: Redimensionnement vertical du bottom panel
-L'utilisateur SHALL pouvoir ajuster la hauteur du bottom panel via un drag handle positionné sur son bord supérieur. La hauteur SHALL être contrainte entre 200px (minimum) et 70% de la hauteur de la fenêtre (maximum).
+L'utilisateur SHALL pouvoir ajuster la hauteur du bottom panel via un drag handle positionné sur son bord supérieur. La hauteur SHALL être contrainte entre 200px (minimum) et 90% de la hauteur de la fenêtre (maximum).
 
 #### Scenario: Drag vers le haut agrandit le panel
 - **WHEN** l'utilisateur clique sur le drag handle et déplace la souris vers le haut
-- **THEN** la hauteur du panel augmente au fur et à mesure du déplacement, dans la limite du maximum
+- **THEN** la hauteur du panel augmente au fur et à mesure du déplacement, dans la limite du maximum (90% de la hauteur de la fenêtre)
 
 #### Scenario: Drag vers le bas rétrécit le panel
 - **WHEN** l'utilisateur clique sur le drag handle et déplace la souris vers le bas
-- **THEN** la hauteur du panel diminue au fur et à mesure du déplacement, dans la limite du minimum
+- **THEN** la hauteur du panel diminue au fur et à mesure du déplacement, dans la limite du minimum (200px)
 
 #### Scenario: Relâchement de la souris fixe la hauteur
 - **WHEN** l'utilisateur relâche le bouton de la souris pendant un drag

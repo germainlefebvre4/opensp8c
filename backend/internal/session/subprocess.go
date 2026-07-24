@@ -181,6 +181,14 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 					continue
 				}
 
+				// Ensure every turn is executed in explore mode to trigger/keep the openspec-explore skill active,
+				// since Gemini runs as a one-shot process and does not persist active skills natively across resume runs.
+				// We skip prefixing if the prompt already has `/opsx:explore` or starts with `{` (e.g. mock JSON in unit tests).
+				trimmedPrompt := strings.TrimSpace(prompt)
+				if !strings.HasPrefix(trimmedPrompt, "/opsx:explore") && !strings.HasPrefix(trimmedPrompt, "{") {
+					prompt = "/opsx:explore " + prompt
+				}
+
 				// Build subprocess arguments for the one-shot run
 				args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
 				if shouldResume {

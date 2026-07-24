@@ -15,18 +15,18 @@
   --color-slate-900: var(--color-zinc-900);
   --color-slate-950: var(--color-zinc-950);
 
-  /* Remap blue (default accent) to orange (vibrant, modern brand orange) */
-  --color-blue-50: var(--color-orange-50);
-  --color-blue-100: var(--color-orange-100);
-  --color-blue-200: var(--color-orange-200);
-  --color-blue-300: var(--color-orange-300);
-  --color-blue-400: var(--color-orange-400);
-  --color-blue-500: var(--color-orange-500);
-  --color-blue-600: var(--color-orange-600);
-  --color-blue-700: var(--color-orange-700);
-  --color-blue-800: var(--color-orange-800);
-  --color-blue-900: var(--color-orange-900);
-  --color-blue-950: var(--color-orange-950);
+  /* Remap blue (default accent) to emerald (vibrant, modern brand emerald) */
+  --color-blue-50: var(--color-emerald-50);
+  --color-blue-100: var(--color-emerald-100);
+  --color-blue-200: var(--color-emerald-200);
+  --color-blue-300: var(--color-emerald-300);
+  --color-blue-400: var(--color-emerald-400);
+  --color-blue-500: var(--color-emerald-500);
+  --color-blue-600: var(--color-emerald-600);
+  --color-blue-700: var(--color-emerald-700);
+  --color-blue-800: var(--color-emerald-800);
+  --color-blue-900: var(--color-emerald-900);
+  --color-blue-950: var(--color-emerald-950);
 }
 
 body {

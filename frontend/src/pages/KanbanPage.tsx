@@ -43,6 +43,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const [resumeGhostId, setResumeGhostId] = useState<string | undefined>(undefined)
   const [activeGhostId, setActiveGhostId] = useState<string | undefined>(undefined)
   const [panelHeight, setPanelHeight] = useState(320)
+  const [panelMaximized, setPanelMaximized] = useState(false)
   const [resetDialog, setResetDialog] = useState<Change | null>(null)
   const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
   const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
@@ -189,99 +190,105 @@ export function KanbanPage({ workspaceId }: Props) {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Search bar */}
-        <div className="shrink-0 px-4 pt-3 pb-1">
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder={t('searchPlaceholder')}
-              className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 pr-8 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Top: Kanban columns + DetailPanel */}
-        <div className="flex-1 flex flex-row overflow-hidden min-h-0">
-          <div className="flex-1 overflow-x-auto min-h-0 p-4">
-            <div className="flex gap-3 h-full min-w-max">
-              {leadingColumns.map(col => (
-                <KanbanColumn
-                  key={col.status}
-                  title={col.title}
-                  status={col.status}
-                  changes={filteredChanges.filter(c => c.kanban_status === col.status)}
-                  workspaceId={workspaceId}
-                  onOpen={name => handleOpen(name, col.status)}
-                  onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
-                  onDeleteGhost={handleDeleteGhostRequest}
-                  getFfStatus={getFfStatus}
-                  dragSourceStatus={dragSourceStatus}
-                  validDropSources={Object.entries(VALID_DROPS)
-                    .filter(([, targets]) => targets.includes(col.status))
-                    .map(([src]) => src)}
+        {!panelMaximized && (
+          <>
+            {/* Search bar */}
+            <div className="shrink-0 px-4 pt-3 pb-1">
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder={t('searchPlaceholder')}
+                  className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 pr-8 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
                 />
-              ))}
-
-              {/* Done + Archived stacked in shared slot */}
-              <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
-                <KanbanColumn
-                  title={t('columns.done')}
-                  status="done"
-                  changes={filteredChanges.filter(c => c.kanban_status === 'done')}
-                  workspaceId={workspaceId}
-                  onOpen={name => handleOpen(name, 'done')}
-                  className="flex-1 min-h-0"
-                  getFfStatus={getFfStatus}
-                  dragSourceStatus={dragSourceStatus}
-                  validDropSources={[]}
-                />
-                <div className="h-px bg-slate-200 shrink-0" />
-                <KanbanColumn
-                  title={t('columns.archived')}
-                  status="archived"
-                  changes={filteredArchived}
-                  workspaceId={workspaceId}
-                  onOpen={name => handleOpen(name, 'archived')}
-                  maxVisible={3}
-                  collapsible
-                  className="max-h-[40%] overflow-y-auto"
-                  getFfStatus={getFfStatus}
-                  dragSourceStatus={dragSourceStatus}
-                  validDropSources={[]}
-                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
             </div>
-          </div>
 
-          {detailOpen && (
-            <div className="w-[420px] shrink-0 border-l border-slate-200 flex flex-col overflow-hidden">
-              <DetailPanel
-                workspaceId={workspaceId}
-                changeName={detailOpen.name}
-                onClose={() => setDetailOpen(null)}
-              />
+            {/* Top: Kanban columns + DetailPanel */}
+            <div className="flex-1 flex flex-row overflow-hidden min-h-0">
+              <div className="flex-1 overflow-x-auto min-h-0 p-4">
+                <div className="flex gap-3 h-full min-w-max">
+                  {leadingColumns.map(col => (
+                    <KanbanColumn
+                      key={col.status}
+                      title={col.title}
+                      status={col.status}
+                      changes={filteredChanges.filter(c => c.kanban_status === col.status)}
+                      workspaceId={workspaceId}
+                      onOpen={name => handleOpen(name, col.status)}
+                      onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
+                      onDeleteGhost={handleDeleteGhostRequest}
+                      getFfStatus={getFfStatus}
+                      dragSourceStatus={dragSourceStatus}
+                      validDropSources={Object.entries(VALID_DROPS)
+                        .filter(([, targets]) => targets.includes(col.status))
+                        .map(([src]) => src)}
+                    />
+                  ))}
+
+                  {/* Done + Archived stacked in shared slot */}
+                  <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
+                    <KanbanColumn
+                      title={t('columns.done')}
+                      status="done"
+                      changes={filteredChanges.filter(c => c.kanban_status === 'done')}
+                      workspaceId={workspaceId}
+                      onOpen={name => handleOpen(name, 'done')}
+                      className="flex-1 min-h-0"
+                      getFfStatus={getFfStatus}
+                      dragSourceStatus={dragSourceStatus}
+                      validDropSources={[]}
+                    />
+                    <div className="h-px bg-slate-200 shrink-0" />
+                    <KanbanColumn
+                      title={t('columns.archived')}
+                      status="archived"
+                      changes={filteredArchived}
+                      workspaceId={workspaceId}
+                      onOpen={name => handleOpen(name, 'archived')}
+                      maxVisible={3}
+                      collapsible
+                      className="max-h-[40%] overflow-y-auto"
+                      getFfStatus={getFfStatus}
+                      dragSourceStatus={dragSourceStatus}
+                      validDropSources={[]}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {detailOpen && (
+                <div className="w-[420px] shrink-0 border-l border-slate-200 flex flex-col overflow-hidden">
+                  <DetailPanel
+                    workspaceId={workspaceId}
+                    changeName={detailOpen.name}
+                    onClose={() => setDetailOpen(null)}
+                  />
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         {/* Bottom: ExploreBottomPanel (named) or ExploreAnonymousBottomPanel (new/resume) */}
         {anonymousExploreOpen && (
           <ExploreAnonymousBottomPanel
             workspaceId={workspaceId}
             resumeGhostId={resumeGhostId}
-            height={panelHeight}
+            height={panelMaximized ? '100%' : panelHeight}
+            isMaximized={panelMaximized}
+            onMaximizeToggle={() => setPanelMaximized(!panelMaximized)}
             onResize={setPanelHeight}
-            onClose={() => setAnonymousExploreOpen(false)}
+            onClose={() => { setAnonymousExploreOpen(false); setPanelMaximized(false); }}
             onDelete={handleDeleteFromPanel}
             onGhostReady={setActiveGhostId}
           />
@@ -290,9 +297,11 @@ export function KanbanPage({ workspaceId }: Props) {
           <ExploreBottomPanel
             workspaceId={workspaceId}
             changeName={exploreOpen.name}
-            height={panelHeight}
+            height={panelMaximized ? '100%' : panelHeight}
+            isMaximized={panelMaximized}
+            onMaximizeToggle={() => setPanelMaximized(!panelMaximized)}
             onResize={setPanelHeight}
-            onClose={() => setExploreOpen(null)}
+            onClose={() => { setExploreOpen(null); setPanelMaximized(false); }}
           />
         )}
 

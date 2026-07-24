@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Code, Eye, Trash2 } from 'lucide-react'
+import { X, Code, Eye, Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
@@ -9,12 +9,14 @@ import { TypingBubble } from './TypingBubble'
 interface Props {
   workspaceId: string
   resumeGhostId?: string
+  isMaximized?: boolean
+  onMaximizeToggle?: () => void
   onClose: () => void
   onDelete?: () => void
   onGhostReady?: (ghostId: string) => void
 }
 
-export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, onClose, onDelete, onGhostReady }: Props) {
+export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized, onMaximizeToggle, onClose, onDelete, onGhostReady }: Props) {
   const { t } = useTranslation('explore')
   const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
   const { mode, setMode } = useExploreViewMode()
@@ -104,9 +106,18 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, onClose, onD
               <Trash2 size={15} />
             </button>
           )}
+          {onMaximizeToggle && (
+            <button
+              onClick={onMaximizeToggle}
+              title={isMaximized ? t('minimize') : t('maximize')}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          )}
           <button
             onClick={() => { stop(); onClose() }}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X size={15} />
           </button>

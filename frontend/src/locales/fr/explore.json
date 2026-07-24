@@ -8,5 +8,7 @@
   "messagePlaceholder": "Votre message... (Shift+Enter pour aller à la ligne)",
   "anonymousPlaceholder": "Décrivez ce que vous voulez explorer... (Shift+Enter pour aller à la ligne)",
   "send": "Envoyer",
-  "deleteExploration": "Supprimer cette exploration"
+  "deleteExploration": "Supprimer cette exploration",
+  "maximize": "Agrandir",
+  "minimize": "Réduire"
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Code, Eye } from 'lucide-react'
+import { X, Code, Eye, Maximize2, Minimize2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useExploreSession } from '../hooks/useExploreSession'
@@ -9,10 +9,12 @@ import { TypingBubble } from './TypingBubble'
 interface Props {
   workspaceId: string
   changeName: string
+  isMaximized?: boolean
+  onMaximizeToggle?: () => void
   onClose: () => void
 }
 
-export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
+export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeToggle, onClose }: Props) {
   const { t } = useTranslation('explore')
   const { messages, connected, expired, waiting, agentInfo, send, reconnect } = useExploreSession(workspaceId, changeName)
   const { mode, setMode } = useExploreViewMode()
@@ -88,6 +90,15 @@ export function ExplorePanel({ workspaceId, changeName, onClose }: Props) {
               <Eye size={13} />
             </button>
           </div>
+          {onMaximizeToggle && (
+            <button
+              onClick={onMaximizeToggle}
+              title={isMaximized ? t('minimize') : t('maximize')}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
