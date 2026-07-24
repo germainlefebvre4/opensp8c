@@ -86,3 +86,27 @@ export const promoteGhost = (workspaceId: string, ghostId: string, context: stri
 
 export const deleteGhost = (workspaceId: string, ghostId: string) =>
   api.delete(`/api/workspaces/${workspaceId}/explorations/${ghostId}`)
+
+export interface DraftTask {
+  id: string
+  text: string
+  done: boolean
+}
+
+export interface ExplorationDraft {
+  ghostId: string
+  workspaceId: string
+  name: string
+  description: string
+  tasks: DraftTask[]
+  lastSavedAt?: string
+}
+
+export const getGhostDraft = (workspaceId: string, ghostId: string) =>
+  api.get<ExplorationDraft>(`/api/workspaces/${workspaceId}/explorations/${ghostId}/draft`).then(r => r.data)
+
+export const updateGhostDraft = (workspaceId: string, ghostId: string, draft: ExplorationDraft) =>
+  api.put<ExplorationDraft>(`/api/workspaces/${workspaceId}/explorations/${ghostId}/draft`, draft).then(r => r.data)
+
+export const deleteGhostDraft = (workspaceId: string, ghostId: string) =>
+  api.delete(`/api/workspaces/${workspaceId}/explorations/${ghostId}/draft`)

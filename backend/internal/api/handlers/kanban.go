@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/openspec"
@@ -38,13 +39,36 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 
 	// Merge ghost records (app-level explorations) into the changes list.
 	if h.prefs != nil {
+		draftsDir := filepath.Join(filepath.Dir(h.prefs.Path()), "drafts")
 		for _, e := range h.prefs.ListExplorations(id) {
+			tasksDone := 0
+			tasksTotal := 0
+
+			draftPath := filepath.Join(draftsDir, e.ID+".json")
+			if data, err := os.ReadFile(draftPath); err == nil {
+				var draft struct {
+					Tasks []struct {
+						Done bool `json:"done"`
+					} `json:"tasks"`
+				}
+				if err := json.Unmarshal(data, &draft); err == nil {
+					tasksTotal = len(draft.Tasks)
+					for _, t := range draft.Tasks {
+						if t.Done {
+							tasksDone++
+						}
+					}
+				}
+			}
+
 			changes = append(changes, openspec.Change{
 				Name:         e.Name,
 				KanbanStatus: "to-explore",
 				Created:      e.CreatedAt,
 				IsGhost:      true,
 				GhostID:      e.ID,
+				TasksDone:    tasksDone,
+				TasksTotal:   tasksTotal,
 			})
 		}
 	}

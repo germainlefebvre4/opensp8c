@@ -18,7 +18,7 @@ Quand l'utilisateur déclenche la promotion d'un ghost card vers la colonne "tod
 - **THEN** la dialog se ferme, le frontend envoie une requête `POST /api/workspaces/{id}/explorations/{ghostId}/promote` avec le contexte localStorage dans le body
 
 ### Requirement: Promotion via FF dans la session existante ou avec contexte injecté
-L'endpoint `/promote` SHALL déclencher FF en réutilisant la session existante si elle est active, ou en démarrant un nouveau subprocess avec le contexte conversationnel injecté si la session a expiré.
+L'endpoint `/promote` SHALL déclencher FF en réutilisant la session existante si elle est active, ou en démarrant un nouveau subprocess avec le contexte conversationnel injecté si la session a expiré. Si un fichier de brouillon `drafts/<ghostId>.json` existe pour cette exploration, le backend SHALL lire son contenu et l'associer au contexte ou l'injecter au subprocess pour que le change créé contienne les tâches du brouillon. Sur succès de la promotion, le fichier de brouillon de tâche SHALL être supprimé.
 
 #### Scenario: Session exploration encore active — FF dans la même session
 - **WHEN** `POST /promote` est reçu ET la session du ghost card est encore vivante dans `session.Manager`
@@ -26,15 +26,15 @@ L'endpoint `/promote` SHALL déclencher FF en réutilisant la session existante 
 
 #### Scenario: Session exploration expirée — FF avec contexte injecté
 - **WHEN** `POST /promote` est reçu ET la session du ghost card a expiré ET le body contient le contexte conversationnel
-- **THEN** le backend démarre un nouveau subprocess avec le contexte injecté comme premier message système, puis envoie `/opsx:ff`, et surveille le stream pour `change_created`
+- **THEN** le backend démarre un nouveau subprocess avec le contexte injecté comme premier message système (incluant les tâches de brouillon éventuelles), puis envoie `/opsx:ff`, et surveille le stream pour `change_created`
 
 #### Scenario: FF produit le change_created marker — change créé dans "todo"
 - **WHEN** le subprocess FF produit une ligne contenant `{"event":"change_created","name":"<name>"}` sur stdout
-- **THEN** le backend crée le dossier `openspec/changes/<name>/` (via `openspec new change`), émet `ff_done` via SSE, et le ghost record est supprimé de `preferences.json`
+- **THEN** le backend crée le dossier `openspec/changes/<name>/` (via `openspec new change`), émet `ff_done` via SSE, le ghost record est supprimé de `preferences.json`, et le fichier de brouillon `drafts/<ghostId>.json` est supprimé du disque
 
 #### Scenario: FF échoue — ghost card reste en "to-explore"
 - **WHEN** le subprocess FF se termine avec une erreur
-- **THEN** le backend émet `ff_failed` via SSE avec le ghostId, le ghost card reste en "to-explore", et l'utilisateur peut réessayer
+- **THEN** le backend émet `ff_failed` via SSE avec le ghostId, le ghost card reste en "to-explore", et le fichier de brouillon `drafts/<ghostId>.json` est conservé pour permettre une nouvelle tentative
 
 ### Requirement: Transition visuelle ghost card → change réel
 Pendant que FF est en cours, le ghost card SHALL afficher un indicateur de progression. Quand FF se termine, la carte doit transitionner vers un change normal dans la colonne "todo".

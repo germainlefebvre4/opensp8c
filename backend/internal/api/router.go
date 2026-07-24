@@ -34,6 +34,13 @@ func conversationsPath(cfgPath string) string {
 	return filepath.Join(filepath.Dir(cfgPath), "conversations")
 }
 
+func draftsPath(cfgPath string) string {
+	if p := os.Getenv("DRAFTS_PATH"); p != "" {
+		return p
+	}
+	return filepath.Join(filepath.Dir(cfgPath), "drafts")
+}
+
 func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r := chi.NewRouter()
 
@@ -60,7 +67,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
-	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore)
+	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 
@@ -98,6 +105,9 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 		r.Post("/workspaces/{id}/explorations/{ghostId}/promote", exploreHandler.PromoteGhost)
 		r.Delete("/workspaces/{id}/explorations/{ghostId}", exploreHandler.DeleteGhost)
+		r.Get("/workspaces/{id}/explorations/{ghostId}/draft", exploreHandler.GetGhostDraft)
+		r.Put("/workspaces/{id}/explorations/{ghostId}/draft", exploreHandler.UpdateGhostDraft)
+		r.Delete("/workspaces/{id}/explorations/{ghostId}/draft", exploreHandler.DeleteGhostDraft)
 
 		r.Get("/workspaces/{id}/events", eventsHandler.HandleSSE)
 

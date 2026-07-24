@@ -78,6 +78,16 @@ func parseArchiveDirName(dirName string) (time.Time, string, bool) {
 	return t, name, true
 }
 
+func draftsPathFromPrefs(prefs *preferences.Service) string {
+	if p := os.Getenv("DRAFTS_PATH"); p != "" {
+		return p
+	}
+	if prefs == nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(prefs.Path()), "drafts")
+}
+
 // sweepInactiveExplorations deletes conversation logs for anonymous
 // explorations whose ghost record has been inactive longer than ttl.
 // Explorations that have been promoted no longer appear in ListExplorations
@@ -87,6 +97,7 @@ func sweepInactiveExplorations(convStore *Store, prefs *preferences.Service, wsI
 	if prefs == nil {
 		return
 	}
+	draftsDir := draftsPathFromPrefs(prefs)
 	for _, e := range prefs.ListExplorations(wsID) {
 		lastActivity, err := time.Parse(time.RFC3339, e.LastActivityAt)
 		if err != nil || now.Sub(lastActivity) < ttl {
@@ -95,6 +106,10 @@ func sweepInactiveExplorations(convStore *Store, prefs *preferences.Service, wsI
 		if err := convStore.DeleteExplorationLogs(wsID, e.ID); err != nil {
 			log.Printf("[retention] failed to delete exploration logs %s/%s: %v", wsID, e.ID, err)
 			continue
+		}
+		if draftsDir != "" {
+			draftFile := filepath.Join(draftsDir, e.ID+".json")
+			_ = os.Remove(draftFile)
 		}
 		log.Printf("[retention] deleted exploration logs %s/%s (inactive since %s)", wsID, e.ID, lastActivity.Format("2006-01-02"))
 	}

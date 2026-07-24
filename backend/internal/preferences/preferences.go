@@ -38,6 +38,10 @@ func NewService(path string) *Service {
 	return &Service{path: path}
 }
 
+func (s *Service) Path() string {
+	return s.path
+}
+
 func (s *Service) load() (*Preferences, error) {
 	data, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {

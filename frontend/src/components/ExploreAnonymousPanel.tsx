@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
+import { DraftSidePanel } from './DraftSidePanel'
 
 interface Props {
   workspaceId: string
@@ -124,55 +125,68 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
-              msg.role === 'user'
-                ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
-                : 'self-start bg-slate-100 text-slate-800'
-            }`}
-          >
-            {msg.role === 'assistant' && mode === 'rendered' ? (
-              <article className="prose prose-slate prose-sm max-w-none text-left">
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                {msg.partial && <span className="opacity-50">▊</span>}
-              </article>
-            ) : (
-              <span className="whitespace-pre-wrap">
-                {msg.content}
-                {msg.partial && <span className="opacity-50">▊</span>}
-              </span>
+      {/* Main Split Area */}
+      <div className="flex-1 min-h-0 flex flex-row">
+        {/* Left Pane: Chat Conversation */}
+        <div className="flex-1 min-w-0 flex flex-col h-full">
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
+                  msg.role === 'user'
+                    ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
+                    : 'self-start bg-slate-100 text-slate-800'
+                }`}
+              >
+                {msg.role === 'assistant' && mode === 'rendered' ? (
+                  <article className="prose prose-slate prose-sm max-w-none text-left">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {msg.partial && <span className="opacity-50">▊</span>}
+                  </article>
+                ) : (
+                  <span className="whitespace-pre-wrap">
+                    {msg.content}
+                    {msg.partial && <span className="opacity-50">▊</span>}
+                  </span>
+                )}
+              </div>
+            ))}
+            {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
+            {expired && (
+              <div className="text-center text-amber-600 text-xs">{t('sessionExpired')}</div>
             )}
+            <div ref={bottomRef} />
           </div>
-        ))}
-        {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
-        {expired && (
-          <div className="text-center text-amber-600 text-xs">{t('sessionExpired')}</div>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      <div className="p-3 border-t border-slate-200 flex gap-2 shrink-0 items-end">
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t('anonymousPlaceholder')}
-          disabled={!connected}
-          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 placeholder:text-slate-400 resize-none overflow-y-auto"
-          style={{ maxHeight: '160px' }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!connected || !input.trim()}
-          className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-        >
-          {t('send')}
-        </button>
+          <div className="p-3 border-t border-slate-200 flex gap-2 shrink-0 items-end">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('anonymousPlaceholder')}
+              disabled={!connected}
+              className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 placeholder:text-slate-400 resize-none overflow-y-auto"
+              style={{ maxHeight: '160px' }}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!connected || !input.trim()}
+              className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              {t('send')}
+            </button>
+          </div>
+        </div>
+
+        {/* Right Pane: Interactive Draft Checklist */}
+        {ghostId && (
+          <div className="w-[320px] shrink-0 h-full">
+            <DraftSidePanel workspaceId={workspaceId} ghostId={ghostId} />
+          </div>
+        )}
       </div>
     </div>
   )

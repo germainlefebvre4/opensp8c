@@ -33,11 +33,15 @@ Le LLM SHALL émettre un marker `ghost_named` dans sa première réponse. Le bac
 - **THEN** le ghost card conserve son id temporaire `explore-<6chars>` comme nom
 
 ### Requirement: Affichage distinct du ghost card dans le kanban
-Le ghost card SHALL être affiché dans la colonne "to-explore" avec un traitement visuel différencié des changes normaux : bordure pointillée, badge "exploring", sans tags ni barre de progression.
+Le ghost card SHALL être affiché dans la colonne "to-explore" avec un traitement visuel différencié des changes normaux : bordure pointillée, badge "exploring", sans tags d'implémentation. Si un brouillon de tâches existe pour cette exploration, la carte SHALL afficher un indicateur de progression de brouillon distinct (ex: barre en pointillés de couleur violette) ou un indicateur textuel du nombre de tâches du brouillon (ex: "3 draft tasks").
 
-#### Scenario: Ghost card visible dans "to-explore"
-- **WHEN** un ghost record existe dans `preferences.json` pour le workspace courant
-- **THEN** la colonne "to-explore" affiche une carte avec bordure pointillée, le nom du ghost card, un badge "exploring" et aucun autre badge ni barre de progression
+#### Scenario: Ghost card visible dans "to-explore" sans brouillon
+- **WHEN** un ghost record existe dans `preferences.json` pour le workspace courant ET qu'aucun fichier de brouillon de tâche n'existe
+- **THEN** la colonne "to-explore" affiche une carte avec bordure pointillée, le nom du ghost card, un badge "exploring" et aucun indicateur de progression
+
+#### Scenario: Ghost card visible dans "to-explore" avec brouillon
+- **WHEN** un ghost record existe dans `preferences.json` pour le workspace courant ET qu'un fichier de brouillon contenant des tâches de brouillon existe
+- **THEN** la colonne "to-explore" affiche une carte avec bordure pointillée, le nom du ghost card, un badge "exploring", et un indicateur visuel de progression de brouillon ou un badge textuel "N draft tasks"
 
 #### Scenario: Ghost card non draggable avant nommage
 - **WHEN** le ghost card est encore en phase de nommage (label "Exploring...")

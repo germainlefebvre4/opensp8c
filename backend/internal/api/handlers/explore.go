@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -60,10 +63,18 @@ type ExploreHandler struct {
 	prefs     *preferences.Service
 	watcher   *watcher.WatcherService
 	convStore *conversation.Store
+	draftsDir string
 }
 
-func NewExploreHandler(ws *WorkspaceHandler, mgr *session.Manager, prefs *preferences.Service, watcherSvc *watcher.WatcherService, convStore *conversation.Store) *ExploreHandler {
-	return &ExploreHandler{ws: ws, mgr: mgr, prefs: prefs, watcher: watcherSvc, convStore: convStore}
+func NewExploreHandler(ws *WorkspaceHandler, mgr *session.Manager, prefs *preferences.Service, watcherSvc *watcher.WatcherService, convStore *conversation.Store, draftsDir string) *ExploreHandler {
+	return &ExploreHandler{
+		ws:        ws,
+		mgr:       mgr,
+		prefs:     prefs,
+		watcher:   watcherSvc,
+		convStore: convStore,
+		draftsDir: draftsDir,
+	}
 }
 
 func (h *ExploreHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -194,10 +205,15 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 			case <-sess.Done():
 				remaining, _ := sess.MessagesSince(cursor)
 				for _, msg := range remaining {
-					if anonymous && !ghostNamed {
-						if name := extractGhostNamed(msg); name != "" {
-							ghostNamed = true
-							h.applyGhostName(workspaceID, sessionID, name)
+					if anonymous {
+						if !ghostNamed {
+							if name := extractGhostNamed(msg); name != "" {
+								ghostNamed = true
+								h.applyGhostName(workspaceID, sessionID, name)
+							}
+						}
+						if draft := extractGhostDraft(msg); draft != nil {
+							h.saveGhostDraft(workspaceID, sessionID, draft)
 						}
 					}
 					conn.Write(wsCtx, websocket.MessageText, msg)
@@ -210,10 +226,15 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 				msgs, newCursor := sess.MessagesSince(cursor)
 				cursor = newCursor
 				for _, msg := range msgs {
-					if anonymous && !ghostNamed {
-						if name := extractGhostNamed(msg); name != "" {
-							ghostNamed = true
-							h.applyGhostName(workspaceID, sessionID, name)
+					if anonymous {
+						if !ghostNamed {
+							if name := extractGhostNamed(msg); name != "" {
+								ghostNamed = true
+								h.applyGhostName(workspaceID, sessionID, name)
+							}
+						}
+						if draft := extractGhostDraft(msg); draft != nil {
+							h.saveGhostDraft(workspaceID, sessionID, draft)
 						}
 					}
 					if err := conn.Write(wsCtx, websocket.MessageText, msg); err != nil {
@@ -325,6 +346,7 @@ func (h *ExploreHandler) DeleteGhost(w http.ResponseWriter, r *http.Request) {
 
 	h.mgr.StopAnonymous(workspaceID, ghostID)
 	_ = h.prefs.DeleteExploration(ghostID)
+	_ = h.deleteDraftFile(ghostID)
 	if h.convStore != nil {
 		_ = h.convStore.DeleteExplorationLogs(workspaceID, ghostID)
 	}
@@ -373,6 +395,31 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 		return
 	}
 
+	// Try to load any local draft file to inject tasks and description into the promotion process context.
+	if h.draftsDir != "" {
+		draftPath := filepath.Join(h.draftsDir, ghostID+".json")
+		if data, err := os.ReadFile(draftPath); err == nil {
+			var draft ExplorationDraft
+			if err := json.Unmarshal(data, &draft); err == nil {
+				draftContext := "\n\nBased on your previous exploration, you drafted the following plan. Make sure to generate the tasks exactly matching this draft:\n"
+				if draft.Description != "" {
+					draftContext += "Description: " + draft.Description + "\n"
+				}
+				if len(draft.Tasks) > 0 {
+					draftContext += "Draft Tasks:\n"
+					for _, task := range draft.Tasks {
+						status := "[ ]"
+						if task.Done {
+							status = "[x]"
+						}
+						draftContext += fmt.Sprintf("- %s %s\n", status, task.Text)
+					}
+				}
+				explorationContext += draftContext
+			}
+		}
+	}
+
 	systemPrompt := ""
 	if explorationContext != "" {
 		systemPrompt = "The user explored this topic in a conversation. Here is the exploration context:\n\n" + explorationContext
@@ -416,8 +463,174 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 		}
 	}
 
-	// FF succeeded: clean up ghost record before broadcasting done
+	// FF succeeded: clean up ghost record and draft file before broadcasting done
 	_ = h.prefs.DeleteExploration(ghostID)
+	_ = h.deleteDraftFile(ghostID)
 	h.watcher.Broadcast(workspaceID, watcher.Event{Type: "exploration_deleted", Name: ghostID})
 	h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_done", Name: ghostName})
+}
+
+type DraftTask struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+	Done bool   `json:"done"`
+}
+
+type ExplorationDraft struct {
+	GhostID     string      `json:"ghostId"`
+	WorkspaceID string      `json:"workspaceId"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Tasks       []DraftTask `json:"tasks"`
+	LastSavedAt string      `json:"lastSavedAt,omitempty"`
+}
+
+func (h *ExploreHandler) deleteDraftFile(ghostID string) error {
+	if h.draftsDir == "" {
+		return nil
+	}
+	path := filepath.Join(h.draftsDir, ghostID+".json")
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func (h *ExploreHandler) GetGhostDraft(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	ghostID := chi.URLParam(r, "ghostId")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if h.draftsDir == "" {
+		http.Error(w, "drafts directory not configured", http.StatusInternalServerError)
+		return
+	}
+
+	path := filepath.Join(h.draftsDir, ghostID+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Return a default empty draft structure
+			draft := ExplorationDraft{
+				GhostID:     ghostID,
+				WorkspaceID: workspaceID,
+				Name:        "",
+				Description: "",
+				Tasks:       []DraftTask{},
+			}
+			json.NewEncoder(w).Encode(draft)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(data)
+}
+
+func (h *ExploreHandler) UpdateGhostDraft(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	ghostID := chi.URLParam(r, "ghostId")
+
+	if h.draftsDir == "" {
+		http.Error(w, "drafts directory not configured", http.StatusInternalServerError)
+		return
+	}
+
+	var draft ExplorationDraft
+	if err := json.NewDecoder(r.Body).Decode(&draft); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	draft.GhostID = ghostID
+	draft.WorkspaceID = workspaceID
+	draft.LastSavedAt = time.Now().UTC().Format(time.RFC3339)
+
+	if err := os.MkdirAll(h.draftsDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data, err := json.MarshalIndent(draft, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	path := filepath.Join(h.draftsDir, ghostID+".json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+func (h *ExploreHandler) DeleteGhostDraft(w http.ResponseWriter, r *http.Request) {
+	ghostID := chi.URLParam(r, "ghostId")
+
+	if err := h.deleteDraftFile(ghostID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func extractGhostDraft(line []byte) *ExplorationDraft {
+	var data map[string]interface{}
+	if err := json.Unmarshal(line, &data); err != nil {
+		return nil
+	}
+	event, _ := data["event"].(string)
+	if event != "ghost_draft_updated" {
+		return nil
+	}
+	draftMap, ok := data["draft"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	draftBytes, err := json.Marshal(draftMap)
+	if err != nil {
+		return nil
+	}
+	var draft ExplorationDraft
+	if err := json.Unmarshal(draftBytes, &draft); err != nil {
+		return nil
+	}
+	return &draft
+}
+
+func (h *ExploreHandler) saveGhostDraft(workspaceID, sessionID string, draft *ExplorationDraft) {
+	if h.draftsDir == "" {
+		return
+	}
+	draft.GhostID = sessionID
+	draft.WorkspaceID = workspaceID
+	draft.LastSavedAt = time.Now().UTC().Format(time.RFC3339)
+
+	if err := os.MkdirAll(h.draftsDir, 0755); err != nil {
+		log.Printf("[explore] failed to create drafts dir: %v", err)
+		return
+	}
+
+	data, err := json.MarshalIndent(draft, "", "  ")
+	if err != nil {
+		log.Printf("[explore] failed to marshal draft: %v", err)
+		return
+	}
+
+	path := filepath.Join(h.draftsDir, sessionID+".json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[explore] failed to write draft file: %v", err)
+		return
+	}
+
+	if h.watcher != nil {
+		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "draft_updated", Name: sessionID})
+	}
 }

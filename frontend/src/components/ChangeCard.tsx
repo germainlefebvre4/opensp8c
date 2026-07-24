@@ -99,9 +99,26 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete }: 
             </button>
           )}
         </div>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full self-start bg-violet-100 text-violet-600 font-medium border border-violet-200">
-          exploring
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium border border-violet-200">
+            exploring
+          </span>
+          {change.tasks_total > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-600 font-medium border border-fuchsia-200">
+              {change.tasks_done}/{change.tasks_total} dft
+            </span>
+          )}
+        </div>
+        {change.tasks_total > 0 && (
+          <div className="mt-0.5 w-full">
+            <div className="h-1 w-full bg-violet-200/40 rounded overflow-hidden">
+              <div
+                className="h-full bg-violet-400 rounded transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
