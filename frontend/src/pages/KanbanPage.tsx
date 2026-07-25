@@ -146,6 +146,7 @@ export function KanbanPage({ workspaceId }: Props) {
       await promoteGhost(workspaceId, ghost.ghost_id, context)
       clearStoredMessages(ghost.ghost_id)
       setAnonymousExploreOpen(false)
+      setPanelMaximized(false)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     } catch { /* ignore */ }
   }
@@ -156,6 +157,7 @@ export function KanbanPage({ workspaceId }: Props) {
       clearStoredMessages(ghostId)
       setDeleteGhostDialog(null)
       setAnonymousExploreOpen(false)
+      setPanelMaximized(false)
       setActiveGhostId(undefined)
       setResumeGhostId(undefined)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })

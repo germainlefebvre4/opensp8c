@@ -92,7 +92,7 @@ La `Session` backend SHALL maintenir un buffer circulaire des messages produits 
 - **THEN** le message le plus ancien est supprimé avant d'ajouter le nouveau
 
 ### Requirement: Visibilité des erreurs subprocess
-Le backend SHALL capturer le stderr du subprocess `claude` ou `gemini` et logguer chaque ligne avec un préfixe identifiable. Aucune erreur subprocess ne SHALL être silencieusement ignorée. De plus, pour les erreurs critiques empêchant le fonctionnement du service (telles que `TerminalQuotaError`, `Failed to connect to IDE companion extension`, ou `ProjectIdRequiredError`), le backend SHALL transmettre un avertissement structuré `session_warning` au frontend. L'avertissement de type `Failed to connect to IDE companion extension` SHALL être transmis au maximum une seule fois par session d'exploration (throttled). Chaque message d'avertissement transmis SHALL inclure un attribut `fatal` indiquant si l'erreur empêche la suite de l'exécution du subprocess.
+Le backend SHALL capturer le stderr du subprocess `claude` ou `gemini` et logguer chaque ligne avec un préfixe identifiable. Aucune erreur subprocess ne SHALL être silencieusement ignorée, à l'exception de l'erreur de connexion à l'extension compagnon de l'IDE (`Failed to connect to IDE companion extension`) qui SHALL être complètement ignorée pour éviter de polluer les logs et l'interface utilisateur. De plus, pour les erreurs critiques empêchant le fonctionnement du service (telles que `TerminalQuotaError` ou `ProjectIdRequiredError`), le backend SHALL transmettre un avertissement structuré `session_warning` au frontend. Chaque message d'avertissement transmis SHALL inclure un attribut `fatal` indiquant si l'erreur empêche la suite de l'exécution du subprocess.
 
 #### Scenario: Erreur de démarrage visible dans les logs
 - **WHEN** le subprocess écrit sur stderr (erreur d'authentification, flag inconnu, crash)
@@ -106,13 +106,9 @@ Le backend SHALL capturer le stderr du subprocess `claude` ou `gemini` et loggue
 - **WHEN** le subprocess écrit sur stderr un message contenant `ProjectIdRequiredError` ou `GOOGLE_CLOUD_PROJECT`
 - **THEN** le backend génère et envoie un événement de type `session_warning` avec un message d'explication guidant l'utilisateur sur la définition des variables d'environnement requises, avec `fatal` à `true`
 
-#### Scenario: Alerte d'erreur de connexion à l'extension IDE transmise une seule fois
-- **WHEN** le subprocess écrit sur stderr un message contenant "Failed to connect to IDE companion extension" et qu'un tel avertissement n'a pas encore été envoyé pour cette session
-- **THEN** le backend génère et envoie un événement de type `session_warning` indiquant que la connexion à l'IDE a échoué, avec `fatal` à `false`
-
-#### Scenario: Alerte de connexion à l'extension IDE ignorée aux messages suivants
-- **WHEN** le subprocess écrit sur stderr un message contenant "Failed to connect to IDE companion extension" et qu'un tel avertissement a déjà été envoyé pour la session en cours
-- **THEN** le backend ignore l'erreur sur stderr et n'envoie pas de nouvel avertissement de session
+#### Scenario: Erreur d'extension IDE compagnon ignorée silencieusement
+- **WHEN** le subprocess écrit sur stderr un message contenant "Failed to connect to IDE companion extension"
+- **THEN** le backend ignore silencieusement la ligne, ne l'écrit pas dans le terminal, ne l'ajoute pas aux logs de la session, et n'émet aucun avertissement UI
 
 ### Requirement: Fermeture de session explore lors du déclenchement ff
 Quand un drag `to-explore → todo` est confirmé pour un changement dont une session explore est active (ExplorePanel ouvert), le frontend SHALL fermer l'ExplorePanel et terminer la session explore (`DELETE /changes/{name}/explore`) avant de déclencher le ff (`POST /changes/{name}/ff`). Ces deux actions SHALL être séquentielles.
