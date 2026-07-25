@@ -27,24 +27,43 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to load preferences", http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"defaultAgent": p.DefaultAgent})
+	env := p.Env
+	if env == nil {
+		env = map[string]string{}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"defaultAgent": p.DefaultAgent,
+		"env":          env,
+	})
 }
 
 func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		DefaultAgent string `json:"defaultAgent"`
+		DefaultAgent string            `json:"defaultAgent"`
+		Env          map[string]string `json:"env"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DefaultAgent == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if _, ok := agents.ByID(body.DefaultAgent); !ok {
-		http.Error(w, "unknown agent id", http.StatusBadRequest)
-		return
+
+	if body.DefaultAgent != "" {
+		if _, ok := agents.ByID(body.DefaultAgent); !ok {
+			http.Error(w, "unknown agent id", http.StatusBadRequest)
+			return
+		}
+		if err := h.prefs.SetDefaultAgent(body.DefaultAgent); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
 	}
-	if err := h.prefs.SetDefaultAgent(body.DefaultAgent); err != nil {
-		http.Error(w, "failed to save preferences", http.StatusInternalServerError)
-		return
+
+	if body.Env != nil {
+		if err := h.prefs.SetEnv(body.Env); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
 	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

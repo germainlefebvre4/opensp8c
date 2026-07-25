@@ -5,5 +5,22 @@
     "bodyNoProgress": "Les tâches de \"{{name}}\" seront effacées. Le proposal et le design seront conservés.",
     "confirm": "Réinitialiser",
     "cancel": "Annuler"
+  },
+  "agentSettings": {
+    "title": "Configuration de l'Agent",
+    "description": "Ces variables d'environnement seront injectées à chaud lors du lancement du processus de l'agent CLI.",
+    "recommended": "Variables Recommandées (Gemini Enterprise)",
+    "custom": "Variables Personnalisées",
+    "addVar": "Ajouter une variable",
+    "keyPlaceholder": "CLE_VARIABLE",
+    "valuePlaceholder": "Valeur",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "googleCloudProject": "GOOGLE_CLOUD_PROJECT",
+    "googleCloudProjectDesc": "Identifiant du projet Google Cloud requis pour l'authentification.",
+    "geminiModel": "GEMINI_MODEL",
+    "geminiModelDesc": "Modèle d'IA cible (ex: gemini-1.5-pro).",
+    "geminiSandbox": "GEMINI_SANDBOX",
+    "geminiSandboxDesc": "Activer la sandbox de sécurité (true/false)."
   }
 }

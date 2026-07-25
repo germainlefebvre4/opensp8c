@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown } from 'lucide-react'
+import { Bot, ChevronDown, Settings } from 'lucide-react'
 import { useAgents, usePatchPreferences, usePreferences } from '../hooks/useAgentPreferences'
+import { AgentSettingsModal } from './AgentSettingsModal'
 
 export function AgentSelector() {
   const { data: agents = [] } = useAgents()
   const { data: prefs } = usePreferences()
   const patch = usePatchPreferences()
   const [open, setOpen] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -45,11 +47,11 @@ export function AgentSelector() {
   }
 
   return (
-    <div ref={ref} className="px-2 pb-2">
+    <div ref={ref} className="px-2 pb-2 flex gap-1.5 items-center">
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-800 transition-colors border border-slate-200 bg-slate-50"
+        className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-800 transition-colors border border-slate-200 bg-slate-50 min-w-0"
         title="Choisir l'agent de code"
       >
         <Bot size={12} className="shrink-0 text-slate-400" />
@@ -63,6 +65,19 @@ export function AgentSelector() {
         )}
         <ChevronDown size={11} className="shrink-0 text-slate-400" />
       </button>
+
+      <button
+        type="button"
+        onClick={() => setShowSettings(true)}
+        className="p-1.5 rounded-md border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700 hover:bg-white transition-colors cursor-pointer shrink-0"
+        title="Configurer les variables d'environnement de l'agent"
+      >
+        <Settings size={13} />
+      </button>
+
+      {showSettings && (
+        <AgentSettingsModal onClose={() => setShowSettings(false)} />
+      )}
 
       {open && dropdownPos && (
         <div

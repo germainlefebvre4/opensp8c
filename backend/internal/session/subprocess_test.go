@@ -245,7 +245,7 @@ func TestStartSubprocessGeminiBridge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestStartSubprocessGeminiBridge_StderrErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestStartSubprocessGeminiBridge_SilencedIDEWarning(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-789", false, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-789", false, nil, nil)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}

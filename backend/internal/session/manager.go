@@ -118,6 +118,10 @@ func NewManager(prefs *preferences.Service, convStore *conversation.Store) *Mana
 	return m
 }
 
+func (m *Manager) Prefs() *preferences.Service {
+	return m.prefs
+}
+
 // openSessionLog opens a chat SessionLog via resolve, logging (not failing) on error.
 // Returns nil if convStore is unset or the file could not be opened.
 func (m *Manager) openSessionLog(resolve func(ts string) (*os.File, error), ctxLabel string) *conversation.SessionLog {
@@ -258,12 +262,17 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 		return m.convStore.OpenRun(workspaceID, changeName, "chat", ts)
 	}, key)
 
+	var customEnv map[string]string
+	if p, err := m.prefs.Load(); err == nil && p != nil {
+		customEnv = p.Env
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, isResume, sessLog)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, isResume, sessLog, customEnv)
 	if err != nil && isResume {
 		// Fallback: --resume failed at process start, try without resume
 		log.Printf("[session] --resume failed for %s/%s, starting fresh: %v", workspaceID, changeName, err)
-		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, false, sessLog)
+		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, "", claudeSessionID, false, sessLog, customEnv)
 	}
 	if err != nil {
 		cancel()
@@ -342,9 +351,14 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 		return m.convStore.OpenExploreRun(workspaceID, sessionID, "chat", ts)
 	}, key)
 
+	var customEnv map[string]string
+	if p, err := m.prefs.Load(); err == nil && p != nil {
+		customEnv = p.Env
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	// Anonymous sessions use no session flags (no persistence, no resume)
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog, customEnv)
 	if err != nil {
 		cancel()
 		sessLog.Close()

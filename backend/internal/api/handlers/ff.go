@@ -19,6 +19,7 @@ import (
 
 type FFHandler struct {
 	ws        *WorkspaceHandler
+	mgr       *session.Manager
 	convStore *conversation.Store
 	watcher   *watcher.WatcherService
 
@@ -26,9 +27,10 @@ type FFHandler struct {
 	running map[string]struct{} // key: wsID+"/"+changeName
 }
 
-func NewFFHandler(ws *WorkspaceHandler, _ interface{}, convStore *conversation.Store, watcherSvc *watcher.WatcherService) *FFHandler {
+func NewFFHandler(ws *WorkspaceHandler, mgr *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService) *FFHandler {
 	return &FFHandler{
 		ws:        ws,
+		mgr:       mgr,
 		convStore: convStore,
 		watcher:   watcherSvc,
 		running:   make(map[string]struct{}),
@@ -86,8 +88,15 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var customEnv map[string]string
+	if h.mgr != nil && h.mgr.Prefs() != nil {
+		if p, err := h.mgr.Prefs().Load(); err == nil && p != nil {
+			customEnv = p.Env
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil, customEnv)
 	if err != nil {
 		cancel()
 		logFile.Close()

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -122,7 +123,7 @@ func (r *geminiStdoutReader) Close() error {
 //
 // sessionLog is optional (nil-safe): when provided, stderr lines are also
 // written to it in addition to the existing log.Printf.
-func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog) (*Subprocess, error) {
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string) (*Subprocess, error) {
 	if agentCfg.ID == "gemini" {
 		// Use a dummy process to satisfy Cmd and Wait requirements of Subprocess.
 		// "cat" is lightweight and will run indefinitely until its stdin is closed.
@@ -201,6 +202,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 				subCtx, subCancel := context.WithCancel(ctx)
 				cmd := exec.CommandContext(subCtx, agentCfg.CLI, args...)
 				cmd.Dir = workspacePath
+				cmd.Env = buildEnv(customEnv)
 
 				stdin, err := cmd.StdinPipe()
 				if err != nil {
@@ -318,9 +320,9 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		return nil, err
 	}
 
-	// Propagate environment variables (like GOOGLE_CLOUD_PROJECT for Gemini CLI)
-	// transparently by leaving cmd.Env as nil, allowing os.exec to inherit parent env.
+	// Propagate environment variables, combining standard global environment variables and custom user settings.
 	cmd.Dir = workspacePath
+	cmd.Env = buildEnv(customEnv)
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -344,6 +346,31 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 	}
 
 	return &Subprocess{cmd: cmd, stdin: stdin, stdout: adaptedStdout, agentID: agentCfg.ID}, nil
+}
+
+func buildEnv(customEnv map[string]string) []string {
+	parentEnv := os.Environ()
+	if len(customEnv) == 0 {
+		return parentEnv
+	}
+
+	envMap := make(map[string]string)
+	for _, envVar := range parentEnv {
+		parts := strings.SplitN(envVar, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	for k, v := range customEnv {
+		envMap[k] = v
+	}
+
+	reconstructed := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		reconstructed = append(reconstructed, k+"="+v)
+	}
+	return reconstructed
 }
 
 func (s *Subprocess) Write(p []byte) (int, error) {

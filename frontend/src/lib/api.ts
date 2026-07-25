@@ -39,6 +39,7 @@ export interface AgentStatus {
 
 export interface Preferences {
   defaultAgent: string
+  env: Record<string, string>
 }
 
 export const getAgents = () =>

@@ -5,5 +5,22 @@
     "bodyNoProgress": "Tasks for \"{{name}}\" will be cleared. The proposal and design will be kept.",
     "confirm": "Reset",
     "cancel": "Cancel"
+  },
+  "agentSettings": {
+    "title": "Agent Configuration",
+    "description": "These environment variables will be hot-injected when launching the CLI agent process.",
+    "recommended": "Recommended Variables (Gemini Enterprise)",
+    "custom": "Custom Variables",
+    "addVar": "Add Variable",
+    "keyPlaceholder": "VARIABLE_KEY",
+    "valuePlaceholder": "Value",
+    "save": "Save",
+    "cancel": "Cancel",
+    "googleCloudProject": "GOOGLE_CLOUD_PROJECT",
+    "googleCloudProjectDesc": "Google Cloud Project ID required for authentication.",
+    "geminiModel": "GEMINI_MODEL",
+    "geminiModelDesc": "Target AI model (e.g. gemini-1.5-pro).",
+    "geminiSandbox": "GEMINI_SANDBOX",
+    "geminiSandboxDesc": "Enable security sandbox (true/false)."
   }
 }

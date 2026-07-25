@@ -449,10 +449,17 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 		systemPrompt = "The user explored this topic in a conversation. Here is the exploration context:\n\n" + explorationContext
 	}
 
+	var customEnv map[string]string
+	if h.prefs != nil {
+		if p, err := h.prefs.Load(); err == nil && p != nil {
+			customEnv = p.Env
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil, customEnv)
 	if err != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: err.Error()})
 		return
