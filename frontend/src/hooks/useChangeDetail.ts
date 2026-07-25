@@ -9,7 +9,7 @@ export interface TaskItem {
 
 export interface ChangeDetail {
   name: string
-  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'done'
+  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done'
   tasks_done: number
   tasks_total: number
   created: string

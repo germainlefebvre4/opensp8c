@@ -21,17 +21,18 @@ type Tags struct {
 }
 
 type Change struct {
-	Name              string `json:"name"`
-	KanbanStatus      string `json:"kanban_status"`
-	TasksDone         int    `json:"tasks_done"`
-	TasksTotal        int    `json:"tasks_total"`
-	Created           string `json:"created"`
-	Schema            string `json:"schema"`
-	DaysSinceActivity int    `json:"days_since_activity"`
-	IsStale           bool   `json:"is_stale"`
-	Tags              *Tags  `json:"tags,omitempty"`
-	IsGhost           bool   `json:"is_ghost,omitempty"`
-	GhostID           string `json:"ghost_id,omitempty"`
+	Name              string   `json:"name"`
+	KanbanStatus      string   `json:"kanban_status"`
+	TasksDone         int      `json:"tasks_done"`
+	TasksTotal        int      `json:"tasks_total"`
+	Created           string   `json:"created"`
+	Schema            string   `json:"schema"`
+	DaysSinceActivity int      `json:"days_since_activity"`
+	IsStale           bool     `json:"is_stale"`
+	Tags              *Tags    `json:"tags,omitempty"`
+	Dependencies      []string `json:"dependencies,omitempty"`
+	IsGhost           bool     `json:"is_ghost,omitempty"`
+	GhostID           string   `json:"ghost_id,omitempty"`
 }
 
 type Task struct {
@@ -51,9 +52,10 @@ type ChangeDetail struct {
 }
 
 type openspecMeta struct {
-	Schema  string `yaml:"schema"`
-	Created string `yaml:"created"`
-	Tags    *Tags  `yaml:"tags"`
+	Schema       string   `yaml:"schema"`
+	Created      string   `yaml:"created"`
+	Tags         *Tags    `yaml:"tags"`
+	Dependencies []string `yaml:"dependencies,omitempty"`
 }
 
 type openspecProjectConfig struct {
@@ -175,6 +177,7 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 		DaysSinceActivity: daysSince,
 		IsStale:           isStale,
 		Tags:              meta.Tags,
+		Dependencies:      meta.Dependencies,
 	}, nil
 }
 

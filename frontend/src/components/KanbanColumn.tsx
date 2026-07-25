@@ -25,6 +25,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'to-explore': { badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-400' },
   'todo': { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   'in-progress': { badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
+  'to-review': { badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
   'done': { badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }

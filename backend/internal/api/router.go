@@ -17,6 +17,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/ui"
 )
 
@@ -70,6 +71,8 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
+	poolMgr := pool.NewManager()
+	poolHandler := handlers.NewPoolHandler(wsHandler, poolMgr)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(jsonContentType)
@@ -77,6 +80,12 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces", wsHandler.List)
 		r.Post("/workspaces", wsHandler.Add)
 		r.Delete("/workspaces/{id}", wsHandler.Delete)
+
+		r.Route("/workspaces/{id}/pool", func(r chi.Router) {
+			r.Post("/start", poolHandler.StartPool)
+			r.Post("/stop", poolHandler.StopPool)
+			r.Get("/status", poolHandler.GetPoolStatus)
+		})
 
 		r.Get("/workspaces/{id}/changes", kanbanHandler.ListChanges)
 		r.Get("/workspaces/{id}/changes/{name}", kanbanHandler.GetChange)

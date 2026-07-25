@@ -370,6 +370,22 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
             </div>
           )}
 
+          {/* Review footer */}
+          {data.kanban_status === 'to-review' && (
+            <div className="px-4 py-3 border-t border-slate-200 shrink-0 flex flex-wrap gap-2 bg-blue-50/50">
+              <button
+                className="text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                Approuver & Fusionner
+              </button>
+              <button
+                className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+              >
+                Demander correction
+              </button>
+            </div>
+          )}
+
           {/* Archive footer */}
           {data.kanban_status === 'done' && (
             <div className="px-4 py-3 border-t border-slate-200 shrink-0 flex flex-wrap gap-2">

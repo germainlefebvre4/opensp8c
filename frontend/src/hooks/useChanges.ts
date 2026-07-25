@@ -11,7 +11,7 @@ export interface Tags {
 
 export interface Change {
   name: string
-  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'done' | 'archived'
+  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
   tasks_done: number
   tasks_total: number
   created: string

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
@@ -8,19 +8,22 @@ import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
 import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBottomPanel'
 import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
+import { AgentPoolModal } from '../components/AgentPoolModal'
+import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { useChanges } from '../hooks/useChanges'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, api } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import type { Change } from '../hooks/useChanges'
 
 // Maps source status -> allowed drop target statuses
 const VALID_DROPS: Record<string, string[]> = {
   'to-explore': ['todo'],
-  'todo': ['to-explore'],
-  'in-progress': ['to-explore'],
+  'todo': ['to-explore', 'in-progress'],
+  'in-progress': ['to-explore', 'to-review', 'done'],
+  'to-review': ['in-progress', 'done'],
 }
 
 interface Props {
@@ -48,14 +51,35 @@ export function KanbanPage({ workspaceId }: Props) {
   const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
   const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
+  
+  const [isPoolModalOpen, setIsPoolModalOpen] = useState(false)
+  const [isPoolRunning, setIsPoolRunning] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-
   const leadingColumns = [
-    { title: t('columns.toExplore'), status: 'to-explore' },
-    { title: t('columns.toDo'), status: 'todo' },
-    { title: t('columns.inProgress'), status: 'in-progress' },
+    { title: t('columns.toexplore'), status: 'to-explore' },
+    { title: t('columns.todo'), status: 'todo' },
+    { title: t('columns.inprogress'), status: 'in-progress' },
+    { title: t('columns.toreview', { defaultValue: 'To Review' }), status: 'to-review' },
   ] as const
+
+  const handleStartPool = async (config: AgentPoolConfig) => {
+    try {
+      await api.post(`/workspaces/${workspaceId}/pool/start`, config)
+      setIsPoolRunning(true)
+    } catch (err) {
+      console.error('Failed to start pool', err)
+    }
+  }
+
+  const handleStopPool = async () => {
+    try {
+      await api.post(`/workspaces/${workspaceId}/pool/stop`)
+      setIsPoolRunning(false)
+    } catch (err) {
+      console.error('Failed to stop pool', err)
+    }
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     const change = changes.find(c => c.name === (event.active.id as string))
@@ -202,9 +226,9 @@ export function KanbanPage({ workspaceId }: Props) {
       <div className="flex-1 flex flex-col overflow-hidden">
         {!panelMaximized && (
           <>
-            {/* Search bar */}
-            <div className="shrink-0 px-4 pt-3 pb-1">
-              <div className="relative flex items-center">
+            {/* Header Controls */}
+            <div className="shrink-0 px-4 pt-3 pb-1 flex items-center justify-between gap-4">
+              <div className="relative flex-1 max-w-sm">
                 <input
                   type="text"
                   value={searchQuery}
@@ -215,12 +239,24 @@ export function KanbanPage({ workspaceId }: Props) {
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                   >
                     <X size={14} />
                   </button>
                 )}
               </div>
+              
+              <button
+                onClick={() => isPoolRunning ? handleStopPool() : setIsPoolModalOpen(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  isPoolRunning 
+                    ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+                    : 'bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-200'
+                }`}
+              >
+                <Cpu size={16} className={isPoolRunning ? "animate-pulse" : ""} />
+                {isPoolRunning ? "Arrêter le Pool" : "Lancer le Pool"}
+              </button>
             </div>
 
             {/* Top: Kanban columns + DetailPanel */}
@@ -376,6 +412,12 @@ export function KanbanPage({ workspaceId }: Props) {
             </div>
           </div>
         )}
+
+        <AgentPoolModal 
+          isOpen={isPoolModalOpen} 
+          onClose={() => setIsPoolModalOpen(false)} 
+          onStart={handleStartPool} 
+        />
 
         {resetDialog && (
           <ResetTasksDialog
