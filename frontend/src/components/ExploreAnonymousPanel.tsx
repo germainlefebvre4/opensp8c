@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Code, Eye, Trash2, Maximize2, Minimize2, Sparkles } from 'lucide-react'
+import { X, Code, Eye, Trash2, Maximize2, Minimize2, Sparkles, ArrowDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
@@ -26,10 +26,26 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
   const [showSlowLabel, setShowSlowLabel] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 20
+    setIsAtBottom(isBottom)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setIsAtBottom(true)
+  }, [])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, waiting])
+    if (isAtBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, waiting, isAtBottom])
 
   useEffect(() => {
     if (ghostId) onGhostReady?.(ghostId)
@@ -55,6 +71,8 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
     if (!input.trim()) return
     send(input.trim())
     setInput('')
+    setIsAtBottom(true)
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [input, send])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -140,36 +158,54 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
       <div className="flex-1 min-h-0 flex flex-row">
         {/* Left Pane: Chat Conversation */}
         <div className="flex-1 min-w-0 flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
-                  msg.role === 'user'
-                    ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
-                    : 'self-start bg-slate-100 text-slate-800'
-                }`}
+          {/* Messages */}
+          <div className="flex-1 min-h-0 relative">
+            <div
+              ref={containerRef}
+              onScroll={handleScroll}
+              className="h-full overflow-y-auto p-4 flex flex-col gap-3"
+            >
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
+                    msg.role === 'user'
+                      ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
+                      : 'self-start bg-slate-100 text-slate-800'
+                  }`}
+                >
+                  {msg.role === 'assistant' && mode === 'rendered' ? (
+                    <article className="prose prose-slate prose-sm max-w-none text-left">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      {msg.partial && <span className="opacity-50">▊</span>}
+                    </article>
+                  ) : (
+                    <span className="whitespace-pre-wrap">
+                      {msg.content}
+                      {msg.partial && <span className="opacity-50">▊</span>}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
+              {expired && (
+                <div className="text-center text-amber-600 text-xs">{t('sessionExpired')}</div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {!isAtBottom && (
+              <button
+                onClick={scrollToBottom}
+                className="absolute bottom-4 right-4 p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-slate-800 shadow-md transition-all hover:bg-slate-50 cursor-pointer flex items-center justify-center z-10"
+                title={t('scrollToBottom', { defaultValue: 'Scroll to bottom' })}
               >
-                {msg.role === 'assistant' && mode === 'rendered' ? (
-                  <article className="prose prose-slate prose-sm max-w-none text-left">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    {msg.partial && <span className="opacity-50">▊</span>}
-                  </article>
-                ) : (
-                  <span className="whitespace-pre-wrap">
-                    {msg.content}
-                    {msg.partial && <span className="opacity-50">▊</span>}
-                  </span>
-                )}
-              </div>
-            ))}
-            {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
-            {expired && (
-              <div className="text-center text-amber-600 text-xs">{t('sessionExpired')}</div>
+                <ArrowDown size={16} />
+              </button>
             )}
-            <div ref={bottomRef} />
           </div>
 
+          {/* Input */}
           <div className="p-3 border-t border-slate-200 flex gap-2 shrink-0 items-end">
             <textarea
               ref={textareaRef}

@@ -12,5 +12,6 @@
   "maximize": "Agrandir",
   "minimize": "Réduire",
   "createChange": "Créer le change",
-  "createChangeTooltip": "Créer un change à partir de cette exploration"
+  "createChangeTooltip": "Créer un change à partir de cette exploration",
+  "scrollToBottom": "Défiler vers le bas"
 }

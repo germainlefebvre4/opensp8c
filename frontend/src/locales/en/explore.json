@@ -12,5 +12,6 @@
   "maximize": "Maximize",
   "minimize": "Minimize",
   "createChange": "Create change",
-  "createChangeTooltip": "Create a change from this exploration"
+  "createChangeTooltip": "Create a change from this exploration",
+  "scrollToBottom": "Scroll to bottom"
 }
