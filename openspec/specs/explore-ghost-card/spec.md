@@ -62,6 +62,10 @@ Le backend SHALL charger les ghost records depuis `preferences.json` au démarra
 - **WHEN** un ghost record référence un workspaceId différent du workspace courant
 - **THEN** ce ghost record n'apparaît pas dans la liste des changes du workspace courant
 
+#### Scenario: Restauration du nom du ghost card au chargement/reprise
+- **WHEN** l'utilisateur reprend une exploration existante via `resumeGhostId`
+- **THEN** le frontend SHALL restaurer réactivement le nom réel du ghost card (`ghostName`) depuis la liste des changes existants (`useChanges`), ce qui permet au bouton de création de change de s'afficher correctement
+
 ### Requirement: Mise à jour de la dernière activité pour la rétention des logs
 
 Le backend SHALL mettre à jour `lastActivityAt` sur le ghost record à chaque message utilisateur entrant dans sa session, et à la reprise d'une session existante. Ce champ sert d'ancre au TTL `exploreLogRetentionDays` (voir `session-log-retention`).

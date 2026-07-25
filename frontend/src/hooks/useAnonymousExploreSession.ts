@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, wsURL } from '../lib/api'
+import { useChanges } from './useChanges'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -61,6 +62,7 @@ export function getStoredContext(ghostId: string): string {
 }
 
 export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: string) {
+  const { data: changes } = useChanges(workspaceId)
   const storedMsgs = resumeGhostId ? loadStoredMessages(resumeGhostId) : []
   const initialMessages: Message[] = storedMsgs.length > 0 ? storedMsgs : [STATIC_GREETING]
   const [messages, setMessages] = useState<Message[]>(initialMessages)
@@ -70,6 +72,17 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [ghostId, setGhostId] = useState<string | null>(resumeGhostId ?? null)
   const [ghostName, setGhostName] = useState<string | null>(null)
+
+  const matchedGhost = useMemo(() => {
+    if (!resumeGhostId || !changes) return null
+    return changes.find(c => c.is_ghost && c.ghost_id === resumeGhostId) || null
+  }, [changes, resumeGhostId])
+
+  useEffect(() => {
+    if (matchedGhost?.name) {
+      setGhostName(matchedGhost.name)
+    }
+  }, [matchedGhost])
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const queryClient = useQueryClient()
