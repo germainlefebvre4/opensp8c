@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
@@ -56,12 +56,22 @@ function makeHeadingComponent(tag: 'h1' | 'h2' | 'h3', seen: Map<string, number>
 export function SpecsPage({ workspaceId }: Props) {
   const { t } = useTranslation('specs')
   const { t: tCommon } = useTranslation('common')
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: specs = [], isLoading } = useSpecs(workspaceId)
-  const [selectedSpec, setSelectedSpec] = useState<string | null>(null)
+
+  const selectedParam = searchParams.get('selected')
+  const [selectedSpec, setSelectedSpec] = useState<string | null>(selectedParam)
+
   const [isEditing, setIsEditing] = useState(false)
   const [editBaseContent, setEditBaseContent] = useState('')
   const { data: specDetail } = useSpec(workspaceId, selectedSpec)
+
+  useEffect(() => {
+    if (selectedParam !== selectedSpec) {
+      setSelectedSpec(selectedParam)
+    }
+  }, [selectedParam, selectedSpec])
+
   // callback ref: receives the DOM element once mounted, triggers re-render for TOC
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
 
@@ -81,6 +91,14 @@ export function SpecsPage({ workspaceId }: Props) {
 
   const handleSelectSpec = (name: string) => {
     setSelectedSpec(name)
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        next.set('selected', name)
+        return next
+      },
+      { replace: true }
+    )
     setIsEditing(false)
   }
 
