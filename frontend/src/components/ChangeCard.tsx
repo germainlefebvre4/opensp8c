@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle, Trash2 } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2, Pin } from 'lucide-react'
 import { useDraggable } from '@dnd-kit/core'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { useArchive } from '../hooks/useArchive'
+import { deleteGhost } from '../lib/api'
 
 interface Props {
   change: Change
@@ -11,13 +12,27 @@ interface Props {
   onOpen: (name: string) => void
   ffStatus: 'running' | 'failed' | null
   onDelete?: (ghostId: string) => void
+  associatedGhostId?: string
 }
 
 const DRAGGABLE_STATUSES = new Set(['to-explore', 'todo', 'in-progress'])
 
-export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete }: Props) {
+export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId }: Props) {
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
+
+  const [isSolidifying, setIsSolidifying] = useState(false)
+
+  const handleSolidify = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!associatedGhostId) return
+    setIsSolidifying(true)
+    try {
+      await deleteGhost(workspaceId, associatedGhostId)
+    } catch {
+      setIsSolidifying(false)
+    }
+  }
 
   const progressPct = change.tasks_total > 0
     ? Math.round((change.tasks_done / change.tasks_total) * 100)
@@ -129,20 +144,44 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete }: 
       style={dragStyle}
       {...(isDraggable ? { ...listeners, ...attributes } : {})}
       onClick={() => !archive.isPending && onOpen(change.name)}
-      className={`bg-white border rounded-lg px-3 py-2.5 flex flex-col gap-2 shadow-sm transition-all group ${
-        isArchived
-          ? 'border-slate-100 opacity-60'
-          : 'border-slate-200 cursor-pointer hover:shadow-md hover:border-slate-300'
+      className={`border rounded-lg px-3 py-2.5 flex flex-col gap-2 shadow-sm transition-all group ${
+        associatedGhostId
+          ? 'border-2 border-dashed border-slate-300 bg-slate-50/50 opacity-85 hover:border-violet-300 hover:bg-slate-50/80 cursor-pointer'
+          : isArchived
+          ? 'bg-white border-slate-100 opacity-60'
+          : 'bg-white border-slate-200 cursor-pointer hover:shadow-md hover:border-slate-300'
       } ${archive.isPending ? 'cursor-default' : ''} ${isDragging ? 'opacity-40 shadow-lg' : ''}`}
     >
-      <span className={`text-xs font-semibold break-words leading-snug transition-colors ${
-        isArchived ? 'text-slate-500' : 'text-slate-800 group-hover:text-blue-700'
-      }`}>
-        {change.name}
-      </span>
+      <div className="flex items-start justify-between gap-1.5">
+        <span className={`text-xs font-semibold break-words leading-snug transition-colors ${
+          isArchived ? 'text-slate-500' : 'text-slate-800 group-hover:text-blue-700'
+        }`}>
+          {change.name}
+        </span>
+        {associatedGhostId && (
+          <button
+            onClick={handleSolidify}
+            disabled={isSolidifying}
+            title="Figer le change (fermer l'exploration)"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-all cursor-pointer border border-violet-200 font-semibold shrink-0 disabled:opacity-50"
+          >
+            {isSolidifying ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Pin size={10} className="-rotate-45 text-violet-500" />
+            )}
+            Figer
+          </button>
+        )}
+      </div>
 
       {change.tags && (
         <div className="flex items-center gap-1.5 flex-wrap">
+          {associatedGhostId && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-medium border border-violet-200">
+              projet
+            </span>
+          )}
           {change.tags.type && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium border border-blue-100">
               {change.tags.type === 'frontend' ? '🖥' : change.tags.type === 'backend' ? '⚙' : change.tags.type === 'batch' ? '⚡' : '🔀'} {change.tags.type}

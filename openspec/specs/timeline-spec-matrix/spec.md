@@ -3,9 +3,7 @@
 ## Purpose
 
 Mode Matrice de la TimelinePage : grille spec × bucket temporel représentant l'intensité d'activité de chaque spec dans le temps, avec panel droit de détail spec, drill-down vers le DetailPanel et navigation vers la SpecsPage.
-
 ## Requirements
-
 ### Requirement: Mode Matrice dans la Timeline
 La TimelinePage SHALL proposer un mode Matrice accessible via un toggle [Changes | Matrice] en haut de page. Ce mode affiche une grille spec × bucket temporel représentant l'intensité d'activité de chaque spec dans le temps, ainsi qu'un panel droit de détail spec ouvert au clic.
 
@@ -124,3 +122,4 @@ Au premier affichage du mode Matrice, la grille SHALL sélectionner automatiquem
 #### Scenario: Redimensionnement sans changement de granularité
 - **WHEN** la largeur disponible du conteneur change après l'affichage initial (redimensionnement de la fenêtre, ouverture ou fermeture du panel droit de détail)
 - **THEN** la granularité sélectionnée ne change pas ; seule la largeur des colonnes se réajuste dans les bornes lisibles, avec défilement horizontal si nécessaire
+

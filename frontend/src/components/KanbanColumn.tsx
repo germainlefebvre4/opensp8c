@@ -8,6 +8,7 @@ interface Props {
   title: string
   status: string
   changes: Change[]
+  allChanges?: Change[]
   workspaceId: string
   onOpen: (name: string) => void
   onNew?: () => void
@@ -28,7 +29,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNew, onDeleteGhost, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
   const [collapsed, setCollapsed] = useState(false)
@@ -82,16 +83,22 @@ export function KanbanColumn({ title, status, changes, workspaceId, onOpen, onNe
 
       {!collapsed && (
         <div className="flex flex-col gap-2 overflow-y-auto">
-          {visible.map(ch => (
-            <ChangeCard
-              key={ch.name}
-              change={ch}
-              workspaceId={workspaceId}
-              onOpen={onOpen}
-              ffStatus={getFfStatus(ch.name)}
-              onDelete={onDeleteGhost}
-            />
-          ))}
+          {visible.map(ch => {
+            const associatedGhost = status === 'todo' && allChanges
+              ? allChanges.find(c => c.is_ghost && c.name === ch.name)
+              : undefined
+            return (
+              <ChangeCard
+                key={ch.name}
+                change={ch}
+                workspaceId={workspaceId}
+                onOpen={onOpen}
+                ffStatus={getFfStatus(ch.name)}
+                onDelete={onDeleteGhost}
+                associatedGhostId={associatedGhost?.ghost_id}
+              />
+            )
+          })}
           {hasMore && (
             <button
               onClick={() => setVisibleCount(v => v + (maxVisible ?? 3))}

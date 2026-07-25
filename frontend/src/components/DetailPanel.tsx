@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { X, Code, Eye, Loader2, RefreshCw } from 'lucide-react'
+import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
@@ -8,17 +8,19 @@ import { useToggleTask } from '../hooks/useToggleTask'
 import { useConversationRuns } from '../hooks/useConversationRuns'
 import { useConversationRun } from '../hooks/useConversationRun'
 import { useRetag } from '../hooks/useRetag'
+import { deleteGhost } from '../lib/api'
 
 interface Props {
   workspaceId: string
   changeName: string
   onClose: () => void
+  associatedGhostId?: string
 }
 
 type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags'
 type ViewMode = 'raw' | 'rendered'
 
-export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
+export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostId }: Props) {
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
 
@@ -32,6 +34,18 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('tasks')
   const [viewMode, setViewMode] = useState<ViewMode>('rendered')
   const [selectedRunTs, setSelectedRunTs] = useState<string | null>(null)
+
+  const [isBannerSolidifying, setIsBannerSolidifying] = useState(false)
+
+  const handleBannerSolidify = async () => {
+    if (!associatedGhostId) return
+    setIsBannerSolidifying(true)
+    try {
+      await deleteGhost(workspaceId, associatedGhostId)
+    } catch {
+      setIsBannerSolidifying(false)
+    }
+  }
 
   const { data: ffRuns } = useConversationRuns(workspaceId, changeName, 'ff')
   const activeRunTs = selectedRunTs ?? (ffRuns?.[0]?.ts ?? null)
@@ -80,6 +94,27 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
           <X size={15} />
         </button>
       </div>
+
+      {associatedGhostId && (
+        <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 text-xs text-violet-700 font-medium">
+            <Pin size={11} className="-rotate-45 text-violet-500 shrink-0" />
+            <span>Brouillon d'exploration actif</span>
+          </div>
+          <button
+            onClick={handleBannerSolidify}
+            disabled={isBannerSolidifying}
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-600 border border-violet-600 text-white hover:bg-violet-700 transition-all cursor-pointer font-semibold shrink-0 disabled:opacity-50"
+          >
+            {isBannerSolidifying ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Pin size={10} className="-rotate-45 text-white" />
+            )}
+            Figer le change
+          </button>
+        </div>
+      )}
 
       {isLoading && (
         <div className="p-4 text-sm text-slate-400">{tCommon('loading')}</div>
@@ -200,9 +235,20 @@ export function DetailPanel({ workspaceId, changeName, onClose }: Props) {
                         type="checkbox"
                         checked={task.done}
                         disabled={pendingTaskIdx === i}
-                        onChange={() => {
+                        onChange={async () => {
                           setToggleError(null)
                           setPendingTaskIdx(i)
+
+                          if (associatedGhostId) {
+                            try {
+                              await deleteGhost(workspaceId, associatedGhostId)
+                            } catch (err) {
+                              setPendingTaskIdx(null)
+                              setToggleError("Erreur lors de la solidification du change : " + (err instanceof Error ? err.message : String(err)))
+                              return
+                            }
+                          }
+
                           toggleTask.mutate(i, {
                             onSuccess: () => setPendingTaskIdx(null),
                             onError: (err) => {

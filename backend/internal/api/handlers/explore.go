@@ -492,18 +492,17 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 		return
 	}
 
-	// FF succeeded: move the exploration's conversation logs under the new change
-	// before clearing the ghost record, so they survive the promotion.
+	// FF succeeded: copy the exploration's conversation logs under the new change
+	// so the change has a copy of the design/specs discussion, while leaving the
+	// original logs active for further exploration.
 	if h.convStore != nil {
-		if err := h.convStore.MoveExplorationLogs(workspaceID, ghostID, ghostName); err != nil {
-			log.Printf("[explore] failed to move exploration logs for %s -> %s: %v", ghostID, ghostName, err)
+		if err := h.convStore.CopyExplorationLogs(workspaceID, ghostID, ghostName); err != nil {
+			log.Printf("[explore] failed to copy exploration logs for %s -> %s: %v", ghostID, ghostName, err)
 		}
 	}
 
-	// FF succeeded: clean up ghost record and draft file before broadcasting done
-	_ = h.prefs.DeleteExploration(ghostID)
-	_ = h.deleteDraftFile(ghostID)
-	h.watcher.Broadcast(workspaceID, watcher.Event{Type: "exploration_deleted", Name: ghostID})
+	// FF succeeded: keep ghost record and draft file active for coexistence/solidification.
+	// We broadcast ff_done to let the frontend know the promotion finished and the new change is on disk.
 	h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_done", Name: ghostName})
 }
 

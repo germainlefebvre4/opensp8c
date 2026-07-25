@@ -71,6 +71,70 @@ func (s *Store) MoveExplorationLogs(wsID, ghostSessionID, changeName string) err
 	return renameOrCopy(src, dst)
 }
 
+// CopyExplorationLogs copies the entire log tree of an exploration session
+// (_explore/<ghostSessionID>/) into the log tree of the change it was promoted
+// to. It merges into an existing destination if one is present, and is a no-op
+// if the exploration never had any logs written.
+func (s *Store) CopyExplorationLogs(wsID, ghostSessionID, changeName string) error {
+	src := filepath.Join(s.basePath, wsID, exploreNamespace, ghostSessionID)
+	dst := filepath.Join(s.basePath, wsID, changeName)
+
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	if _, err := os.Stat(dst); err == nil {
+		return copyMerge(src, dst)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	return copyPath(src, dst)
+}
+
+// copyMerge copies the contents of src into dst, recursing into subdirectories
+// that already exist at the destination instead of failing outright.
+func copyMerge(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if _, err := os.Stat(dstPath); err == nil {
+				if err := copyMerge(srcPath, dstPath); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := copyPath(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := os.Stat(dstPath); err == nil {
+			// Name collision on a file (e.g. same timestamp): keep both rather than overwrite.
+			dstPath += ".dup"
+		}
+		if err := copyPath(srcPath, dstPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DeleteExplorationLogs removes all logs for an anonymous exploration session.
 // No-op if the exploration never had any logs written.
 func (s *Store) DeleteExplorationLogs(wsID, ghostSessionID string) error {

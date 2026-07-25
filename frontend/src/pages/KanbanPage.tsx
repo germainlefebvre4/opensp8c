@@ -233,6 +233,7 @@ export function KanbanPage({ workspaceId }: Props) {
                       title={col.title}
                       status={col.status}
                       changes={filteredChanges.filter(c => c.kanban_status === col.status)}
+                      allChanges={changes}
                       workspaceId={workspaceId}
                       onOpen={name => handleOpen(name, col.status)}
                       onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
@@ -282,6 +283,7 @@ export function KanbanPage({ workspaceId }: Props) {
                     workspaceId={workspaceId}
                     changeName={detailOpen.name}
                     onClose={() => setDetailOpen(null)}
+                    associatedGhostId={changes.find(c => c.is_ghost && c.name === detailOpen.name)?.ghost_id}
                   />
                 </div>
               )}
