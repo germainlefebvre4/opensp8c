@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Plus, Trash2 } from 'lucide-react'
+import { X, Plus, Trash2, Check, PenLine } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 
@@ -107,9 +107,22 @@ export function AgentSettingsModal({ onClose }: Props) {
                 type="text"
                 value={gcpProject}
                 onChange={e => setGcpProject(e.target.value)}
-                placeholder="ex: my-gcp-project-123"
-                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
+                placeholder={prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GOOGLE_CLOUD_PROJECT']}` : "ex: my-gcp-project-123"}
+                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
               />
+              {prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] && (
+                gcpProject.trim() ? (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                    <PenLine size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemOverridden')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                    <Check size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemActive')}</span>
+                  </div>
+                )
+              )}
             </div>
 
             {/* GEMINI_MODEL */}
@@ -122,9 +135,22 @@ export function AgentSettingsModal({ onClose }: Props) {
                 type="text"
                 value={geminiModel}
                 onChange={e => setGeminiModel(e.target.value)}
-                placeholder="ex: gemini-1.5-pro"
-                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
+                placeholder={prefs?.systemEnv?.['GEMINI_MODEL'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_MODEL']}` : "ex: gemini-1.5-pro"}
+                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
               />
+              {prefs?.systemEnv?.['GEMINI_MODEL'] && (
+                geminiModel.trim() ? (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                    <PenLine size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemOverridden')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                    <Check size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemActive')}</span>
+                  </div>
+                )
+              )}
             </div>
 
             {/* GEMINI_SANDBOX */}
@@ -137,9 +163,22 @@ export function AgentSettingsModal({ onClose }: Props) {
                 type="text"
                 value={geminiSandbox}
                 onChange={e => setGeminiSandbox(e.target.value)}
-                placeholder="ex: true ou false"
-                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
+                placeholder={prefs?.systemEnv?.['GEMINI_SANDBOX'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_SANDBOX']}` : "ex: true ou false"}
+                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
               />
+              {prefs?.systemEnv?.['GEMINI_SANDBOX'] && (
+                geminiSandbox.trim() ? (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                    <PenLine size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemOverridden')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                    <Check size={10} className="shrink-0" />
+                    <span>{t('agentSettings.systemActive')}</span>
+                  </div>
+                )
+              )}
             </div>
           </div>
 

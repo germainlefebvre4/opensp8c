@@ -21,6 +21,9 @@
     "geminiModel": "GEMINI_MODEL",
     "geminiModelDesc": "Target AI model (e.g. gemini-1.5-pro).",
     "geminiSandbox": "GEMINI_SANDBOX",
-    "geminiSandboxDesc": "Enable security sandbox (true/false)."
+    "geminiSandboxDesc": "Enable security sandbox (true/false).",
+    "systemActive": "Will be inherited from system environment",
+    "systemOverridden": "Overrides system value",
+    "systemPrefix": "System:"
   }
 }

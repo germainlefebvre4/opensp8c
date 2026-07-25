@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/preferences"
@@ -31,9 +32,15 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 	if env == nil {
 		env = map[string]string{}
 	}
+	systemEnv := map[string]string{
+		"GOOGLE_CLOUD_PROJECT": os.Getenv("GOOGLE_CLOUD_PROJECT"),
+		"GEMINI_MODEL":         os.Getenv("GEMINI_MODEL"),
+		"GEMINI_SANDBOX":       os.Getenv("GEMINI_SANDBOX"),
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"defaultAgent": p.DefaultAgent,
 		"env":          env,
+		"systemEnv":    systemEnv,
 	})
 }
 

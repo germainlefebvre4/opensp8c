@@ -21,6 +21,9 @@
     "geminiModel": "GEMINI_MODEL",
     "geminiModelDesc": "Modèle d'IA cible (ex: gemini-1.5-pro).",
     "geminiSandbox": "GEMINI_SANDBOX",
-    "geminiSandboxDesc": "Activer la sandbox de sécurité (true/false)."
+    "geminiSandboxDesc": "Activer la sandbox de sécurité (true/false).",
+    "systemActive": "Sera héritée de l'environnement système",
+    "systemOverridden": "Surcharge la valeur système",
+    "systemPrefix": "Système :"
   }
 }
