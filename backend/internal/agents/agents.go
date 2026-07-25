@@ -29,7 +29,7 @@ func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []strin
 	if a.ID == "gemini" {
 		return []string{
 			"--output-format", "stream-json",
-			"--approval-mode", "plan",
+			"--approval-mode", "auto_edit",
 			"--skip-trust",
 		}
 	}

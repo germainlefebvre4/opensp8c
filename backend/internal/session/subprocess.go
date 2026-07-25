@@ -157,8 +157,6 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 			defer dummyStdin.Close()
 			defer virtualStdoutWriter.Close()
 
-			sentIDEWarning := false
-
 			scanner := bufio.NewScanner(virtualStdinReader)
 			for scanner.Scan() {
 				line := scanner.Text()
@@ -236,6 +234,9 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 					errScanner := bufio.NewScanner(stderr)
 					for errScanner.Scan() {
 						text := errScanner.Text()
+						if strings.Contains(text, "Failed to connect to IDE companion extension") {
+							continue
+						}
 						log.Printf("[subprocess stderr] %s", text)
 						if sessionLog != nil {
 							sessionLog.WriteErr(text)
@@ -250,18 +251,6 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 							}
 							if b, err := json.Marshal(warning); err == nil {
 								_, _ = virtualStdoutWriter.Write(append(b, '\n'))
-							}
-						} else if strings.Contains(text, "Failed to connect to IDE companion extension") {
-							if !sentIDEWarning {
-								warning := map[string]interface{}{
-									"type":  "session_warning",
-									"text":  "Impossible de se connecter à l'extension IDE. Veuillez vérifier qu'elle est installée et lancée dans votre éditeur.",
-									"fatal": false,
-								}
-								if b, err := json.Marshal(warning); err == nil {
-									_, _ = virtualStdoutWriter.Write(append(b, '\n'))
-								}
-								sentIDEWarning = true
 							}
 						} else if strings.Contains(text, "ProjectIdRequiredError") || strings.Contains(text, "GOOGLE_CLOUD_PROJECT") {
 							warning := map[string]interface{}{
@@ -341,6 +330,9 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			text := scanner.Text()
+			if strings.Contains(text, "Failed to connect to IDE companion extension") {
+				continue
+			}
 			log.Printf("[subprocess stderr] %s", text)
 			sessionLog.WriteErr(text)
 		}

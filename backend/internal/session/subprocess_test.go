@@ -344,7 +344,7 @@ func TestStartSubprocessGeminiBridge_StderrErrors(t *testing.T) {
 	_ = proc.Wait()
 }
 
-func TestStartSubprocessGeminiBridge_ThrottledIDEWarning(t *testing.T) {
+func TestStartSubprocessGeminiBridge_SilencedIDEWarning(t *testing.T) {
 	// Create a mock executable script that writes the companion connection error to stderr and exits
 	tmpDir := t.TempDir()
 	mockCLIPath := filepath.Join(tmpDir, "mock-gemini-ide-err")
@@ -377,62 +377,17 @@ func TestStartSubprocessGeminiBridge_ThrottledIDEWarning(t *testing.T) {
 		t.Fatalf("First Write failed: %v", err)
 	}
 
-	// First turn expects 2 lines: session_warning and content_block_delta, in any order due to concurrency
+	// We only expect ONE line: content_block_delta, since session_warning should be silenced.
 	if !scanner.Scan() {
 		t.Fatalf("First scan failed")
 	}
 	line1 := scanner.Text()
 
-	if !scanner.Scan() {
-		t.Fatalf("Second scan failed")
+	if strings.Contains(line1, `"type":"session_warning"`) {
+		t.Errorf("expected warning to be silenced, but got: %q", line1)
 	}
-	line2 := scanner.Text()
-
-	hasWarning := false
-	hasWarningNonFatal := false
-	hasDelta := false
-
-	checkLine := func(l string) {
-		if strings.Contains(l, `"type":"session_warning"`) {
-			hasWarning = true
-			if strings.Contains(l, `"fatal":false`) {
-				hasWarningNonFatal = true
-			}
-		}
-		if strings.Contains(l, `content_block_delta`) {
-			hasDelta = true
-		}
-	}
-
-	checkLine(line1)
-	checkLine(line2)
-
-	if !hasWarning {
-		t.Errorf("expected first turn to contain a warning, got: %q and %q", line1, line2)
-	} else if !hasWarningNonFatal {
-		t.Errorf("expected warning to be non-fatal, got: %q and %q", line1, line2)
-	}
-	if !hasDelta {
-		t.Errorf("expected first turn to contain a content delta, got: %q and %q", line1, line2)
-	}
-
-	// === SECOND TURN ===
-	userMsg2 := `{"type":"user","message":{"role":"user","content":"hello 2"}}`
-	_, err = proc.Write([]byte(userMsg2))
-	if err != nil {
-		t.Fatalf("Second Write failed: %v", err)
-	}
-
-	// Second turn expects only 1 line: content_block_delta (warning is throttled)
-	if !scanner.Scan() {
-		t.Fatalf("Third scan failed (expected content delta line)")
-	}
-	line3 := scanner.Text()
-	if strings.Contains(line3, `"type":"session_warning"`) {
-		t.Errorf("expected warning to be throttled, but got warning line: %q", line3)
-	}
-	if !strings.Contains(line3, `content_block_delta`) {
-		t.Errorf("expected content delta line, got: %q", line3)
+	if !strings.Contains(line1, `content_block_delta`) {
+		t.Errorf("expected content delta line, got: %q", line1)
 	}
 
 	_ = proc.CloseStdin()
