@@ -9,5 +9,15 @@
       "agent": "gemini",
       "claudeSessionId": "4021548b-ef0a-4f12-b302-0b0b9e3f4244"
     }
-  }
+  },
+  "explorations": [
+    {
+      "id": "309e97233734291f0694b620f59498de",
+      "workspaceId": "8b4a8cb8",
+      "name": "explore-309e97",
+      "sessionId": "309e97233734291f0694b620f59498de",
+      "createdAt": "2026-07-25T22:29:45Z",
+      "lastActivityAt": "2026-07-25T22:29:45Z"
+    }
+  ]
 }

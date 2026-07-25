@@ -208,6 +208,11 @@ func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
 	return m.resolveAgentFromID(agentID)
 }
 
+func (m *Manager) ResolveAgentConfig(workspaceID, changeName string) agents.AgentConfig {
+	r := m.resolveAgent(workspaceID, changeName)
+	return r.config
+}
+
 func injectAgentInfo(s *Session, r resolvedAgent) {
 	msg := map[string]interface{}{
 		"type":    "agent_info",

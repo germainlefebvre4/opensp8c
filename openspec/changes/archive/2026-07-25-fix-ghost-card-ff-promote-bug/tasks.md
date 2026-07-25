@@ -1,0 +1,5 @@
+- [x] 1. Exposer `ResolveAgentConfig` sur `session.Manager`
+- [x] 2. Mettre à jour `runPromoteFF` dans `explore.go` pour utiliser `ResolveAgentConfig`
+- [x] 3. Mettre à jour `TriggerFF` dans `ff.go` pour utiliser `ResolveAgentConfig`
+- [x] 4. Corriger le bypass du préfixe `/` dans le subprocess Gemini (`subprocess.go`)
+- [x] 5. Valider avec `go test` que la suite de tests est au vert

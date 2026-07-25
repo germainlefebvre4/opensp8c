@@ -413,10 +413,16 @@ func (h *ExploreHandler) PromoteGhost(w http.ResponseWriter, r *http.Request) {
 
 // runPromoteFF starts a fresh Claude subprocess for FF with the exploration context injected.
 func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspacePath, explorationContext string) {
-	cfg, ok := agents.ByID("claude")
-	if !ok {
-		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: "agent not found"})
-		return
+	var cfg agents.AgentConfig
+	if h.mgr != nil {
+		cfg = h.mgr.ResolveAgentConfig(workspaceID, "")
+	} else {
+		var ok bool
+		cfg, ok = agents.ByID("claude")
+		if !ok {
+			h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: "agent not found"})
+			return
+		}
 	}
 
 	// Try to load any local draft file to inject tasks and description into the promotion process context.

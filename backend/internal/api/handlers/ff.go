@@ -75,10 +75,16 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := agents.ByID("claude")
-	if !ok {
-		http.Error(w, "agent not found", http.StatusInternalServerError)
-		return
+	var cfg agents.AgentConfig
+	if h.mgr != nil {
+		cfg = h.mgr.ResolveAgentConfig(wsID, changeName)
+	} else {
+		var ok bool
+		cfg, ok = agents.ByID("claude")
+		if !ok {
+			http.Error(w, "agent not found", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	ts := time.Now().UTC().Format("2006-01-02T15-04-05Z")
