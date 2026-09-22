@@ -6,6 +6,7 @@ import { SpecsPage } from './pages/SpecsPage'
 import { TimelinePage } from './pages/TimelinePage'
 import { WorkspaceSetup } from './pages/WorkspaceSetup'
 import { useWorkspaces } from './hooks/useWorkspaces'
+import { ToastProvider } from './components/ui/Toast'
 
 const queryClient = new QueryClient()
 
@@ -43,9 +44,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

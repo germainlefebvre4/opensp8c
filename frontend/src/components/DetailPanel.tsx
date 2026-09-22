@@ -9,8 +9,10 @@ import { useToggleTask } from '../hooks/useToggleTask'
 import { useConversationRuns } from '../hooks/useConversationRuns'
 import { useConversationRun } from '../hooks/useConversationRun'
 import { useRetag } from '../hooks/useRetag'
+import { useToast } from '../hooks/useToast'
 import { deleteGhost } from '../lib/api'
 import { DeleteChangeDialog } from './DeleteChangeDialog'
+import { ConfirmDialog } from './ui/ConfirmDialog'
 
 interface Props {
   workspaceId: string
@@ -34,6 +36,9 @@ const STATUS_KEY_MAP: Record<string, string> = {
 export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostId }: Props) {
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
+  const { t: tKanban } = useTranslation('kanban')
+  const { t: tDialogs } = useTranslation('dialogs')
+  const { toast } = useToast()
 
   const { data, isLoading } = useChangeDetail(workspaceId, changeName)
   const archive = useArchive(workspaceId)
@@ -41,6 +46,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const toggleTask = useToggleTask(workspaceId, changeName)
   const retag = useRetag(workspaceId, changeName)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
@@ -65,15 +71,28 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const activeRunTs = selectedRunTs ?? (ffRuns?.[0]?.ts ?? null)
   const { data: ffRun, isLoading: runLoading } = useConversationRun(workspaceId, changeName, 'ff', activeRunTs)
 
-  const handleArchive = async () => {
+  const handleArchiveClick = () => {
+    setArchiveError(null)
+    setArchiveConfirmOpen(true)
+  }
+
+  const runArchive = async () => {
     setArchiveError(null)
     try {
       await archive.mutateAsync(changeName)
+      setArchiveConfirmOpen(false)
+      toast({ title: tDialogs('archiveChange.successToast', { name: changeName }), variant: 'success' })
       onClose()
     } catch (err: unknown) {
       const axiosData = (err as { response?: { data?: string } })?.response?.data
       setArchiveError(axiosData || (err instanceof Error ? err.message : String(err)))
     }
+  }
+
+  const handleArchiveCancel = () => {
+    if (archive.isPending) return
+    setArchiveConfirmOpen(false)
+    setArchiveError(null)
   }
 
   const handleDeleteConfirm = async () => {
@@ -417,15 +436,11 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                   {data.kanban_status === 'done' && (
                     <div className="flex flex-col gap-2">
                       <button
-                        onClick={handleArchive}
-                        disabled={archive.isPending}
+                        onClick={handleArchiveClick}
                         className="self-start text-xs px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        {archive.isPending ? `⏳ ${t('archiving')}` : t('archive')}
+                        {tKanban('card.syncAndArchive')}
                       </button>
-                      {archiveError && (
-                        <p className="text-[11px] text-red-600 whitespace-pre-wrap">{archiveError}</p>
-                      )}
                     </div>
                   )}
 
@@ -456,6 +471,22 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
           changeName={changeName}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setShowDeleteDialog(false)}
+        />
+      )}
+
+      {data && data.kanban_status === 'done' && (
+        <ConfirmDialog
+          open={archiveConfirmOpen}
+          title={tDialogs('archiveChange.title')}
+          body={tDialogs('archiveChange.body', { name: changeName })}
+          confirmLabel={tDialogs('archiveChange.confirm')}
+          cancelLabel={tDialogs('archiveChange.cancel')}
+          onConfirm={runArchive}
+          onCancel={handleArchiveCancel}
+          isPending={archive.isPending}
+          pendingLabel={tDialogs('archiveChange.progress')}
+          error={archiveError}
+          onRetry={runArchive}
         />
       )}
     </div>

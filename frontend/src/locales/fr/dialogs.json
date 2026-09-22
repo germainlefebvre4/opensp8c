@@ -12,6 +12,14 @@
     "confirm": "Supprimer",
     "cancel": "Annuler"
   },
+  "archiveChange": {
+    "title": "Archiver ce change ?",
+    "body": "\"{{name}}\" va être synchronisé avec les specs actives puis archivé. Cette action est irréversible.",
+    "confirm": "Archiver",
+    "cancel": "Annuler",
+    "progress": "Synchronisation et archivage en cours...",
+    "successToast": "Change « {{name}} » archivé"
+  },
   "agentSettings": {
     "title": "Configuration de l'Agent",
     "description": "Ces variables d'environnement seront injectées à chaud lors du lancement du processus de l'agent CLI.",

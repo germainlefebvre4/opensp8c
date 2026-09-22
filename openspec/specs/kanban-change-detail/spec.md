@@ -1,3 +1,9 @@
+## Purpose
+
+Permettre à l'utilisateur de consulter et piloter le détail complet d'un change (tâches, artifacts, tags, actions) depuis un panneau latéral inline (`DetailPanel`) ouvert au clic sur une carte Kanban.
+
+## Requirements
+
 ### Requirement: Ouvrir le DetailPanel au clic sur une carte hors To Explore
 L'utilisateur SHALL pouvoir cliquer sur une carte dans les colonnes **To Do**, **In Progress** ou **Done** pour ouvrir un panneau latéral (`DetailPanel`) affichant le détail complet du change. Le panel SHALL s'afficher dans un slot dédié à droite des colonnes Kanban (layout inline), sans masquer les colonnes. Un seul panneau peut être ouvert à la fois ; ouvrir un panneau ferme tout autre panneau précédemment ouvert (ExplorePanel inclus).
 
@@ -59,15 +65,23 @@ L'utilisateur SHALL pouvoir modifier le `kanban_status` d'un change directement 
 - **THEN** le `kanban_status` est mis à jour dans `.openspec.yaml`, la carte se déplace dans la colonne correspondante, et le DetailPanel reste ouvert
 
 ### Requirement: Archiver un change depuis le DetailPanel
-L'utilisateur SHALL pouvoir déclencher l'archivage d'un change en statut **Done** depuis le DetailPanel.
+L'utilisateur SHALL pouvoir déclencher l'archivage d'un change en statut **Done** depuis le DetailPanel, via le même dialog de confirmation partagé que celui utilisé depuis la carte Kanban.
+
+#### Scenario: Confirmation demandée avant archivage
+- **WHEN** l'utilisateur clique sur "Sync & Archive" dans le DetailPanel d'un change en statut **Done**
+- **THEN** le dialog de confirmation partagé s'ouvre, affichant le nom du change et l'avertissement d'irréversibilité, sans appel au backend
+
+#### Scenario: Annulation de la confirmation
+- **WHEN** l'utilisateur clique sur "Annuler" dans le dialog ouvert depuis le DetailPanel
+- **THEN** le dialog se ferme, aucun appel au backend n'est effectué, et le DetailPanel reste ouvert et inchangé
 
 #### Scenario: Archivage depuis le panneau
-- **WHEN** l'utilisateur clique sur "Archiver" dans le DetailPanel d'un change en statut **Done**
-- **THEN** le change est archivé et le DetailPanel se ferme
+- **WHEN** l'utilisateur confirme l'archivage dans le dialog ouvert depuis le DetailPanel
+- **THEN** le change est archivé, le dialog se ferme, un toast confirme l'archivage, et le DetailPanel se ferme
 
 #### Scenario: Erreur d'archivage
 - **WHEN** l'archivage échoue
-- **THEN** le message d'erreur est affiché dans le DetailPanel
+- **THEN** le dialog reste ouvert, le message d'erreur est affiché dans le dialog avec un bouton "Réessayer", et le DetailPanel reste ouvert
 
 ### Requirement: Afficher les artifacts en Markdown rendu dans le DetailPanel
 Les onglets **Proposal** et **Design** du DetailPanel SHALL offrir un toggle permettant de basculer entre l'affichage en texte brut (raw) et l'affichage en Markdown rendu. Le mode est partagé entre les deux onglets. Le mode par défaut est le rendu Markdown.

@@ -12,6 +12,14 @@
     "confirm": "Delete",
     "cancel": "Cancel"
   },
+  "archiveChange": {
+    "title": "Archive this change?",
+    "body": "\"{{name}}\" will be synced with the active specs and then archived. This cannot be undone.",
+    "confirm": "Archive",
+    "cancel": "Cancel",
+    "progress": "Syncing and archiving...",
+    "successToast": "Change \"{{name}}\" archived"
+  },
   "agentSettings": {
     "title": "Agent Configuration",
     "description": "These environment variables will be hot-injected when launching the CLI agent process.",
