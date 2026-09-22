@@ -6,6 +6,12 @@
     "confirm": "Reset",
     "cancel": "Cancel"
   },
+  "deleteChange": {
+    "title": "Delete this change?",
+    "body": "\"{{name}}\" will be permanently deleted. This cannot be undone.",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
   "agentSettings": {
     "title": "Agent Configuration",
     "description": "These environment variables will be hot-injected when launching the CLI agent process.",

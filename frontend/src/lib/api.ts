@@ -89,6 +89,9 @@ export const promoteGhost = (workspaceId: string, ghostId: string, context: stri
 export const deleteGhost = (workspaceId: string, ghostId: string) =>
   api.delete(`/api/workspaces/${workspaceId}/explorations/${ghostId}`)
 
+export const deleteChange = (workspaceId: string, changeName: string) =>
+  api.delete(`/api/workspaces/${workspaceId}/changes/${changeName}`)
+
 export interface DraftTask {
   id: string
   text: string

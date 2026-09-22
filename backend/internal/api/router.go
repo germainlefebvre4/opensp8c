@@ -62,7 +62,8 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, time.Hour)
 
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath)
-	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc)
+	poolMgr := pool.NewManager()
+	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolMgr, mgr, convStore, watcherSvc, draftsPath(cfgPath))
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
@@ -71,7 +72,6 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
-	poolMgr := pool.NewManager()
 	poolHandler := handlers.NewPoolHandler(wsHandler, poolMgr)
 
 	r.Route("/api", func(r chi.Router) {
@@ -89,6 +89,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 		r.Get("/workspaces/{id}/changes", kanbanHandler.ListChanges)
 		r.Get("/workspaces/{id}/changes/{name}", kanbanHandler.GetChange)
+		r.Delete("/workspaces/{id}/changes/{name}", kanbanHandler.DeleteChange)
 		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)

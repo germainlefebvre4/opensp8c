@@ -21,6 +21,7 @@ export interface Change {
   tags?: Tags
   is_ghost?: boolean
   ghost_id?: string
+  worker_active?: boolean
 }
 
 export function useChanges(workspaceId: string | null) {

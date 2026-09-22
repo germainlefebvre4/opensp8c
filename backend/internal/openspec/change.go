@@ -33,6 +33,7 @@ type Change struct {
 	Dependencies      []string `json:"dependencies,omitempty"`
 	IsGhost           bool     `json:"is_ghost,omitempty"`
 	GhostID           string   `json:"ghost_id,omitempty"`
+	WorkerActive      bool     `json:"worker_active,omitempty"`
 }
 
 type Task struct {

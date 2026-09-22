@@ -9,7 +9,7 @@ export interface TaskItem {
 
 export interface ChangeDetail {
   name: string
-  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done'
+  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
   tasks_done: number
   tasks_total: number
   created: string
@@ -20,6 +20,7 @@ export interface ChangeDetail {
     design: string
   }
   tags?: Tags
+  worker_active?: boolean
 }
 
 export function useChangeDetail(workspaceId: string | null, changeName: string | null) {

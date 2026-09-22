@@ -6,6 +6,12 @@
     "confirm": "Réinitialiser",
     "cancel": "Annuler"
   },
+  "deleteChange": {
+    "title": "Supprimer ce change ?",
+    "body": "\"{{name}}\" sera définitivement supprimé. Cette action est irréversible.",
+    "confirm": "Supprimer",
+    "cancel": "Annuler"
+  },
   "agentSettings": {
     "title": "Configuration de l'Agent",
     "description": "Ces variables d'environnement seront injectées à chaud lors du lancement du processus de l'agent CLI.",

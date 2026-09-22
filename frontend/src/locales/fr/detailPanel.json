@@ -4,7 +4,8 @@
     "proposal": "Proposal",
     "design": "Design",
     "log": "Log",
-    "tags": "Tags"
+    "tags": "Tags",
+    "actions": "Actions"
   },
   "status": {
     "toExplore": "To Explore",
@@ -39,5 +40,9 @@
     "approveAndMerge": "Approuver & Fusionner",
     "requestCorrection": "Demander correction"
   },
-  "solidifyError": "Erreur lors de la solidification du change : {{error}}"
+  "solidifyError": "Erreur lors de la solidification du change : {{error}}",
+  "delete": "Supprimer",
+  "deleting": "Suppression...",
+  "deleteDisabledWorkerActive": "Un worker de l'Agent Pool est actuellement actif sur ce change.",
+  "deleteError": "Erreur lors de la suppression du change : {{error}}"
 }

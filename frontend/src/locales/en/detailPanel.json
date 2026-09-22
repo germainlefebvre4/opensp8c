@@ -4,7 +4,8 @@
     "proposal": "Proposal",
     "design": "Design",
     "log": "Log",
-    "tags": "Tags"
+    "tags": "Tags",
+    "actions": "Actions"
   },
   "status": {
     "toExplore": "To Explore",
@@ -39,5 +40,9 @@
     "approveAndMerge": "Approve & Merge",
     "requestCorrection": "Request correction"
   },
-  "solidifyError": "Error while freezing the change: {{error}}"
+  "solidifyError": "Error while freezing the change: {{error}}",
+  "delete": "Delete",
+  "deleting": "Deleting...",
+  "deleteDisabledWorkerActive": "An Agent Pool worker is currently active on this change.",
+  "deleteError": "Error while deleting the change: {{error}}"
 }

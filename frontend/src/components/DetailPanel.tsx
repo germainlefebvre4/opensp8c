@@ -4,11 +4,13 @@ import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
+import { useDeleteChange } from '../hooks/useDeleteChange'
 import { useToggleTask } from '../hooks/useToggleTask'
 import { useConversationRuns } from '../hooks/useConversationRuns'
 import { useConversationRun } from '../hooks/useConversationRun'
 import { useRetag } from '../hooks/useRetag'
 import { deleteGhost } from '../lib/api'
+import { DeleteChangeDialog } from './DeleteChangeDialog'
 
 interface Props {
   workspaceId: string
@@ -17,7 +19,7 @@ interface Props {
   associatedGhostId?: string
 }
 
-type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags'
+type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags' | 'actions'
 type ViewMode = 'raw' | 'rendered'
 
 const STATUS_KEY_MAP: Record<string, string> = {
@@ -35,9 +37,12 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
 
   const { data, isLoading } = useChangeDetail(workspaceId, changeName)
   const archive = useArchive(workspaceId)
+  const deleteChange = useDeleteChange(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
   const retag = useRetag(workspaceId, changeName)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [pendingTaskIdx, setPendingTaskIdx] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('tasks')
@@ -71,12 +76,25 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     }
   }
 
+  const handleDeleteConfirm = async () => {
+    setDeleteError(null)
+    try {
+      await deleteChange.mutateAsync(changeName)
+      setShowDeleteDialog(false)
+      onClose()
+    } catch (err: unknown) {
+      const axiosData = (err as { response?: { data?: string } })?.response?.data
+      setDeleteError(axiosData || (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'tasks', label: t('tabs.tasks') },
     { id: 'proposal', label: t('tabs.proposal') },
     { id: 'design', label: t('tabs.design') },
     { id: 'log', label: t('tabs.log') },
     { id: 'tags', label: t('tabs.tags') },
+    { id: 'actions', label: t('tabs.actions') },
   ]
 
   const statusLabel = data
@@ -378,41 +396,67 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Review footer */}
-          {data.kanban_status === 'to-review' && (
-            <div className="px-4 py-3 border-t border-slate-200 shrink-0 flex flex-wrap gap-2 bg-blue-50/50">
-              <button
-                className="text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
-              >
-                {t('reviewActions.approveAndMerge')}
-              </button>
-              <button
-                className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
-              >
-                {t('reviewActions.requestCorrection')}
-              </button>
-            </div>
-          )}
+              {activeTab === 'actions' && (
+                <div className="flex flex-col gap-4">
+                  {data.kanban_status === 'to-review' && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+                      >
+                        {t('reviewActions.approveAndMerge')}
+                      </button>
+                      <button
+                        className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                      >
+                        {t('reviewActions.requestCorrection')}
+                      </button>
+                    </div>
+                  )}
 
-          {/* Archive footer */}
-          {data.kanban_status === 'done' && (
-            <div className="px-4 py-3 border-t border-slate-200 shrink-0 flex flex-wrap gap-2">
-              <button
-                onClick={handleArchive}
-                disabled={archive.isPending}
-                className="text-xs px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {archive.isPending ? `⏳ ${t('archiving')}` : t('archive')}
-              </button>
-              {archiveError && (
-                <p className="text-[11px] text-red-600 w-full whitespace-pre-wrap">{archiveError}</p>
+                  {data.kanban_status === 'done' && (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={handleArchive}
+                        disabled={archive.isPending}
+                        className="self-start text-xs px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {archive.isPending ? `⏳ ${t('archiving')}` : t('archive')}
+                      </button>
+                      {archiveError && (
+                        <p className="text-[11px] text-red-600 whitespace-pre-wrap">{archiveError}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {data.kanban_status !== 'archived' && (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => setShowDeleteDialog(true)}
+                        disabled={deleteChange.isPending || data.worker_active}
+                        title={data.worker_active ? t('deleteDisabledWorkerActive') : undefined}
+                        className="self-start text-xs px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deleteChange.isPending ? `⏳ ${t('deleting')}` : t('delete')}
+                      </button>
+                      {deleteError && (
+                        <p className="text-[11px] text-red-600 whitespace-pre-wrap">{deleteError}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
         </>
+      )}
+
+      {showDeleteDialog && (
+        <DeleteChangeDialog
+          changeName={changeName}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setShowDeleteDialog(false)}
+        />
       )}
     </div>
   )
