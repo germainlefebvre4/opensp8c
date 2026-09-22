@@ -1,0 +1,6 @@
+{
+  "go.goroot": "/home/glefebvre/.gvm/1.25.1/go",
+  "tooltitude.env": {
+    "PATH": "/home/glefebvre/.gvm/1.25.1/go/bin:${env:PATH}"
+  }
+}

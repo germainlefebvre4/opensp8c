@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
+import { useTranslation } from 'react-i18next'
 import type { SpecWithHistory } from '../hooks/useSpecsOverview'
 import { useContainerWidth } from '../hooks/useContainerWidth'
 import { GRANULARITIES, bucketKey, bucketLabel } from '../lib/bucketing'
@@ -19,13 +20,6 @@ const SPEC_COL_WIDTH = 200
 const MIN_CELL_PX = 16
 const MAX_CELL_PX = 40
 
-const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
-  { value: 'day', label: 'Jour' },
-  { value: 'week', label: 'Semaine' },
-  { value: 'month', label: 'Mois' },
-  { value: 'quarter', label: 'Trimestre' },
-]
-
 function getIntensityClass(count: number, max: number): string {
   if (count === 0 || max === 0) return ''
   const ratio = count / max
@@ -35,6 +29,14 @@ function getIntensityClass(count: number, max: number): string {
 }
 
 export function TimelineSpecMatrix({ specs, orphans, selectedSpec, onSpecSelect }: Props) {
+  const { t } = useTranslation('timeline')
+  const { t: tCommon } = useTranslation('common')
+  const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
+    { value: 'day', label: t('matrix.granularity.day') },
+    { value: 'week', label: t('matrix.granularity.week') },
+    { value: 'month', label: t('matrix.granularity.month') },
+    { value: 'quarter', label: t('matrix.granularity.quarter') },
+  ]
   const [scrollRef, containerWidth] = useContainerWidth<HTMLDivElement>()
   const [granularity, setGranularity] = useState<Granularity | null>(null)
   const hasSetDefault = useRef(false)
@@ -133,7 +135,7 @@ export function TimelineSpecMatrix({ specs, orphans, selectedSpec, onSpecSelect 
       <ScrollArea.Viewport className="h-full w-full">
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Spec × période</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('matrix.specByPeriod')}</span>
             <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
               {GRANULARITY_OPTIONS.map(opt => (
                 <button
@@ -152,13 +154,13 @@ export function TimelineSpecMatrix({ specs, orphans, selectedSpec, onSpecSelect 
           {/* Always mounted (even before granularity resolves) so its width can be measured. */}
           <div className="overflow-x-auto" ref={scrollRef}>
             {!granularity ? (
-              <p className="text-xs text-slate-400 py-2">Chargement...</p>
+              <p className="text-xs text-slate-400 py-2">{tCommon('loading')}</p>
             ) : (
               <table className="border-separate border-spacing-0">
                 <thead>
                   <tr>
                     <th className="w-48 min-w-[192px] sticky left-0 bg-white z-10 text-left pb-3 pr-4">
-                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Spec</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{t('matrix.specHeader')}</span>
                     </th>
                     {buckets.map(bucket => (
                       // Column width is computed at runtime (elastic fit), so it can't be a static Tailwind class.
@@ -202,7 +204,7 @@ export function TimelineSpecMatrix({ specs, orphans, selectedSpec, onSpecSelect 
                               <div
                                 className={`rounded-sm mx-auto ${getIntensityClass(count, maxCount)}`}
                                 style={{ width: squareSize, height: squareSize }}
-                                title={count > 0 ? `${count} change${count > 1 ? 's' : ''} — ${bucketLabel(bucket, granularity)}` : ''}
+                                title={count > 0 ? t('matrix.changeCountTooltip', { count, period: bucketLabel(bucket, granularity) }) : ''}
                               />
                             </td>
                           )
@@ -218,7 +220,7 @@ export function TimelineSpecMatrix({ specs, orphans, selectedSpec, onSpecSelect 
           {orphans.length > 0 && (
             <div className="mt-6 pt-4 border-t border-slate-100">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
-                Orphelins — référencés dans des changes, absents de openspec/specs/
+                {t('matrix.orphansExplainer')}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {orphans.map(name => (

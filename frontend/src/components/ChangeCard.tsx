@@ -19,6 +19,7 @@ const DRAGGABLE_STATUSES = new Set(['to-explore', 'todo', 'in-progress'])
 
 export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId }: Props) {
   const { t } = useTranslation('detailPanel')
+  const { t: tKanban } = useTranslation('kanban')
   const { t: tCommon } = useTranslation('common')
 
   const [isSolidifying, setIsSolidifying] = useState(false)
@@ -77,7 +78,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
       <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 flex items-center gap-2 shadow-sm">
         <Loader2 size={12} className="animate-spin text-violet-500 shrink-0" />
         <span className="text-xs text-slate-500 font-medium truncate">{change.name}</span>
-        <span className="text-[10px] text-violet-400 ml-auto shrink-0">ff...</span>
+        <span className="text-[10px] text-violet-400 ml-auto shrink-0">{tKanban('card.ffRunning')}</span>
       </div>
     )
   }
@@ -87,7 +88,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
       <div className="bg-white border border-red-200 rounded-lg px-3 py-2.5 flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md transition-all group" onClick={() => onOpen(change.name)}>
         <AlertCircle size={12} className="text-red-400 shrink-0" />
         <span className="text-xs text-slate-700 font-semibold truncate group-hover:text-blue-700">{change.name}</span>
-        <span className="text-[10px] text-red-400 ml-auto shrink-0">ff failed</span>
+        <span className="text-[10px] text-red-400 ml-auto shrink-0">{tKanban('card.ffFailed')}</span>
       </div>
     )
   }
@@ -116,11 +117,11 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium border border-violet-200">
-            exploring
+            {tKanban('card.exploring')}
           </span>
           {change.tasks_total > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-600 font-medium border border-fuchsia-200">
-              {change.tasks_done}/{change.tasks_total} dft
+              {tKanban('card.draftTasksBadge', { done: change.tasks_done, total: change.tasks_total })}
             </span>
           )}
         </div>
@@ -162,7 +163,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
           <button
             onClick={handleSolidify}
             disabled={isSolidifying}
-            title="Figer le change (fermer l'exploration)"
+            title={tKanban('card.figerTooltip')}
             className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-all cursor-pointer border border-violet-200 font-semibold shrink-0 disabled:opacity-50"
           >
             {isSolidifying ? (
@@ -170,7 +171,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
             ) : (
               <Pin size={10} className="-rotate-45 text-violet-500" />
             )}
-            Figer
+            {tKanban('card.figerLabel')}
           </button>
         )}
       </div>
@@ -179,7 +180,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
         <div className="flex items-center gap-1.5 flex-wrap">
           {associatedGhostId && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-medium border border-violet-200">
-              projet
+              {tKanban('card.projetBadge')}
             </span>
           )}
           {change.tags.type && (
@@ -198,7 +199,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
       {change.tasks_total > 0 && (
         <>
           <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
-            <span>{change.tasks_done}/{change.tasks_total} tasks</span>
+            <span>{tKanban('card.tasksCount', { done: change.tasks_done, total: change.tasks_total })}</span>
             {change.is_stale && (
               <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}d</span>
             )}
@@ -234,7 +235,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
               onClick={handleArchive}
               className="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-all cursor-pointer"
             >
-              Sync &amp; Archive
+              {tKanban('card.syncAndArchive')}
             </button>
           )}
         </div>

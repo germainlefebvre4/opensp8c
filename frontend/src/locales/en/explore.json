@@ -13,5 +13,21 @@
   "minimize": "Minimize",
   "createChange": "Create change",
   "createChangeTooltip": "Create a change from this exploration",
-  "scrollToBottom": "Scroll to bottom"
+  "scrollToBottom": "Scroll to bottom",
+  "draftPanel": {
+    "loading": "Loading draft...",
+    "error": "Error loading the draft.",
+    "header": "Change Draft",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "modified": "Modified...",
+    "saveTooltip": "Save immediately",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Briefly describe the goal of this draft...",
+    "tasksLabel": "Inferred Tasks ({{count}})",
+    "addButton": "Add",
+    "emptyTasks": "No tasks detected yet. Describe your need in the chat!",
+    "taskPlaceholder": "Enter the task..."
+  },
+  "typingBubble": "{{name}} is thinking..."
 }

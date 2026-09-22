@@ -1,0 +1,27 @@
+{
+  "title": "Timeline des changements",
+  "tabs": {
+    "changes": "Changes",
+    "matrix": "Matrice"
+  },
+  "frequentSpecs": "Specs fréquentes",
+  "clearAll": "Tout effacer",
+  "emptyState": "Aucun changement ne correspond aux filtres sélectionnés.",
+  "unknownDate": "Date inconnue",
+  "months": ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"],
+  "viewSpecLink": "Voir la spec →",
+  "viewSpecTooltip": "Voir spec : {{spec}}",
+  "matrix": {
+    "granularity": {
+      "day": "Jour",
+      "week": "Semaine",
+      "month": "Mois",
+      "quarter": "Trimestre"
+    },
+    "specByPeriod": "Spec × période",
+    "specHeader": "Spec",
+    "changeCountTooltip_one": "{{count}} change — {{period}}",
+    "changeCountTooltip_other": "{{count}} changes — {{period}}",
+    "orphansExplainer": "Orphelins — référencés dans des changes, absents de openspec/specs/"
+  }
+}

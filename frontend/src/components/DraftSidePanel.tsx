@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Save, FileText, CheckSquare, Square, Check, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { getGhostDraft, updateGhostDraft } from '../lib/api'
 import type { ExplorationDraft, DraftTask } from '../lib/api'
 
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function DraftSidePanel({ workspaceId, ghostId }: Props) {
+  const { t } = useTranslation('explore')
   const qc = useQueryClient()
   const [description, setDescription] = useState('')
   const [tasks, setTasks] = useState<DraftTask[]>([])
@@ -111,7 +113,7 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
     return (
       <div className="h-full flex items-center justify-center text-slate-400 bg-slate-50 border-l border-slate-200">
         <Loader2 className="animate-spin mr-2" size={16} />
-        Chargement du brouillon...
+        {t('draftPanel.loading')}
       </div>
     )
   }
@@ -119,7 +121,7 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
   if (isError) {
     return (
       <div className="h-full flex items-center justify-center text-red-500 text-xs bg-slate-50 border-l border-slate-200">
-        Erreur de chargement du brouillon.
+        {t('draftPanel.error')}
       </div>
     )
   }
@@ -131,28 +133,28 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
         <div className="flex items-center gap-1.5 text-slate-700">
           <FileText size={14} className="text-violet-600" />
           <span className="text-xs font-semibold uppercase tracking-wider">
-            Brouillon de Change
+            {t('draftPanel.header')}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {saveMutation.isPending ? (
             <span className="text-[10px] text-slate-400 flex items-center gap-1">
               <Loader2 className="animate-spin" size={10} />
-              Enregistrement...
+              {t('draftPanel.saving')}
             </span>
           ) : showSavedIndicator ? (
             <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
               <Check size={10} />
-              Sauvegardé
+              {t('draftPanel.saved')}
             </span>
           ) : !isSaved ? (
             <span className="text-[10px] text-slate-400">
-              Modifié...
+              {t('draftPanel.modified')}
             </span>
           ) : null}
           <button
             onClick={handleForceSave}
-            title="Sauvegarder immédiatement"
+            title={t('draftPanel.saveTooltip')}
             className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <Save size={13} />
@@ -165,12 +167,12 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
         {/* Description Section */}
         <div className="flex flex-col gap-1.5 shrink-0">
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Description
+            {t('draftPanel.descriptionLabel')}
           </label>
           <textarea
             value={description}
             onChange={e => handleDescriptionChange(e.target.value)}
-            placeholder="Décrivez brièvement l'objectif de ce brouillon..."
+            placeholder={t('draftPanel.descriptionPlaceholder')}
             rows={3}
             className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent bg-white placeholder:text-slate-400 resize-none overflow-y-auto shadow-sm"
           />
@@ -180,20 +182,20 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
         <div className="flex-1 flex flex-col gap-2 min-h-0">
           <div className="flex items-center justify-between shrink-0">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              Tâches Déduites ({tasks.length})
+              {t('draftPanel.tasksLabel', { count: tasks.length })}
             </label>
             <button
               onClick={handleAddTask}
               className="text-[10px] font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-0.5 cursor-pointer"
             >
-              <Plus size={10} /> Ajouter
+              <Plus size={10} /> {t('draftPanel.addButton')}
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1.5 min-h-0">
             {tasks.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400 bg-white border border-dashed border-slate-200 rounded-lg">
-                Aucune tâche détectée pour le moment. Décrivez votre besoin dans le chat !
+                {t('draftPanel.emptyTasks')}
               </div>
             ) : (
               tasks.map((task, idx) => (
@@ -215,7 +217,7 @@ export function DraftSidePanel({ workspaceId, ghostId }: Props) {
                     type="text"
                     value={task.text}
                     onChange={e => handleTaskTextChange(idx, e.target.value)}
-                    placeholder="Saisir la tâche..."
+                    placeholder={t('draftPanel.taskPlaceholder')}
                     className={`flex-1 text-xs border-0 p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300 ${
                       task.done ? 'line-through text-slate-400' : 'text-slate-700'
                     }`}

@@ -8,5 +8,10 @@
   "adding": "Adding...",
   "projectPathExample": "Project path (e.g. /home/user/my-project)",
   "welcome": "Welcome to OpenSP8C",
-  "welcomeSubtitle": "Add your first project to get started."
+  "welcomeSubtitle": "Add your first project to get started.",
+  "agentSelector": {
+    "chooseAgent": "Choose the code agent",
+    "configureEnv": "Configure the agent's environment variables",
+    "notInstalled": "not installed"
+  }
 }

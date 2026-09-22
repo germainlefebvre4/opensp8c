@@ -1,4 +1,5 @@
 import * as ScrollArea from '@radix-ui/react-scroll-area'
+import { useTranslation } from 'react-i18next'
 import type { SpecOverview } from '../hooks/useSpecsOverview'
 
 interface Props {
@@ -7,14 +8,16 @@ interface Props {
   selectedChangeName?: string | null
 }
 
-function formatDate(date: string): string {
+function formatDate(date: string, locale: string): string {
   if (!date) return ''
   const [year, month, day] = date.split('-')
   const d = new Date(Number(year), Number(month) - 1, Number(day))
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
 }
 
 export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }: Props) {
+  const { t, i18n } = useTranslation('specs')
+  const dateLocale = i18n.language === 'fr' ? 'fr-FR' : 'en-US'
   const { specs, orphans } = overview
 
   const untracedCount = specs.filter(s => s.changes.length === 0).length
@@ -29,19 +32,19 @@ export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }:
 
           {/* Stats bar */}
           <div className="flex items-center gap-3 mb-6 text-xs text-slate-500">
-            <span>{specs.length} specs</span>
+            <span>{t('history.specsCount', { count: specs.length })}</span>
             <span className="text-slate-300">•</span>
-            <span>{totalChanges} changes</span>
+            <span>{t('history.changesCount', { count: totalChanges })}</span>
             {untracedCount > 0 && (
               <>
                 <span className="text-slate-300">•</span>
-                <span className="text-amber-600 font-medium">{untracedCount} non tracée{untracedCount > 1 ? 's' : ''} ⚠</span>
+                <span className="text-amber-600 font-medium">{t('history.untracedCount', { count: untracedCount })}</span>
               </>
             )}
             {orphans.length > 0 && (
               <>
                 <span className="text-slate-300">•</span>
-                <span className="text-slate-400">{orphans.length} orphelin{orphans.length > 1 ? 's' : ''}</span>
+                <span className="text-slate-400">{t('history.orphansCount', { count: orphans.length })}</span>
               </>
             )}
           </div>
@@ -58,8 +61,8 @@ export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }:
                   </span>
                   <span className="text-[11px] text-slate-400 ml-2 shrink-0">
                     {spec.changes.length === 0
-                      ? 'aucun change lié'
-                      : `${spec.changes.length} change${spec.changes.length > 1 ? 's' : ''}`}
+                      ? t('history.noLinkedChange')
+                      : t('history.linkedChangesCount', { count: spec.changes.length })}
                   </span>
                 </div>
 
@@ -90,11 +93,11 @@ export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }:
 
                           <span className="flex items-center gap-1.5 shrink-0">
                             {ref.date && (
-                              <span className="text-slate-400">{formatDate(ref.date)}</span>
+                              <span className="text-slate-400">{formatDate(ref.date, dateLocale)}</span>
                             )}
                             {isActive && (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700">
-                                actif
+                                {t('history.active')}
                               </span>
                             )}
                           </span>
@@ -105,7 +108,7 @@ export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }:
                 ) : (
                   <div className="border-l-2 border-amber-100 ml-1 pl-3">
                     <p className="text-xs text-amber-600/70 py-1">
-                      Cette spec n'est liée à aucun change
+                      {t('history.noLinkedChangeExplainer')}
                     </p>
                   </div>
                 )}
@@ -117,7 +120,7 @@ export function SpecHistoryView({ overview, onChangeClick, selectedChangeName }:
           {orphans.length > 0 && (
             <div className="mt-8 pt-6 border-t border-slate-100">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-3">
-                Orphelins — référencés dans des changes, absents de openspec/specs/
+                {t('history.orphansExplainer')}
               </p>
               <div className="flex flex-col gap-1">
                 {orphans.map(name => (

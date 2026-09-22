@@ -10,6 +10,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
   },
@@ -29,5 +30,14 @@
   "semanticTags": "Tags sémantiques",
   "type": "Type",
   "complexity": "Complexité",
-  "components": "Composants"
+  "components": "Composants",
+  "ghostBanner": {
+    "label": "Brouillon d'exploration actif",
+    "freeze": "Figer le change"
+  },
+  "reviewActions": {
+    "approveAndMerge": "Approuver & Fusionner",
+    "requestCorrection": "Demander correction"
+  },
+  "solidifyError": "Erreur lors de la solidification du change : {{error}}"
 }

@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 
 interface Props {
@@ -25,6 +26,7 @@ const TYPE_ICONS: Record<string, string> = {
 }
 
 export function TimelineChangeCard({ change: c, specChips, extraComps, onFilterClick }: Props) {
+  const { t } = useTranslation('timeline')
   const [searchParams] = useSearchParams()
 
   const makeSpecUrl = (specName: string) => {
@@ -61,7 +63,7 @@ export function TimelineChangeCard({ change: c, specChips, extraComps, onFilterC
                 key={spec}
                 to={makeSpecUrl(spec)}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-400 transition-colors font-medium"
-                title={`Voir spec: ${spec}`}
+                title={t('viewSpecTooltip', { spec })}
               >
                 {spec}
               </Link>

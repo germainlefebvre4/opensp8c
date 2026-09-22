@@ -4,7 +4,40 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "toReview": "To Review",
     "done": "Done",
     "archived": "Archived"
+  },
+  "agentPoolButton": {
+    "start": "Launch Pool",
+    "stop": "Stop Pool"
+  },
+  "promoteGhostDialog": {
+    "title": "Create a change?",
+    "body": "The exploration {{name}} will be turned into a change and added to the To Do column.",
+    "bodyDetail": "The Fast-Forward agent will generate the artifacts (proposal, design, specs, tasks) from the exploration's context.",
+    "confirm": "Create change"
+  },
+  "deleteGhostDialog": {
+    "title": "Abandon this exploration?",
+    "body": "The conversation will be lost. This action is irreversible.",
+    "confirm": "Abandon"
+  },
+  "columnActions": {
+    "newExploration": "New exploration",
+    "showColumn": "Show column",
+    "hideColumn": "Collapse column",
+    "showMore": "Show more ({{count}})"
+  },
+  "card": {
+    "figerLabel": "Freeze",
+    "figerTooltip": "Freeze the change (close the exploration)",
+    "projetBadge": "project",
+    "syncAndArchive": "Sync & Archive",
+    "tasksCount": "{{done}}/{{total}} tasks",
+    "exploring": "exploring",
+    "ffRunning": "ff...",
+    "ffFailed": "ff failed",
+    "draftTasksBadge": "{{done}}/{{total}} dft"
   }
 }

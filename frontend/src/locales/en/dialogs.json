@@ -25,5 +25,22 @@
     "systemActive": "Will be inherited from system environment",
     "systemOverridden": "Overrides system value",
     "systemPrefix": "System:"
+  },
+  "agentPool": {
+    "title": "Launch Agent Pool",
+    "body": "You are about to launch automatic processing of the cards in the Todo column. Tasks will be distributed and processed in parallel according to their dependencies.",
+    "workersLabel": "👥 Number of Parallel Workers",
+    "agentCount_one": "{{count}} Agent",
+    "agentCount_other": "{{count}} Agents",
+    "delegationModeLabel": "🛡️ Global Delegation Mode",
+    "fullAutonomy": {
+      "label": "Full Autonomy",
+      "description": "Agents modify the main codebase and move cards directly to DONE."
+    },
+    "hitlReview": {
+      "label": "Review-based Development (HITL)",
+      "description": "Agents work on isolated branches. Completed cards wait for your validation in the TO REVIEW column before being merged into Git."
+    },
+    "start": "Start Pool"
   }
 }

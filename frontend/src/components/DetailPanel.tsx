@@ -20,6 +20,15 @@ interface Props {
 type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags'
 type ViewMode = 'raw' | 'rendered'
 
+const STATUS_KEY_MAP: Record<string, string> = {
+  'to-explore': 'toExplore',
+  'todo': 'toDo',
+  'in-progress': 'inProgress',
+  'to-review': 'toReview',
+  'done': 'done',
+  'archived': 'archived',
+}
+
 export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostId }: Props) {
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
@@ -70,7 +79,9 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     { id: 'tags', label: t('tabs.tags') },
   ]
 
-  const statusLabel = data ? (t(`status.${data.kanban_status.replace('-', '')}`, { defaultValue: data.kanban_status })) : ''
+  const statusLabel = data
+    ? t(`status.${STATUS_KEY_MAP[data.kanban_status] ?? data.kanban_status}`, { defaultValue: data.kanban_status })
+    : ''
 
   const showViewToggle = activeTab === 'proposal' || activeTab === 'design'
 
@@ -99,7 +110,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
         <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-1.5 text-xs text-violet-700 font-medium">
             <Pin size={11} className="-rotate-45 text-violet-500 shrink-0" />
-            <span>Brouillon d'exploration actif</span>
+            <span>{t('ghostBanner.label')}</span>
           </div>
           <button
             onClick={handleBannerSolidify}
@@ -111,7 +122,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
             ) : (
               <Pin size={10} className="-rotate-45 text-white" />
             )}
-            Figer le change
+            {t('ghostBanner.freeze')}
           </button>
         </div>
       )}
@@ -244,7 +255,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                               await deleteGhost(workspaceId, associatedGhostId)
                             } catch (err) {
                               setPendingTaskIdx(null)
-                              setToggleError("Erreur lors de la solidification du change : " + (err instanceof Error ? err.message : String(err)))
+                              setToggleError(t('solidifyError', { error: err instanceof Error ? err.message : String(err) }))
                               return
                             }
                           }
@@ -376,12 +387,12 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
               <button
                 className="text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
               >
-                Approuver & Fusionner
+                {t('reviewActions.approveAndMerge')}
               </button>
               <button
                 className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
               >
-                Demander correction
+                {t('reviewActions.requestCorrection')}
               </button>
             </div>
           )}

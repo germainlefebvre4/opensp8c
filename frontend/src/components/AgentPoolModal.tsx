@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X, Play, ShieldAlert, Cpu } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 export interface AgentPoolConfig {
   size: number
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
+  const { t } = useTranslation('dialogs')
+  const { t: tCommon } = useTranslation('common')
   const [size, setSize] = useState(3)
   const [mode, setMode] = useState<'full-autonomy' | 'hitl-review'>('hitl-review')
 
@@ -25,7 +28,7 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-violet-600" />
-            <h2 className="text-lg font-semibold text-slate-800">Lancer le Pool d'Agents</h2>
+            <h2 className="text-lg font-semibold text-slate-800">{t('agentPool.title')}</h2>
           </div>
           <button
             onClick={onClose}
@@ -37,13 +40,13 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
 
         <div className="p-6 space-y-6">
           <p className="text-sm text-slate-600">
-            Vous vous apprêtez à lancer le traitement automatique des cartes de la colonne Todo. Les tâches seront distribuées et traitées en parallèle selon les dépendances.
+            {t('agentPool.body')}
           </p>
 
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                👥 Nombre de Workers Parallèles
+                {t('agentPool.workersLabel')}
               </label>
               <div className="flex items-center gap-4">
                 <button
@@ -54,7 +57,7 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
                   -
                 </button>
                 <div className="flex-1 text-center font-semibold text-slate-800">
-                  {size} Agent{size > 1 ? 's' : ''}
+                  {t('agentPool.agentCount', { count: size })}
                 </div>
                 <button
                   onClick={() => setSize(s => Math.min(5, s + 1))}
@@ -68,9 +71,9 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                🛡️ Mode de Délégation global
+                {t('agentPool.delegationModeLabel')}
               </label>
-              
+
               <div className="space-y-3">
                 <label className={`flex p-3 rounded-xl border-2 cursor-pointer transition-colors ${mode === 'full-autonomy' ? 'border-violet-600 bg-violet-50' : 'border-slate-200 hover:border-slate-300'}`}>
                   <input
@@ -82,9 +85,9 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
                     className="sr-only"
                   />
                   <div className="flex-1 ml-2">
-                    <div className="font-medium text-slate-900">Autonomie Totale</div>
+                    <div className="font-medium text-slate-900">{t('agentPool.fullAutonomy.label')}</div>
                     <div className="text-xs text-slate-500 mt-1">
-                      Les agents modifient le code principal et déplacent les cartes directement dans DONE.
+                      {t('agentPool.fullAutonomy.description')}
                     </div>
                   </div>
                 </label>
@@ -99,9 +102,9 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
                     className="sr-only"
                   />
                   <div className="flex-1 ml-2">
-                    <div className="font-medium text-slate-900">Développement avec Review (HITL)</div>
+                    <div className="font-medium text-slate-900">{t('agentPool.hitlReview.label')}</div>
                     <div className="text-xs text-slate-500 mt-1">
-                      Les agents travaillent sur des branches isolées. Les cartes terminées attendent votre validation dans la colonne TO REVIEW avant fusion Git.
+                      {t('agentPool.hitlReview.description')}
                     </div>
                   </div>
                   <ShieldAlert className={`w-5 h-5 ${mode === 'hitl-review' ? 'text-violet-600' : 'text-slate-400'}`} />
@@ -116,7 +119,7 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
           >
-            Annuler
+            {tCommon('cancel')}
           </button>
           <button
             onClick={() => {
@@ -126,7 +129,7 @@ export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
             className="flex items-center gap-2 px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <Play size={16} />
-            Démarrer le Pool
+            {t('agentPool.start')}
           </button>
         </div>
       </div>

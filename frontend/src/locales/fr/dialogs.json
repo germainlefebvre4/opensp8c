@@ -25,5 +25,22 @@
     "systemActive": "Sera héritée de l'environnement système",
     "systemOverridden": "Surcharge la valeur système",
     "systemPrefix": "Système :"
+  },
+  "agentPool": {
+    "title": "Lancer le Pool d'Agents",
+    "body": "Vous vous apprêtez à lancer le traitement automatique des cartes de la colonne Todo. Les tâches seront distribuées et traitées en parallèle selon les dépendances.",
+    "workersLabel": "👥 Nombre de Workers Parallèles",
+    "agentCount_one": "{{count}} Agent",
+    "agentCount_other": "{{count}} Agents",
+    "delegationModeLabel": "🛡️ Mode de Délégation global",
+    "fullAutonomy": {
+      "label": "Autonomie Totale",
+      "description": "Les agents modifient le code principal et déplacent les cartes directement dans DONE."
+    },
+    "hitlReview": {
+      "label": "Développement avec Review (HITL)",
+      "description": "Les agents travaillent sur des branches isolées. Les cartes terminées attendent votre validation dans la colonne TO REVIEW avant fusion Git."
+    },
+    "start": "Démarrer le Pool"
   }
 }

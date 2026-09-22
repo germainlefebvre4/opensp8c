@@ -13,5 +13,21 @@
   "minimize": "Réduire",
   "createChange": "Créer le change",
   "createChangeTooltip": "Créer un change à partir de cette exploration",
-  "scrollToBottom": "Défiler vers le bas"
+  "scrollToBottom": "Défiler vers le bas",
+  "draftPanel": {
+    "loading": "Chargement du brouillon...",
+    "error": "Erreur de chargement du brouillon.",
+    "header": "Brouillon de Change",
+    "saving": "Enregistrement...",
+    "saved": "Sauvegardé",
+    "modified": "Modifié...",
+    "saveTooltip": "Sauvegarder immédiatement",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Décrivez brièvement l'objectif de ce brouillon...",
+    "tasksLabel": "Tâches Déduites ({{count}})",
+    "addButton": "Ajouter",
+    "emptyTasks": "Aucune tâche détectée pour le moment. Décrivez votre besoin dans le chat !",
+    "taskPlaceholder": "Saisir la tâche..."
+  },
+  "typingBubble": "{{name}} réfléchit..."
 }

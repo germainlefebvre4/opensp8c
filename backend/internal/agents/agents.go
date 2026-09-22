@@ -69,7 +69,7 @@ var SupportedAgents = []AgentConfig{
 	},
 	{
 		ID:          "antigravity",
-		Label:       "Antigravity",
+		Label:       "Antigravity CLI",
 		CLI:         "agy",
 		VersionArgs: []string{"--version"},
 	},

@@ -10,6 +10,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "toReview": "To Review",
     "done": "Done",
     "archived": "Archived"
   },
@@ -29,5 +30,14 @@
   "semanticTags": "Semantic tags",
   "type": "Type",
   "complexity": "Complexity",
-  "components": "Components"
+  "components": "Components",
+  "ghostBanner": {
+    "label": "Active exploration draft",
+    "freeze": "Freeze the change"
+  },
+  "reviewActions": {
+    "approveAndMerge": "Approve & Merge",
+    "requestCorrection": "Request correction"
+  },
+  "solidifyError": "Error while freezing the change: {{error}}"
 }

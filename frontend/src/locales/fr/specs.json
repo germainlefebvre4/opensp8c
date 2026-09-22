@@ -4,5 +4,33 @@
   "selectPrompt": "Sélectionnez une spécification pour en afficher le contenu.",
   "edit": "Éditer",
   "modeContent": "Contenu",
-  "modeHistory": "Historique"
+  "modeHistory": "Historique",
+  "viewHistoryLink": "Voir l'historique →",
+  "editor": {
+    "unsavedBanner": "Ce fichier a été modifié en dehors de l'éditeur.",
+    "ignore": "Ignorer",
+    "reload": "Recharger",
+    "saveError": "Erreur lors de l'enregistrement. Vos modifications sont conservées.",
+    "noChanges": "Aucune modification",
+    "saving": "Enregistrement…"
+  },
+  "history": {
+    "specsCount_one": "{{count}} spec",
+    "specsCount_other": "{{count}} specs",
+    "changesCount_one": "{{count}} change",
+    "changesCount_other": "{{count}} changes",
+    "untracedCount_one": "{{count}} non tracée ⚠",
+    "untracedCount_other": "{{count}} non tracées ⚠",
+    "orphansCount_one": "{{count}} orphelin",
+    "orphansCount_other": "{{count}} orphelins",
+    "noLinkedChange": "aucun change lié",
+    "linkedChangesCount_one": "{{count}} change",
+    "linkedChangesCount_other": "{{count}} changes",
+    "active": "actif",
+    "noLinkedChangeExplainer": "Cette spec n'est liée à aucun change",
+    "orphansExplainer": "Orphelins — référencés dans des changes, absents de openspec/specs/"
+  },
+  "toc": {
+    "title": "Sur cette page"
+  }
 }

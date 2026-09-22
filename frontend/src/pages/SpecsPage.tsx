@@ -176,7 +176,7 @@ export function SpecsPage({ workspaceId }: Props) {
                   to={`/timeline?${(() => { const p = new URLSearchParams(searchParams); p.set('spec', selectedSpec!); return p.toString() })()}`}
                   className="text-[11px] text-slate-400 hover:text-blue-600 transition-colors"
                 >
-                  Voir l'historique →
+                  {t('viewHistoryLink')}
                 </Link>
                 <button
                   onClick={handleEdit}

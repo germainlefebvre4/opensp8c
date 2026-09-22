@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useDroppable } from '@dnd-kit/core'
+import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { ChangeCard } from './ChangeCard'
 
@@ -31,6 +32,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
 }
 
 export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+  const { t } = useTranslation('kanban')
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
   const [collapsed, setCollapsed] = useState(false)
@@ -61,7 +63,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           {onNew && (
             <button
               onClick={onNew}
-              title="Nouvelle exploration"
+              title={t('columnActions.newExploration')}
               className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors cursor-pointer text-sm leading-none"
             >
               +
@@ -73,7 +75,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           {collapsible && (
             <button
               onClick={() => setCollapsed(v => !v)}
-              title={collapsed ? 'Afficher la colonne' : 'Réduire la colonne'}
+              title={collapsed ? t('columnActions.showColumn') : t('columnActions.hideColumn')}
               className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
@@ -105,7 +107,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
               onClick={() => setVisibleCount(v => v + (maxVisible ?? 3))}
               className="text-[11px] text-slate-400 hover:text-slate-600 py-1 text-center transition-colors cursor-pointer"
             >
-              Afficher plus ({changes.length - visibleCount})
+              {t('columnActions.showMore', { count: changes.length - visibleCount })}
             </button>
           )}
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffLines } from 'diff'
+import { useTranslation } from 'react-i18next'
 import { useUpdateSpec } from '../hooks/useSpecs'
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export function SpecEditor({ workspaceId, specName, initialContent, serverContent, onCancel, onSaveSuccess }: Props) {
+  const { t } = useTranslation('specs')
+  const { t: tCommon } = useTranslation('common')
   const [localContent, setLocalContent] = useState(initialContent)
   const [externalChange, setExternalChange] = useState(false)
   const { mutate: updateSpec, isPending, isError } = useUpdateSpec(workspaceId)
@@ -62,12 +65,12 @@ export function SpecEditor({ workspaceId, specName, initialContent, serverConten
     <div className="flex-1 flex flex-col overflow-hidden">
       {externalChange && (
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
-          <span>Ce fichier a été modifié en dehors de l'éditeur.</span>
+          <span>{t('editor.unsavedBanner')}</span>
           <button
             onClick={() => setExternalChange(false)}
             className="underline hover:no-underline"
           >
-            Ignorer
+            {t('editor.ignore')}
           </button>
           <button
             onClick={() => {
@@ -77,14 +80,14 @@ export function SpecEditor({ workspaceId, specName, initialContent, serverConten
             }}
             className="underline hover:no-underline"
           >
-            Recharger
+            {t('editor.reload')}
           </button>
         </div>
       )}
 
       {isError && (
         <div className="shrink-0 px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
-          Erreur lors de l'enregistrement. Vos modifications sont conservées.
+          {t('editor.saveError')}
         </div>
       )}
 
@@ -100,7 +103,7 @@ export function SpecEditor({ workspaceId, specName, initialContent, serverConten
         <div className="flex-1 overflow-y-auto font-mono text-xs leading-relaxed bg-slate-50">
           {!hasChanges ? (
             <div className="flex items-center justify-center h-full text-slate-400 text-xs">
-              Aucune modification
+              {t('editor.noChanges')}
             </div>
           ) : (
             <div className="p-4">
@@ -131,14 +134,14 @@ export function SpecEditor({ workspaceId, specName, initialContent, serverConten
           onClick={onCancel}
           className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
         >
-          Annuler
+          {tCommon('cancel')}
         </button>
         <button
           onClick={handleSave}
           disabled={isPending || !hasChanges}
           className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
         >
-          {isPending ? 'Enregistrement…' : 'Enregistrer'}
+          {isPending ? t('editor.saving') : tCommon('save')}
         </button>
       </div>
     </div>

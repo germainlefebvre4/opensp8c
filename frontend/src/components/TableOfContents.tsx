@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export interface Heading {
   level: number
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function TableOfContents({ headings, contentEl }: Props) {
+  const { t } = useTranslation('specs')
   const [activeId, setActiveId] = useState<string>(headings[0]?.id ?? '')
   const observerRef = useRef<IntersectionObserver | null>(null)
 
@@ -57,7 +59,7 @@ export function TableOfContents({ headings, contentEl }: Props) {
   return (
     <nav className="flex flex-col gap-0.5">
       <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2 px-1">
-        Sur cette page
+        {t('toc.title')}
       </span>
       {headings.map(h => (
         <button

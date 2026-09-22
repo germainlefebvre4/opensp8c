@@ -4,5 +4,33 @@
   "selectPrompt": "Select a specification to display its content.",
   "edit": "Edit",
   "modeContent": "Content",
-  "modeHistory": "History"
+  "modeHistory": "History",
+  "viewHistoryLink": "View history →",
+  "editor": {
+    "unsavedBanner": "This file has been modified outside the editor.",
+    "ignore": "Ignore",
+    "reload": "Reload",
+    "saveError": "Error while saving. Your changes have been kept.",
+    "noChanges": "No changes",
+    "saving": "Saving…"
+  },
+  "history": {
+    "specsCount_one": "{{count}} spec",
+    "specsCount_other": "{{count}} specs",
+    "changesCount_one": "{{count}} change",
+    "changesCount_other": "{{count}} changes",
+    "untracedCount_one": "{{count}} untraced ⚠",
+    "untracedCount_other": "{{count}} untraced ⚠",
+    "orphansCount_one": "{{count}} orphan",
+    "orphansCount_other": "{{count}} orphans",
+    "noLinkedChange": "no linked change",
+    "linkedChangesCount_one": "{{count}} change",
+    "linkedChangesCount_other": "{{count}} changes",
+    "active": "active",
+    "noLinkedChangeExplainer": "This spec is not linked to any change",
+    "orphansExplainer": "Orphans — referenced in changes, absent from openspec/specs/"
+  },
+  "toc": {
+    "title": "On this page"
+  }
 }

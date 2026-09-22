@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { X, List, LayoutGrid } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAllChanges } from '../hooks/useAllChanges'
 import { useSpecsOverview } from '../hooks/useSpecsOverview'
 import type { SpecOverview } from '../hooks/useSpecsOverview'
@@ -13,15 +14,17 @@ interface Props {
   workspaceId: string
 }
 
-const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
-
-function formatMonth(ym: string): string {
-  if (ym === 'unknown') return 'Date inconnue'
-  const [y, m] = ym.split('-')
-  return `${MONTHS[parseInt(m) - 1]} ${y}`
-}
-
 export function TimelinePage({ workspaceId }: Props) {
+  const { t, i18n } = useTranslation('timeline')
+  const { t: tCommon } = useTranslation('common')
+  const months = i18n.getResource(i18n.language, 'timeline', 'months') as string[]
+
+  const formatMonth = (ym: string): string => {
+    if (ym === 'unknown') return t('unknownDate')
+    const [y, m] = ym.split('-')
+    return `${months[parseInt(m) - 1]} ${y}`
+  }
+
   const { data: allChanges = [], isLoading } = useAllChanges(workspaceId)
   const { data: overview } = useSpecsOverview(workspaceId)
   const [searchParams] = useSearchParams()
@@ -107,13 +110,13 @@ export function TimelinePage({ workspaceId }: Props) {
   }
 
   if (isLoading) {
-    return <div className="flex-1 flex items-center justify-center text-sm text-slate-400">Chargement...</div>
+    return <div className="flex-1 flex items-center justify-center text-sm text-slate-400">{tCommon('loading')}</div>
   }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="shrink-0 px-6 pt-3 pb-3 flex items-center justify-between border-b border-slate-100">
-        <h1 className="text-sm font-semibold text-slate-700">Timeline des changements</h1>
+        <h1 className="text-sm font-semibold text-slate-700">{t('title')}</h1>
         <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
           <button
             onClick={() => setMode('changes')}
@@ -122,7 +125,7 @@ export function TimelinePage({ workspaceId }: Props) {
             }`}
           >
             <List size={11} />
-            Changes
+            {t('tabs.changes')}
           </button>
           <button
             onClick={() => { setMode('matrice'); setSelectedChange(null) }}
@@ -131,7 +134,7 @@ export function TimelinePage({ workspaceId }: Props) {
             }`}
           >
             <LayoutGrid size={11} />
-            Matrice
+            {t('tabs.matrix')}
           </button>
         </div>
       </div>
@@ -140,7 +143,7 @@ export function TimelinePage({ workspaceId }: Props) {
         <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full">
           {specHeatmap.length > 0 && (
             <div className="mb-6 p-3 bg-slate-50 rounded-lg border border-slate-200">
-              <p className="text-[11px] text-slate-500 font-medium mb-2">Specs fréquentes</p>
+              <p className="text-[11px] text-slate-500 font-medium mb-2">{t('frequentSpecs')}</p>
               <div className="flex flex-wrap gap-1.5">
                 {specHeatmap.map(([name, count]) => (
                   <button
@@ -165,13 +168,13 @@ export function TimelinePage({ workspaceId }: Props) {
                 </span>
               ))}
               <button onClick={() => setActiveFilters([])} className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">
-                Tout effacer
+                {t('clearAll')}
               </button>
             </div>
           )}
 
           {filtered.length === 0 ? (
-            <p className="text-sm text-slate-400">Aucun changement ne correspond aux filtres sélectionnés.</p>
+            <p className="text-sm text-slate-400">{t('emptyState')}</p>
           ) : (
             <div className="flex flex-col gap-6">
               {grouped.map(([month, changes]) => (
@@ -209,7 +212,7 @@ export function TimelinePage({ workspaceId }: Props) {
                 onSpecSelect={handleSpecSelect}
               />
             ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400">Chargement...</div>
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400">{tCommon('loading')}</div>
             )}
           </div>
 
@@ -230,7 +233,7 @@ export function TimelinePage({ workspaceId }: Props) {
                         to={makeSpecsUrl(selectedSpec)}
                         className="text-[11px] text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                       >
-                        Voir la spec →
+                        {t('viewSpecLink')}
                       </Link>
                       <button
                         onClick={() => setSelectedSpec(null)}

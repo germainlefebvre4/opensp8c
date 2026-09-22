@@ -4,7 +4,40 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
+  },
+  "agentPoolButton": {
+    "start": "Lancer le Pool",
+    "stop": "Arrêter le Pool"
+  },
+  "promoteGhostDialog": {
+    "title": "Créer un change ?",
+    "body": "L'exploration {{name}} va être transformée en change et ajoutée à la colonne À faire.",
+    "bodyDetail": "L'agent Fast-Forward va générer les artéfacts (proposal, design, specs, tâches) à partir du contexte de l'exploration.",
+    "confirm": "Créer le change"
+  },
+  "deleteGhostDialog": {
+    "title": "Abandonner cette exploration ?",
+    "body": "La conversation sera perdue. Cette action est irréversible.",
+    "confirm": "Abandonner"
+  },
+  "columnActions": {
+    "newExploration": "Nouvelle exploration",
+    "showColumn": "Afficher la colonne",
+    "hideColumn": "Réduire la colonne",
+    "showMore": "Afficher plus ({{count}})"
+  },
+  "card": {
+    "figerLabel": "Figer",
+    "figerTooltip": "Figer le change (fermer l'exploration)",
+    "projetBadge": "projet",
+    "syncAndArchive": "Sync & Archive",
+    "tasksCount": "{{done}}/{{total}} tâches",
+    "exploring": "en exploration",
+    "ffRunning": "ff...",
+    "ffFailed": "ff échoué",
+    "draftTasksBadge": "{{done}}/{{total}} dft"
   }
 }

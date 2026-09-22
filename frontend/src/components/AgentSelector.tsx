@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, ChevronDown, Settings } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAgents, usePatchPreferences, usePreferences } from '../hooks/useAgentPreferences'
 import { AgentSettingsModal } from './AgentSettingsModal'
 
 export function AgentSelector() {
+  const { t } = useTranslation('workspace')
   const { data: agents = [] } = useAgents()
   const { data: prefs } = usePreferences()
   const patch = usePatchPreferences()
@@ -52,7 +54,7 @@ export function AgentSelector() {
         ref={buttonRef}
         onClick={handleOpen}
         className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-800 transition-colors border border-slate-200 bg-slate-50 min-w-0"
-        title="Choisir l'agent de code"
+        title={t('agentSelector.chooseAgent')}
       >
         <Bot size={12} className="shrink-0 text-slate-400" />
         <span className="flex-1 text-left truncate">
@@ -70,7 +72,7 @@ export function AgentSelector() {
         type="button"
         onClick={() => setShowSettings(true)}
         className="p-1.5 rounded-md border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700 hover:bg-white transition-colors cursor-pointer shrink-0"
-        title="Configurer les variables d'environnement de l'agent"
+        title={t('agentSelector.configureEnv')}
       >
         <Settings size={13} />
       </button>
@@ -101,7 +103,7 @@ export function AgentSelector() {
               {agent.installed ? (
                 <span className="text-[9px] text-slate-400 shrink-0">{agent.version}</span>
               ) : (
-                <span className="text-[9px] text-slate-300 shrink-0">non installé</span>
+                <span className="text-[9px] text-slate-300 shrink-0">{t('agentSelector.notInstalled')}</span>
               )}
             </button>
           ))}
