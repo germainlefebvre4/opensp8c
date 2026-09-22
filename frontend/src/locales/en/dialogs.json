@@ -38,7 +38,10 @@
     "geminiSandboxDesc": "Enable security sandbox (true/false).",
     "systemActive": "Will be inherited from system environment",
     "systemOverridden": "Overrides system value",
-    "systemPrefix": "System:"
+    "systemPrefix": "System:",
+    "explore": "Exploration",
+    "nativeQuestionMode": "Native question mode (Claude)",
+    "nativeQuestionModeDesc": "Re-enables the native AskUserQuestion tool for Claude. Has no effect on other agents."
   },
   "agentPool": {
     "title": "Launch Agent Pool",

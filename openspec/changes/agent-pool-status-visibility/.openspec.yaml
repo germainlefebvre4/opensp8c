@@ -1,0 +1,10 @@
+schema: spec-driven
+created: "2026-09-22"
+tags:
+    type: fullstack
+    complexity: 3
+    components:
+        - kanban-board
+        - workspace-events
+    _auto: true
+    _tagged_at: "2026-09-22"

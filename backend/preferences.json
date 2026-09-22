@@ -13,5 +13,26 @@
       "agent": "gemini",
       "claudeSessionId": "4021548b-ef0a-4f12-b302-0b0b9e3f4244"
     }
+  },
+  "explorations": [
+    {
+      "id": "a0c5a423517d5da117ef0b1253e828e2",
+      "workspaceId": "fc2ef688",
+      "name": "explore-a0c5a4",
+      "sessionId": "a0c5a423517d5da117ef0b1253e828e2",
+      "createdAt": "2026-09-22T20:34:19Z",
+      "lastActivityAt": "2026-09-22T20:35:16Z"
+    },
+    {
+      "id": "f885ecf44f997c8af12d143836b71040",
+      "workspaceId": "fc2ef688",
+      "name": "explore-f885ec",
+      "sessionId": "f885ecf44f997c8af12d143836b71040",
+      "createdAt": "2026-09-22T20:37:34Z",
+      "lastActivityAt": "2026-09-22T20:54:59Z"
+    }
+  ],
+  "env": {
+    "GOOGLE_CLOUD_PROJECT": "group-shared-dvf-dev"
   }
 }

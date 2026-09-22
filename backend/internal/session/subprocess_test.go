@@ -55,6 +55,17 @@ func TestTranslateGeminiLine(t *testing.T) {
 			input:    `{"type":"message","role":"assistant","content":"{\"event\":\"ghost_named\",\"name\":\"my-change\"}\n"}`,
 			expected: `{"delta":{"text":"{\"event\":\"ghost_named\",\"name\":\"my-change\"}\n"},"type":"content_block_delta"}`,
 		},
+		{
+			// Documents the risk mitigated by explore-native-question-mode's silent
+			// fallback: an unrecognized event type (e.g. a hypothetical future Gemini
+			// tool_use block) passes through this bridge unchanged rather than being
+			// translated or dropped — downstream detectNativeQuestionBlock filtering
+			// in startFanOut is what actually prevents any AskUserQuestion-shaped
+			// block from leaking to the frontend for a non-Claude agent.
+			name:     "Unrecognized event type (e.g. a hypothetical tool_use block) passes through unchanged",
+			input:    `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"AskUserQuestion"}}`,
+			expected: `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"AskUserQuestion"}}`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -245,7 +256,7 @@ func TestStartSubprocessGeminiBridge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}
@@ -302,7 +313,7 @@ func TestStartSubprocessGeminiBridge_StderrErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-456", false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}
@@ -363,7 +374,7 @@ func TestStartSubprocessGeminiBridge_SilencedIDEWarning(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-789", false, nil, nil)
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "system prompt", "test-session-789", false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("StartSubprocess failed: %v", err)
 	}
@@ -417,6 +428,47 @@ func TestSessionInjectMessage(t *testing.T) {
 		// Success
 	default:
 		t.Errorf("expected notification on notify channel")
+	}
+}
+
+func TestResolveBaseSystemPrompt(t *testing.T) {
+	tests := []struct {
+		name               string
+		agentID            string
+		nativeQuestionMode bool
+		expectInterdiction bool
+	}{
+		{
+			name:               "Claude with native question mode active: interdiction lifted",
+			agentID:            "claude",
+			nativeQuestionMode: true,
+			expectInterdiction: false,
+		},
+		{
+			name:               "Claude with native question mode inactive: interdiction kept",
+			agentID:            "claude",
+			nativeQuestionMode: false,
+			expectInterdiction: true,
+		},
+		{
+			name:               "Non-Claude agent with native question mode active: interdiction kept",
+			agentID:            "gemini",
+			nativeQuestionMode: true,
+			expectInterdiction: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveBaseSystemPrompt(tc.agentID, tc.nativeQuestionMode)
+			containsInterdiction := strings.Contains(got, "Never use AskUserQuestion")
+			if containsInterdiction != tc.expectInterdiction {
+				t.Errorf("expected interdiction present=%v, got prompt: %s", tc.expectInterdiction, got)
+			}
+			if !strings.Contains(got, "ghost_question") {
+				t.Errorf("expected shared framing/marker instructions to always be present, got: %s", got)
+			}
+		})
 	}
 }
 

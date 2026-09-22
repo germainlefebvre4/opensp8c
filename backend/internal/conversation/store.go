@@ -239,7 +239,25 @@ func (s *Store) OpenRun(wsID, changeName, kind, ts string) (*os.File, error) {
 }
 
 func (s *Store) List(wsID, changeName, kind string) ([]RunMeta, error) {
-	dir := s.dir(wsID, changeName, kind)
+	return listDir(s.dir(wsID, changeName, kind))
+}
+
+func (s *Store) Load(wsID, changeName, kind, ts string) ([][]byte, error) {
+	return loadDir(s.dir(wsID, changeName, kind), ts)
+}
+
+// ListExplore lists runs for an anonymous exploration session (keyed by
+// ghostSessionID instead of a changeName), most recent first.
+func (s *Store) ListExplore(wsID, ghostSessionID, kind string) ([]RunMeta, error) {
+	return listDir(s.exploreDir(wsID, ghostSessionID, kind))
+}
+
+// LoadExplore loads a run's raw JSONL lines for an anonymous exploration session.
+func (s *Store) LoadExplore(wsID, ghostSessionID, kind, ts string) ([][]byte, error) {
+	return loadDir(s.exploreDir(wsID, ghostSessionID, kind), ts)
+}
+
+func listDir(dir string) ([]RunMeta, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -264,8 +282,8 @@ func (s *Store) List(wsID, changeName, kind string) ([]RunMeta, error) {
 	return runs, nil
 }
 
-func (s *Store) Load(wsID, changeName, kind, ts string) ([][]byte, error) {
-	path := filepath.Join(s.dir(wsID, changeName, kind), ts+".jsonl")
+func loadDir(dir, ts string) ([][]byte, error) {
+	path := filepath.Join(dir, ts+".jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

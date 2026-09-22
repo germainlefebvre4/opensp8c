@@ -41,6 +41,7 @@ export interface Preferences {
   defaultAgent: string
   env: Record<string, string>
   systemEnv?: Record<string, string>
+  nativeQuestionMode?: boolean
 }
 
 export const getAgents = () =>

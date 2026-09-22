@@ -16,6 +16,7 @@ export function AgentSettingsModal({ onClose }: Props) {
   const [geminiModel, setGeminiModel] = useState('')
   const [geminiSandbox, setGeminiSandbox] = useState('')
   const [customVars, setCustomVars] = useState<{ key: string; value: string }[]>([])
+  const [nativeQuestionMode, setNativeQuestionMode] = useState(false)
 
   useEffect(() => {
     if (prefs?.env) {
@@ -31,6 +32,7 @@ export function AgentSettingsModal({ onClose }: Props) {
       })
       setCustomVars(custom)
     }
+    setNativeQuestionMode(Boolean(prefs?.nativeQuestionMode))
   }, [prefs])
 
   const handleAddVar = () => {
@@ -61,7 +63,7 @@ export function AgentSettingsModal({ onClose }: Props) {
       }
     })
 
-    await patch.mutateAsync({ env })
+    await patch.mutateAsync({ env, nativeQuestionMode })
     onClose()
   }
 
@@ -235,6 +237,31 @@ export function AgentSettingsModal({ onClose }: Props) {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="h-px bg-slate-100 my-1" />
+
+          {/* Native question mode (Claude only) */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              {t('agentSettings.explore')}
+            </h3>
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={nativeQuestionMode}
+                onChange={e => setNativeQuestionMode(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 cursor-pointer"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-slate-700">
+                  {t('agentSettings.nativeQuestionMode')}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {t('agentSettings.nativeQuestionModeDesc')}
+                </span>
+              </span>
+            </label>
           </div>
         </form>
 

@@ -8,9 +8,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/go-chi/chi/v5"
+	"nhooyr.io/websocket"
 )
 
 func TestGhostDraftCRUD(t *testing.T) {
@@ -135,5 +139,282 @@ func TestGhostDraftCRUD(t *testing.T) {
 	_ = json.NewDecoder(getRec3.Body).Decode(&finalDraft)
 	if len(finalDraft.Tasks) != 0 {
 		t.Errorf("expected empty tasks after delete, got %d", len(finalDraft.Tasks))
+	}
+}
+
+// dialExploreWS starts an httptest server wired to serveWS for sess, dials it,
+// and returns the client connection (caller must close it) plus a context
+// bound to the test's lifetime.
+func dialExploreWS(t *testing.T, sess *session.Session) (*websocket.Conn, context.Context) {
+	t.Helper()
+	h := &ExploreHandler{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		h.serveWS(r, conn, sess, func() {}, false, "ws1", "")
+	}))
+	t.Cleanup(srv.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+
+	return conn, ctx
+}
+
+// TestServeWSReplaysPendingQuestionOnConnect verifies that a client connecting
+// (or reconnecting) to a session that already has a pending clarification
+// question immediately receives a "ghost_question" event with its text,
+// deterministically (no dependency on live stdout streaming timing).
+func TestServeWSReplaysPendingQuestionOnConnect(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.SetPendingQuestion("Quel est le périmètre exact ?")
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	var evt map[string]string
+	if err := json.Unmarshal(data, &evt); err != nil {
+		t.Fatalf("failed to unmarshal event: %v (data: %s)", err, data)
+	}
+	if evt["type"] != "ghost_question" {
+		t.Fatalf("expected first event to be ghost_question, got: %s", data)
+	}
+	if evt["question"] != "Quel est le périmètre exact ?" {
+		t.Errorf("unexpected question text: %q", evt["question"])
+	}
+}
+
+// TestServeWSBroadcastsGhostQuestion verifies that when the subprocess stdout
+// buffer receives a ghost_question marker while a client is connected,
+// serveWS emits a dedicated "ghost_question" WebSocket event carrying the
+// question text, and records the pending state on the session.
+func TestServeWSBroadcastsGhostQuestion(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	// Seeded before connecting so it is deterministically part of the replayed
+	// history, letting the test detect once the live goroutine has taken over.
+	sess.InjectMessage([]byte(`{"type":"bootstrap"}`))
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	// Drain the replayed bootstrap message first.
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (bootstrap) failed: %v", err)
+	}
+
+	marker := []byte(`{"event":"ghost_question","question":"Quel est le périmètre exact ?"}`)
+	sess.InjectMessage(marker)
+
+	found := false
+	for i := 0; i < 5 && !found; i++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		var evt map[string]string
+		if err := json.Unmarshal(data, &evt); err != nil {
+			continue
+		}
+		if evt["type"] == "ghost_question" {
+			if evt["question"] != "Quel est le périmètre exact ?" {
+				t.Errorf("unexpected question text: %q", evt["question"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a ghost_question event to be broadcast")
+	}
+
+	if got := sess.PendingQuestion(); got != "Quel est le périmètre exact ?" {
+		t.Errorf("expected session pending question to be set, got %q", got)
+	}
+}
+
+// TestServeWSStripsEmbeddedGhostQuestionMarkerWithoutDroppingSurroundingText
+// verifies the fix for a real bug caught in manual end-to-end testing: Claude
+// often emits the ghost_question marker mixed into the same event as
+// substantial surrounding response text (not alone on its own line as the
+// system prompt asks for), e.g. a consolidated end-of-turn message. serveWS
+// must strip just the marker substring and still forward the rest of that
+// text to the frontend — not silently discard the whole event, which would
+// leave the user with no visible response at all.
+func TestServeWSStripsEmbeddedGhostQuestionMarkerWithoutDroppingSurroundingText(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"bootstrap"}`))
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (bootstrap) failed: %v", err)
+	}
+
+	// Realistic shape observed in production: the marker embedded at the end
+	// of a longer assistant message, not alone on its own line.
+	embedded := []byte(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Voici mon analyse du code existant.\n\n{\"event\":\"ghost_question\",\"question\":\"Quel est le périmètre exact ?\"}"}]}}`)
+	sess.InjectMessage(embedded)
+
+	var gotEvent, gotStrippedText bool
+	for i := 0; i < 5 && (!gotEvent || !gotStrippedText); i++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		var evt map[string]interface{}
+		if err := json.Unmarshal(data, &evt); err != nil {
+			continue
+		}
+		if evt["type"] == "ghost_question" {
+			gotEvent = true
+			if evt["question"] != "Quel est le périmètre exact ?" {
+				t.Errorf("unexpected question text: %v", evt["question"])
+			}
+			continue
+		}
+		if strings.Contains(string(data), "Voici mon analyse") {
+			gotStrippedText = true
+			if strings.Contains(string(data), "ghost_question") {
+				t.Errorf("expected the marker substring to be stripped from the forwarded message, got: %s", data)
+			}
+		}
+	}
+
+	if !gotEvent {
+		t.Error("expected a ghost_question event to be broadcast")
+	}
+	if !gotStrippedText {
+		t.Error("expected the surrounding response text to still be forwarded, with only the marker stripped out")
+	}
+}
+
+// TestServeWSDeduplicatesRepeatedGhostQuestionMarker verifies a fix for a real
+// duplication caught in manual end-to-end testing: a single agent turn can
+// surface the same marker text more than once (e.g. an incremental streaming
+// chunk that happens to carry the full marker substring, followed by the
+// turn's final consolidated message). Only one ghost_question event — and one
+// QuestionCard — should reach the frontend per logical question.
+func TestServeWSDeduplicatesRepeatedGhostQuestionMarker(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"bootstrap"}`))
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (bootstrap) failed: %v", err)
+	}
+
+	marker := []byte(`{"event":"ghost_question","question":"Quel est le périmètre exact ?"}`)
+	// Same logical question observed twice, as a real agent turn does.
+	sess.InjectMessage(marker)
+	sess.InjectMessage(marker)
+	sess.InjectMessage([]byte(`{"type":"sentinel"}`))
+
+	eventCount := 0
+	sawSentinel := false
+	for i := 0; i < 5 && !sawSentinel; i++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		var evt map[string]string
+		if err := json.Unmarshal(data, &evt); err == nil && evt["type"] == "ghost_question" {
+			eventCount++
+			continue
+		}
+		if strings.Contains(string(data), "sentinel") {
+			sawSentinel = true
+		}
+	}
+
+	if !sawSentinel {
+		t.Fatal("expected to reach the sentinel message")
+	}
+	if eventCount != 1 {
+		t.Errorf("expected exactly 1 ghost_question event for a repeated identical marker, got %d", eventCount)
+	}
+}
+
+// captureWriteCloser is an io.WriteCloser that buffers writes for inspection.
+type captureWriteCloser struct {
+	bytes.Buffer
+}
+
+func (c *captureWriteCloser) Close() error { return nil }
+
+// TestServeWSWritesToolResultOnNativeQuestionResponse verifies that when the
+// client answers a native_question card, serveWS translates the frontend's
+// native_question_response envelope into a well-formed tool_result stream-json
+// payload referencing the original tool_use_id, and writes it to the
+// subprocess stdin (rather than forwarding the client envelope verbatim).
+func TestServeWSWritesToolResultOnNativeQuestionResponse(t *testing.T) {
+	stdin := &captureWriteCloser{}
+	proc := session.NewTestSubprocess(stdin, nil, "claude")
+	sess := session.NewTestSession(proc)
+	sess.SetPendingQuestion("Quel format préfères-tu ?")
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	// Drain the pending-question replay emitted on connect.
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (pending question replay) failed: %v", err)
+	}
+
+	respMsg, _ := json.Marshal(map[string]string{
+		"type":      "native_question_response",
+		"toolUseId": "toolu_123",
+		"content":   "Réponse de l'utilisateur",
+	})
+	if err := conn.Write(ctx, websocket.MessageText, respMsg); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for stdin.Len() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if stdin.Len() == 0 {
+		t.Fatal("timed out waiting for tool_result to be written to stdin")
+	}
+
+	var got struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type      string `json:"type"`
+				ToolUseID string `json:"tool_use_id"`
+				Content   string `json:"content"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(stdin.Bytes(), &got); err != nil {
+		t.Fatalf("failed to unmarshal stdin payload: %v (data: %s)", err, stdin.String())
+	}
+	if got.Type != "user" || got.Message.Role != "user" {
+		t.Errorf("unexpected envelope: %+v", got)
+	}
+	if len(got.Message.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(got.Message.Content))
+	}
+	block := got.Message.Content[0]
+	if block.Type != "tool_result" || block.ToolUseID != "toolu_123" || block.Content != "Réponse de l'utilisateur" {
+		t.Errorf("unexpected tool_result block: %+v", block)
+	}
+
+	if got := sess.PendingQuestion(); got != "" {
+		t.Errorf("expected pending question to be cleared after tool_result, got %q", got)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -49,12 +50,94 @@ func prependExploreSkill(msg []byte) []byte {
 }
 
 // extractGhostNamed parses a buffered session message for the ghost_named marker.
+// The prefilter checks for the bare word rather than a quoted substring: when
+// the marker is embedded inside a larger JSON string (e.g. a consolidated
+// assistant message), its surrounding quotes are themselves escaped (\"), so
+// a quoted prefilter would never match — the bare word matches either way.
 func extractGhostNamed(line []byte) string {
 	s := string(line)
-	if !strings.Contains(s, `"ghost_named"`) {
+	if !strings.Contains(s, `ghost_named`) {
 		return ""
 	}
 	return session.ExtractGhostNamed(line)
+}
+
+// extractGhostQuestion parses a buffered session message for the ghost_question marker.
+// See extractGhostNamed for why the prefilter checks the bare word.
+func extractGhostQuestion(line []byte) string {
+	s := string(line)
+	if !strings.Contains(s, `ghost_question`) {
+		return ""
+	}
+	return session.ExtractGhostQuestion(line)
+}
+
+// ghostQuestionMarkerPattern matches the marker as it appears once JSON has
+// been decoded (i.e. in a plain string value, not the escaped form found in
+// a raw JSONL line).
+var ghostQuestionMarkerPattern = regexp.MustCompile(`\{"event":\s*"ghost_question",\s*"question":\s*"(?:[^"\\]|\\.)*"\}\n?`)
+
+// stripGhostQuestionMarker returns a copy of msg with any embedded
+// ghost_question marker substring removed from its string values.
+//
+// The system prompt asks the agent to put the marker on its own line, but in
+// practice a single stdout event can carry the marker mixed in with other,
+// ordinary response text (e.g. the model's whole turn arrives as one
+// consolidated message, or a translated bridge collapses a turn into a
+// single event) — dropping the whole line, as detectGhostQuestion used to,
+// would silently discard that surrounding text along with the marker. This
+// walks the decoded JSON structure and strips the marker from every string
+// field instead, so the rest of the message still reaches the frontend.
+// Returns msg unchanged if it doesn't parse as JSON.
+func stripGhostQuestionMarker(msg []byte) []byte {
+	var data interface{}
+	if err := json.Unmarshal(msg, &data); err != nil {
+		return msg
+	}
+	cleaned := stripGhostQuestionMarkerValue(data)
+	out, err := json.Marshal(cleaned)
+	if err != nil {
+		return msg
+	}
+	return out
+}
+
+func stripGhostQuestionMarkerValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case string:
+		return ghostQuestionMarkerPattern.ReplaceAllString(val, "")
+	case map[string]interface{}:
+		for k, vv := range val {
+			val[k] = stripGhostQuestionMarkerValue(vv)
+		}
+		return val
+	case []interface{}:
+		for i, vv := range val {
+			val[i] = stripGhostQuestionMarkerValue(vv)
+		}
+		return val
+	default:
+		return v
+	}
+}
+
+// parseNativeQuestionResponse parses a client-sent WebSocket message as a
+// reply to a native_question card. The frontend envelope is translated into
+// the actual tool_result wire format expected by the Claude subprocess by
+// session.BuildToolResultMessage.
+func parseNativeQuestionResponse(msg []byte) (toolUseID, content string, ok bool) {
+	var payload struct {
+		Type      string `json:"type"`
+		ToolUseID string `json:"toolUseId"`
+		Content   string `json:"content"`
+	}
+	if err := json.Unmarshal(msg, &payload); err != nil {
+		return "", "", false
+	}
+	if payload.Type != "native_question_response" || payload.ToolUseID == "" {
+		return "", "", false
+	}
+	return payload.ToolUseID, payload.Content, true
 }
 
 type ExploreHandler struct {
@@ -195,6 +278,50 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 		}
 	}
 
+	// A (re)connecting client should immediately see a question still awaiting
+	// a reply, even though marker detection on the historical buffer above
+	// only runs on newly streamed messages, not on the replayed snapshot.
+	if q := sess.PendingQuestion(); q != "" {
+		evtMsg, _ := json.Marshal(map[string]string{
+			"type":     "ghost_question",
+			"question": q,
+		})
+		if err := conn.Write(wsCtx, websocket.MessageText, evtMsg); err != nil {
+			return
+		}
+	}
+
+	// detectGhostQuestion checks a buffered message for the ghost_question marker,
+	// regardless of session kind (named or anonymous). When found, it broadcasts
+	// a dedicated event and marks the session as having a pending question, and
+	// returns msg with the marker substring stripped out of it — the marker can
+	// be mixed in with ordinary response text in the same event rather than
+	// alone on its own line, and that surrounding text must still reach the
+	// frontend normally instead of being discarded along with the marker.
+	//
+	// A real agent turn is observed to surface the same marker text more than
+	// once (e.g. an incremental streaming chunk that happens to carry the full
+	// marker substring, followed by the turn's final consolidated message) —
+	// broadcasting a second identical card for what is one logical question
+	// would just clutter the thread, so a repeat of the already-pending
+	// question is deduplicated: still stripped from the text, but no second
+	// event.
+	detectGhostQuestion := func(msg []byte) []byte {
+		question := extractGhostQuestion(msg)
+		if question == "" {
+			return msg
+		}
+		if sess.PendingQuestion() != question {
+			sess.SetPendingQuestion(question)
+			evtMsg, _ := json.Marshal(map[string]string{
+				"type":     "ghost_question",
+				"question": question,
+			})
+			_ = conn.Write(wsCtx, websocket.MessageText, evtMsg)
+		}
+		return stripGhostQuestionMarker(msg)
+	}
+
 	// Outgoing goroutine: consume notify channel, forward new messages to WS.
 	ghostNamed := false
 	go func() {
@@ -221,6 +348,7 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 							h.saveGhostDraft(workspaceID, sessionID, draft)
 						}
 					}
+					msg = detectGhostQuestion(msg)
 					conn.Write(wsCtx, websocket.MessageText, msg)
 				}
 				conn.Write(wsCtx, websocket.MessageText, []byte(`{"type":"session_expired"}`))
@@ -247,6 +375,7 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 							h.saveGhostDraft(workspaceID, sessionID, draft)
 						}
 					}
+					msg = detectGhostQuestion(msg)
 					if err := conn.Write(wsCtx, websocket.MessageText, msg); err != nil {
 						return
 					}
@@ -270,6 +399,18 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 		if err != nil {
 			break
 		}
+		if toolUseID, content, ok := parseNativeQuestionResponse(msg); ok {
+			sess.ClearPendingQuestion()
+			if anonymous && h.prefs != nil {
+				_ = h.prefs.TouchExplorationActivity(sessionID)
+			}
+			toolResultMsg := session.BuildToolResultMessage(toolUseID, content)
+			sess.Log().WriteLine("in", toolResultMsg)
+			if _, err := io.WriteString(sess.Proc(), string(toolResultMsg)+"\n"); err != nil {
+				break
+			}
+			continue
+		}
 		if anonymous && !firstSent {
 			firstSent = true
 			msg = prependExploreSkill(msg)
@@ -284,6 +425,7 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 			// track recency without touching preferences.json on every streamed delta.
 			_ = h.prefs.TouchExplorationActivity(sessionID)
 		}
+		sess.ClearPendingQuestion()
 		sess.Log().WriteLine("in", msg)
 		msg = append(msg, '\n')
 		if _, err := io.WriteString(sess.Proc(), string(msg)); err != nil {
@@ -465,7 +607,7 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil, customEnv)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil, customEnv, false)
 	if err != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: err.Error()})
 		return

@@ -38,16 +38,18 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		"GEMINI_SANDBOX":       os.Getenv("GEMINI_SANDBOX"),
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"defaultAgent": p.DefaultAgent,
-		"env":          env,
-		"systemEnv":    systemEnv,
+		"defaultAgent":       p.DefaultAgent,
+		"env":                env,
+		"systemEnv":          systemEnv,
+		"nativeQuestionMode": p.NativeQuestionMode,
 	})
 }
 
 func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		DefaultAgent string            `json:"defaultAgent"`
-		Env          map[string]string `json:"env"`
+		DefaultAgent       string            `json:"defaultAgent"`
+		Env                map[string]string `json:"env"`
+		NativeQuestionMode *bool             `json:"nativeQuestionMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -67,6 +69,13 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 
 	if body.Env != nil {
 		if err := h.prefs.SetEnv(body.Env); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.NativeQuestionMode != nil {
+		if err := h.prefs.SetNativeQuestionMode(*body.NativeQuestionMode); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
 			return
 		}

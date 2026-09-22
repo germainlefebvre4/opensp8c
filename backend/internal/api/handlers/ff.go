@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
+	"github.com/go-chi/chi/v5"
 )
 
 type FFHandler struct {
@@ -102,7 +102,7 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil, customEnv)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil, customEnv, false)
 	if err != nil {
 		cancel()
 		logFile.Close()
@@ -194,7 +194,7 @@ func (h *FFHandler) ListConversationRuns(w http.ResponseWriter, r *http.Request)
 }
 
 type conversationRunResponse struct {
-	Ts       string          `json:"ts"`
+	Ts       string            `json:"ts"`
 	Messages []json.RawMessage `json:"messages"`
 }
 
@@ -225,4 +225,3 @@ func (h *FFHandler) GetConversationRun(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(conversationRunResponse{Ts: ts, Messages: msgs})
 }
-

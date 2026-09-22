@@ -2,23 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, wsURL } from '../lib/api'
 import { useChanges } from './useChanges'
+import {
+  appendQuestionMessage,
+  buildAnswerWSPayload,
+  extractText,
+  findActiveQuestionMessage,
+  markQuestionAnswered,
+  parseGhostQuestionEvent,
+  parseNativeQuestionEvent,
+  type AgentInfo,
+  type Message,
+  type QuestionCardData,
+} from './exploreChat'
 
-export interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  partial?: boolean
-}
-
-export interface AgentInfo {
-  id: string
-  label: string
-  version: string
-}
-
-const STATIC_GREETING: Message = {
-  role: 'assistant',
-  content: 'Décris ce que tu veux explorer ou construire dans ce projet. Je peux naviguer les fichiers pour mieux comprendre le contexte.',
-}
+export type { AgentInfo, Message, QuestionCardData }
 
 const STORAGE_PREFIX = 'explore:'
 
@@ -64,8 +61,7 @@ export function getStoredContext(ghostId: string): string {
 export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: string) {
   const { data: changes } = useChanges(workspaceId)
   const storedMsgs = resumeGhostId ? loadStoredMessages(resumeGhostId) : []
-  const initialMessages: Message[] = storedMsgs.length > 0 ? storedMsgs : [STATIC_GREETING]
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>(storedMsgs)
   const [connected, setConnected] = useState(false)
   const [expired, setExpired] = useState(false)
   const [waiting, setWaiting] = useState(false)
@@ -88,6 +84,11 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
   const queryClient = useQueryClient()
   // Track last completed assistant message content for localStorage saves
   const pendingAssistantRef = useRef<string>('')
+  const messagesRef = useRef<Message[]>(messages)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const connectWS = useCallback((sid: string, injectContext?: string) => {
     setExpired(false)
@@ -143,6 +144,19 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
           const newName = data.name as string
           setGhostName(newName)
           queryClient.invalidateQueries({ queryKey: ['changes', workspaceId] })
+          return
+        }
+
+        const ghostQuestion = parseGhostQuestionEvent(data)
+        const nativeQuestion = parseNativeQuestionEvent(data)
+        const question = ghostQuestion ?? nativeQuestion
+        if (question) {
+          setWaiting(false)
+          setMessages(prev => {
+            const updated = appendQuestionMessage(prev, question)
+            saveMessages(sid, updated.filter(m => !m.partial))
+            return updated
+          })
           return
         }
 
@@ -209,15 +223,34 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
 
   const send = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+
     setWaiting(true)
+    const active = findActiveQuestionMessage(messagesRef.current)
     setMessages(prev => {
-      const updated = [...prev, { role: 'user' as const, content: text }]
-      // Save user message to localStorage immediately
+      const withAnswer = active ? markQuestionAnswered(prev, active.question!.id, trimmed) : prev
+      const updated = [...withAnswer, { role: 'user' as const, content: trimmed }]
       if (sessionId) saveMessages(sessionId, updated.filter(m => !m.partial))
       return updated
     })
-    const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
-    wsRef.current.send(msg)
+
+    if (active?.question) {
+      wsRef.current.send(buildAnswerWSPayload(active.question, trimmed))
+    } else {
+      wsRef.current.send(JSON.stringify({ type: 'user', message: { role: 'user', content: trimmed } }))
+    }
+  }, [sessionId])
+
+  const answerQuestion = useCallback((question: QuestionCardData, text: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    setWaiting(true)
+    setMessages(prev => {
+      const updated = markQuestionAnswered(prev, question.id, text)
+      if (sessionId) saveMessages(sessionId, updated.filter(m => !m.partial))
+      return updated
+    })
+    wsRef.current.send(buildAnswerWSPayload(question, text))
   }, [sessionId])
 
   const stop = useCallback(() => {
@@ -227,20 +260,5 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     }
   }, [workspaceId, sessionId])
 
-  return { messages, connected, expired, waiting, sessionId, ghostId, ghostName, agentInfo, send, stop }
-}
-
-function extractText(data: Record<string, unknown>): string {
-  if (data.type === 'content_block_delta') {
-    const delta = data.delta as Record<string, unknown> | undefined
-    return (delta?.text as string) ?? ''
-  }
-  if (Array.isArray(data.content)) {
-    return (data.content as Array<Record<string, unknown>>)
-      .filter(b => b.type === 'text')
-      .map(b => b.text as string)
-      .join('')
-  }
-  if (typeof data.result === 'string') return data.result
-  return ''
+  return { messages, connected, expired, waiting, sessionId, ghostId, ghostName, agentInfo, send, answerQuestion, stop }
 }

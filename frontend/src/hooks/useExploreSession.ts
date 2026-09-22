@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { wsURL } from '../lib/api'
+import {
+  appendQuestionMessage,
+  buildAnswerWSPayload,
+  extractText,
+  findActiveQuestionMessage,
+  markQuestionAnswered,
+  parseGhostQuestionEvent,
+  parseNativeQuestionEvent,
+  type AgentInfo,
+  type Message,
+  type QuestionCardData,
+} from './exploreChat'
 
-export interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  partial?: boolean
-}
-
-export interface AgentInfo {
-  id: string
-  label: string
-  version: string
-}
+export type { AgentInfo, Message, QuestionCardData }
 
 export function useExploreSession(workspaceId: string, changeName: string) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -20,6 +22,11 @@ export function useExploreSession(workspaceId: string, changeName: string) {
   const [waiting, setWaiting] = useState(false)
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const messagesRef = useRef<Message[]>(messages)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const connect = useCallback(() => {
     setExpired(false)
@@ -50,6 +57,15 @@ export function useExploreSession(workspaceId: string, changeName: string) {
           if (data.fatal !== false) {
             setWaiting(false)
           }
+          return
+        }
+
+        const ghostQuestion = parseGhostQuestionEvent(data)
+        const nativeQuestion = parseNativeQuestionEvent(data)
+        const question = ghostQuestion ?? nativeQuestion
+        if (question) {
+          setWaiting(false)
+          setMessages(prev => appendQuestionMessage(prev, question))
           return
         }
 
@@ -92,11 +108,28 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
   const send = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+
     setWaiting(true)
-    setMessages(prev => [...prev, { role: 'user', content: text }])
-    // Claude stream-json input format
-    const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
-    wsRef.current.send(msg)
+    const active = findActiveQuestionMessage(messagesRef.current)
+    setMessages(prev => {
+      const withAnswer = active ? markQuestionAnswered(prev, active.question!.id, trimmed) : prev
+      return [...withAnswer, { role: 'user', content: trimmed }]
+    })
+
+    if (active?.question) {
+      wsRef.current.send(buildAnswerWSPayload(active.question, trimmed))
+    } else {
+      wsRef.current.send(JSON.stringify({ type: 'user', message: { role: 'user', content: trimmed } }))
+    }
+  }, [])
+
+  const answerQuestion = useCallback((question: QuestionCardData, text: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    setWaiting(true)
+    setMessages(prev => markQuestionAnswered(prev, question.id, text))
+    wsRef.current.send(buildAnswerWSPayload(question, text))
   }, [])
 
   const reconnect = useCallback(() => {
@@ -106,23 +139,5 @@ export function useExploreSession(workspaceId: string, changeName: string) {
     connect()
   }, [connect])
 
-  return { messages, connected, expired, waiting, agentInfo, send, reconnect }
-}
-
-function extractText(data: Record<string, unknown>): string {
-  // content_block_delta
-  if (data.type === 'content_block_delta') {
-    const delta = data.delta as Record<string, unknown> | undefined
-    return (delta?.text as string) ?? ''
-  }
-  // message with content array
-  if (Array.isArray(data.content)) {
-    return (data.content as Array<Record<string, unknown>>)
-      .filter(b => b.type === 'text')
-      .map(b => b.text as string)
-      .join('')
-  }
-  // result field
-  if (typeof data.result === 'string') return data.result
-  return ''
+  return { messages, connected, expired, waiting, agentInfo, send, answerQuestion, reconnect }
 }

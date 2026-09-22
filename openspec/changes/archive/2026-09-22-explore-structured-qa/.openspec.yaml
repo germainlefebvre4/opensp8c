@@ -1,0 +1,10 @@
+schema: spec-driven
+created: "2026-09-22"
+tags:
+    type: backend
+    complexity: 4
+    components:
+        - explore-session
+        - conversation-store
+    _auto: true
+    _tagged_at: "2026-09-22"

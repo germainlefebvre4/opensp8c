@@ -29,5 +29,9 @@
     "emptyTasks": "Aucune tâche détectée pour le moment. Décrivez votre besoin dans le chat !",
     "taskPlaceholder": "Saisir la tâche..."
   },
-  "typingBubble": "{{name}} réfléchit..."
+  "typingBubble": "{{name}} réfléchit...",
+  "questionCard": {
+    "answered": "-> Votre réponse : {{answer}}",
+    "otherAnswer": "Autre réponse..."
+  }
 }

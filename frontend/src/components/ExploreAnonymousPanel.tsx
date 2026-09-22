@@ -6,6 +6,7 @@ import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { DraftSidePanel } from './DraftSidePanel'
+import { QuestionCard } from './QuestionCard'
 
 interface Props {
   workspaceId: string
@@ -20,7 +21,7 @@ interface Props {
 
 export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized, onMaximizeToggle, onClose, onDelete, onGhostReady, onPromote }: Props) {
   const { t } = useTranslation('explore')
-  const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
+  const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, answerQuestion, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
   const [showSlowLabel, setShowSlowLabel] = useState(false)
@@ -166,26 +167,35 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
               className="h-full overflow-y-auto p-4 flex flex-col gap-3"
             >
               {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
-                    msg.role === 'user'
-                      ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
-                      : 'self-start bg-slate-100 text-slate-800'
-                  }`}
-                >
-                  {msg.role === 'assistant' && mode === 'rendered' ? (
-                    <article className="prose prose-slate prose-sm max-w-none text-left">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      {msg.partial && <span className="opacity-50">▊</span>}
-                    </article>
-                  ) : (
-                    <span className="whitespace-pre-wrap">
-                      {msg.content}
-                      {msg.partial && <span className="opacity-50">▊</span>}
-                    </span>
-                  )}
-                </div>
+                msg.question ? (
+                  <QuestionCard
+                    key={i}
+                    question={msg.question}
+                    onAnswer={answerQuestion}
+                    onRequestOtherAnswer={() => textareaRef.current?.focus()}
+                  />
+                ) : (
+                  <div
+                    key={i}
+                    className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
+                      msg.role === 'user'
+                        ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
+                        : 'self-start bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    {msg.role === 'assistant' && mode === 'rendered' ? (
+                      <article className="prose prose-slate prose-sm max-w-none text-left">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        {msg.partial && <span className="opacity-50">▊</span>}
+                      </article>
+                    ) : (
+                      <span className="whitespace-pre-wrap">
+                        {msg.content}
+                        {msg.partial && <span className="opacity-50">▊</span>}
+                      </span>
+                    )}
+                  </div>
+                )
               ))}
               {waiting && <TypingBubble assistantName={agentInfo?.label ?? 'Claude'} showLabel={showSlowLabel} />}
               {expired && (

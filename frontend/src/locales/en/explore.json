@@ -29,5 +29,9 @@
     "emptyTasks": "No tasks detected yet. Describe your need in the chat!",
     "taskPlaceholder": "Enter the task..."
   },
-  "typingBubble": "{{name}} is thinking..."
+  "typingBubble": "{{name}} is thinking...",
+  "questionCard": {
+    "answered": "-> Your answer: {{answer}}",
+    "otherAnswer": "Other answer..."
+  }
 }

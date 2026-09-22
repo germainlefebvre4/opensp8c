@@ -16,13 +16,61 @@ import (
 	"github.com/glefebvre/opensp8c/internal/conversation"
 )
 
-const baseSystemPrompt = "Never use AskUserQuestion or interactive choice prompts. Communicate only through plain conversational text."
+const baseSystemPrompt = "Never use AskUserQuestion or interactive choice prompts. Communicate only through plain conversational text.\n\n" + explorationFramingPrompt
+
+// baseSystemPromptNativeQuestion is the Claude-only variant of baseSystemPrompt
+// used when the native question mode preference is active for this session:
+// it lifts the AskUserQuestion interdiction instead of forbidding the tool.
+const baseSystemPromptNativeQuestion = "You may use the AskUserQuestion tool for interactive clarification questions, as an alternative to the ghost_question marker described below.\n\n" + explorationFramingPrompt
+
+// resolveBaseSystemPrompt picks the base system prompt for a session: the
+// AskUserQuestion-permitting variant only when the resolved agent is Claude
+// and the native question mode preference is active for this session.
+func resolveBaseSystemPrompt(agentID string, nativeQuestionMode bool) string {
+	if agentID == "claude" && nativeQuestionMode {
+		return baseSystemPromptNativeQuestion
+	}
+	return baseSystemPrompt
+}
 
 type Subprocess struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	stdout  io.ReadCloser
 	agentID string
+}
+
+// NewTestSubprocess constructs a Subprocess wrapping the given stdin/stdout
+// (stdout may be nil if unused), for use in tests of packages that depend on
+// *Subprocess via a *Session (e.g. WebSocket handlers verifying what gets
+// written to stdin).
+func NewTestSubprocess(stdin io.WriteCloser, stdout io.ReadCloser, agentID string) *Subprocess {
+	return &Subprocess{stdin: stdin, stdout: stdout, agentID: agentID}
+}
+
+// BuildToolResultMessage constructs the stream-json stdin payload for a
+// tool_result reply referencing the given tool_use_id, as expected by
+// Claude's --input-format stream-json when answering a native AskUserQuestion
+// tool_use call.
+func BuildToolResultMessage(toolUseID, content string) []byte {
+	payload := map[string]interface{}{
+		"type": "user",
+		"message": map[string]interface{}{
+			"role": "user",
+			"content": []map[string]interface{}{
+				{
+					"type":        "tool_result",
+					"tool_use_id": toolUseID,
+					"content":     content,
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 type geminiStdoutReader struct {
@@ -123,7 +171,12 @@ func (r *geminiStdoutReader) Close() error {
 //
 // sessionLog is optional (nil-safe): when provided, stderr lines are also
 // written to it in addition to the existing log.Printf.
-func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string) (*Subprocess, error) {
+//
+// nativeQuestionMode is the global preference toggle; it only takes effect
+// when agentCfg is Claude (see resolveBaseSystemPrompt).
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*Subprocess, error) {
+	basePrompt := resolveBaseSystemPrompt(agentCfg.ID, nativeQuestionMode)
+
 	if agentCfg.ID == "gemini" {
 		// Use a dummy process to satisfy Cmd and Wait requirements of Subprocess.
 		// "cat" is lightweight and will run indefinitely until its stdin is closed.
@@ -191,7 +244,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 				}
 
 				// Build subprocess arguments for the one-shot run
-				args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
+				args := agentCfg.BuildSubprocessArgs(basePrompt, extraSystemPrompt)
 				if shouldResume {
 					args = append(args, "--resume", activeSessionID)
 				} else {
@@ -243,7 +296,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 						if sessionLog != nil {
 							sessionLog.WriteErr(text)
 						}
-						
+
 						// Detect common fatal errors and forward to UI gracefully
 						if strings.Contains(text, "TerminalQuotaError") {
 							warning := map[string]interface{}{
@@ -295,7 +348,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		}, nil
 	}
 
-	args := agentCfg.BuildSubprocessArgs(baseSystemPrompt, extraSystemPrompt)
+	args := agentCfg.BuildSubprocessArgs(basePrompt, extraSystemPrompt)
 	if claudeSessionID != "" {
 		if agentCfg.ID == "claude" || agentCfg.ID == "gemini" {
 			if resume {

@@ -38,7 +38,10 @@
     "geminiSandboxDesc": "Activer la sandbox de sécurité (true/false).",
     "systemActive": "Sera héritée de l'environnement système",
     "systemOverridden": "Surcharge la valeur système",
-    "systemPrefix": "Système :"
+    "systemPrefix": "Système :",
+    "explore": "Exploration",
+    "nativeQuestionMode": "Mode question native (Claude)",
+    "nativeQuestionModeDesc": "Réactive l'outil natif AskUserQuestion pour Claude. Sans effet pour les autres agents."
   },
   "agentPool": {
     "title": "Lancer le Pool d'Agents",
