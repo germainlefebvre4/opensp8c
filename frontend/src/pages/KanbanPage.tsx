@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
-import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import type { ClientRect, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { KanbanColumn } from '../components/KanbanColumn'
+import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
 import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBottomPanel'
 import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
 import { AgentPoolModal } from '../components/AgentPoolModal'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
+import { createClampToRectModifier } from '../lib/clampToRect'
 import { useChanges } from '../hooks/useChanges'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
@@ -53,9 +55,17 @@ export function KanbanPage({ workspaceId }: Props) {
   const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
   const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
-  
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false)
   const isPoolRunning = poolStatus?.is_running ?? false
+
+  const columnsContainerRef = useRef<HTMLDivElement>(null)
+  const dragContainerRectRef = useRef<ClientRect | null>(null)
+  const clampModifier = useMemo(
+    () => createClampToRectModifier(() => dragContainerRectRef.current),
+    []
+  )
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const leadingColumns = [
@@ -85,8 +95,11 @@ export function KanbanPage({ workspaceId }: Props) {
   }
 
   const handleDragStart = (event: DragStartEvent) => {
-    const change = changes.find(c => c.name === (event.active.id as string))
+    const id = event.active.id as string
+    const change = changes.find(c => c.name === id)
     setDragSourceStatus(change?.kanban_status ?? null)
+    setActiveDragId(id)
+    dragContainerRectRef.current = columnsContainerRef.current?.getBoundingClientRect() ?? null
   }
 
   const matchesSearch = (c: Change, q: string): boolean => {
@@ -130,6 +143,8 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragSourceStatus(null)
+    setActiveDragId(null)
+    dragContainerRectRef.current = null
     const { active, over } = event
     if (!over) return
 
@@ -218,6 +233,8 @@ export function KanbanPage({ workspaceId }: Props) {
     } catch { /* ignore */ }
   }
 
+  const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
+
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
       {tCommon('loading')}
@@ -226,6 +243,17 @@ export function KanbanPage({ workspaceId }: Props) {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DragOverlay modifiers={[clampModifier]}>
+        {activeChange && (
+          <ChangeCard
+            change={activeChange}
+            workspaceId={workspaceId}
+            onOpen={() => {}}
+            ffStatus={getFfStatus(activeChange.name)}
+            isOverlay
+          />
+        )}
+      </DragOverlay>
       <div className="flex-1 flex flex-col overflow-hidden">
         {!panelMaximized && (
           <>
@@ -264,7 +292,7 @@ export function KanbanPage({ workspaceId }: Props) {
 
             {/* Top: Kanban columns + DetailPanel */}
             <div className="flex-1 flex flex-row overflow-hidden min-h-0">
-              <div className="flex-1 overflow-x-auto min-h-0 p-4">
+              <div ref={columnsContainerRef} className="flex-1 overflow-x-auto min-h-0 p-4">
                 <div className="flex gap-3 h-full min-w-max">
                   {leadingColumns.map(col => (
                     <KanbanColumn
