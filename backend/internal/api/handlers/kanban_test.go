@@ -60,7 +60,7 @@ func TestDeleteChange_Success(t *testing.T) {
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeDir := writeTodoChange(t, changesDir, "my-change")
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "my-change")
 	h.DeleteChange(rec, req)
@@ -79,7 +79,7 @@ func TestDeleteChange_NotFound(t *testing.T) {
 		t.Fatalf("failed to create changes dir: %v", err)
 	}
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "does-not-exist")
 	h.DeleteChange(rec, req)
@@ -108,7 +108,7 @@ func TestDeleteChange_GhostCascade(t *testing.T) {
 	convBase := filepath.Join(tmpDir, "conversations")
 	convStore := conversation.NewStore(convBase)
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(), prefs, convStore, draftsDir)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), prefs, convStore, draftsDir)
 
 	if err := prefs.AddExploration(preferences.ExplorationRecord{
 		ID:          "ghost-1",
@@ -176,10 +176,10 @@ func TestDeleteChange_WorkerActive(t *testing.T) {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "commit", "-q", "-m", "init")
 
-	poolMgr := pool.NewManager()
+	poolMgr := pool.NewManager(nil)
 	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolMgr, nil, nil, "")
 
-	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, tmpDir); err != nil {
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, tmpDir); err != nil {
 		t.Fatalf("failed to start pool: %v", err)
 	}
 	t.Cleanup(func() {
@@ -191,7 +191,7 @@ func TestDeleteChange_WorkerActive(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	active := false
 	for time.Now().Before(deadline) {
-		_, _, workers := poolMgr.Status()
+		_, _, workers := poolMgr.Status(workspaceID)
 		for _, w := range workers {
 			if w.ActiveChange == changeName {
 				active = true

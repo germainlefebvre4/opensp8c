@@ -38,6 +38,8 @@
     "exploring": "en exploration",
     "ffRunning": "ff...",
     "ffFailed": "ff échoué",
-    "draftTasksBadge": "{{done}}/{{total}} dft"
+    "draftTasksBadge": "{{done}}/{{total}} dft",
+    "workerActiveBadge": "worker",
+    "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change"
   }
 }

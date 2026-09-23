@@ -15,6 +15,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		m.mu.Lock()
 		delete(m.activeWorkers, w.ID)
 		m.mu.Unlock()
+		m.notify()
 	}()
 
 	wt := NewWorktreeController(m.workspacePath)
@@ -41,6 +42,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 		// Update worker status
 		w.Status = StatusWorking
+		m.notify()
 
 		// 3.1 Invoke agent CLI (Simulated here because actual integration with Claude/Gemini CLI is complex to stub natively)
 		err = m.invokeAgentApply(ctx, w)
@@ -48,11 +50,13 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
 			// Might be blocked. Pause.
 			w.Status = StatusPaused
+			m.notify()
 			return
 		}
 
 		// 3.2 Run local validation (Compilation + tests)
 		w.Status = StatusTesting
+		m.notify()
 		validationErr := m.runValidation(ctx, w)
 
 		// 3.3 Healing loop
@@ -60,8 +64,9 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		for validationErr != nil && attempts < m.config.MaxAttempts {
 			attempts++
 			w.Status = StatusHealing
+			m.notify()
 			log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, m.config.MaxAttempts)
-			
+
 			// Inject error back to agent
 			err = m.invokeAgentHeal(ctx, w, validationErr)
 			if err != nil {
@@ -70,12 +75,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 			// Retest
 			w.Status = StatusTesting
+			m.notify()
 			validationErr = m.runValidation(ctx, w)
 		}
 
 		if validationErr != nil {
 			log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
 			w.Status = StatusPaused
+			m.notify()
 			return
 		}
 

@@ -58,6 +58,21 @@
       "label": "Review-based Development (HITL)",
       "description": "Agents work on isolated branches. Completed cards wait for your validation in the TO REVIEW column before being merged into Git."
     },
-    "start": "Start Pool"
+    "start": "Start Pool",
+    "statusPanel": {
+      "title": "Agent Pool Running",
+      "workerLabel": "Worker {{id}}",
+      "status": {
+        "idle": "Idle",
+        "working": "Working",
+        "testing": "Testing",
+        "healing": "Healing",
+        "paused": "Paused"
+      },
+      "idleWorkers_one": "{{count}} worker available",
+      "idleWorkers_other": "{{count}} workers available",
+      "noWorkers": "No worker is currently assigned to a change.",
+      "stop": "Stop Pool"
+    }
   }
 }

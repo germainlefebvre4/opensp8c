@@ -28,10 +28,10 @@ const (
 )
 
 type Worker struct {
-	ID           int
-	ActiveChange string
-	WorktreePath string
-	BranchName   string
-	Status       WorkerStatus
-	CancelFunc   context.CancelFunc
+	ID           int                `json:"id"`
+	ActiveChange string             `json:"active_change"`
+	WorktreePath string             `json:"worktree_path,omitempty"`
+	BranchName   string             `json:"branch_name,omitempty"`
+	Status       WorkerStatus       `json:"status"`
+	CancelFunc   context.CancelFunc `json:"-"`
 }

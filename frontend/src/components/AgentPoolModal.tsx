@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { X, Play, ShieldAlert, Cpu } from 'lucide-react'
+import { X, Play, ShieldAlert, Cpu, Square, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { PoolStatus, WorkerStatus } from '../hooks/usePoolStatus'
 
 export interface AgentPoolConfig {
   size: number
@@ -12,15 +13,89 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   onStart: (config: AgentPoolConfig) => void
+  onStop: () => void
+  poolStatus?: PoolStatus
 }
 
-export function AgentPoolModal({ isOpen, onClose, onStart }: Props) {
+const STATUS_BADGE_CLASSES: Record<WorkerStatus, string> = {
+  idle: 'bg-slate-100 text-slate-600 border-slate-200',
+  working: 'bg-violet-50 text-violet-600 border-violet-200',
+  testing: 'bg-blue-50 text-blue-600 border-blue-200',
+  healing: 'bg-amber-50 text-amber-600 border-amber-200',
+  paused: 'bg-red-50 text-red-600 border-red-200',
+}
+
+export function AgentPoolModal({ isOpen, onClose, onStart, onStop, poolStatus }: Props) {
   const { t } = useTranslation('dialogs')
   const { t: tCommon } = useTranslation('common')
   const [size, setSize] = useState(3)
   const [mode, setMode] = useState<'full-autonomy' | 'hitl-review'>('hitl-review')
 
   if (!isOpen) return null
+
+  if (poolStatus?.is_running) {
+    const workers = poolStatus.workers
+    const idleCount = Math.max(0, poolStatus.config.size - workers.length)
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between p-4 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-violet-600 animate-pulse" />
+              <h2 className="text-lg font-semibold text-slate-800">{t('agentPool.statusPanel.title')}</h2>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-3">
+            {workers.length === 0 && (
+              <p className="text-sm text-slate-500">{t('agentPool.statusPanel.noWorkers')}</p>
+            )}
+            {workers.map(w => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/60"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Loader2 size={14} className="text-violet-500 animate-spin shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-slate-500">
+                      {t('agentPool.statusPanel.workerLabel', { id: w.id })}
+                    </div>
+                    <div className="text-sm font-semibold text-slate-800 truncate">{w.active_change}</div>
+                  </div>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border shrink-0 ${STATUS_BADGE_CLASSES[w.status]}`}>
+                  {t(`agentPool.statusPanel.status.${w.status}`)}
+                </span>
+              </div>
+            ))}
+            {idleCount > 0 && (
+              <p className="text-xs text-slate-400">
+                {t('agentPool.statusPanel.idleWorkers', { count: idleCount })}
+              </p>
+            )}
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+            <button
+              onClick={onStop}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors cursor-pointer"
+            >
+              <Square size={14} />
+              {t('agentPool.statusPanel.stop')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">

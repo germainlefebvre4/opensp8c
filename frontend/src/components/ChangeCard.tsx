@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle, Trash2, Pin } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2, Pin, Cpu } from 'lucide-react'
 import { useDraggable } from '@dnd-kit/core'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
@@ -216,9 +216,19 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
         <>
           <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
             <span>{tKanban('card.tasksCount', { done: change.tasks_done, total: change.tasks_total })}</span>
-            {change.is_stale && (
-              <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}d</span>
-            )}
+            <span className="flex items-center gap-1.5">
+              {change.worker_active && (
+                <span
+                  title={tKanban('card.workerActiveTooltip')}
+                  className="flex items-center gap-0.5 text-violet-500 font-medium"
+                >
+                  <Cpu size={10} className="animate-pulse" /> {tKanban('card.workerActiveBadge')}
+                </span>
+              )}
+              {change.is_stale && (
+                <span className="text-amber-500 font-medium">⚠ {change.days_since_activity}d</span>
+              )}
+            </span>
           </div>
           <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
             <div

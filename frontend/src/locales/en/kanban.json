@@ -38,6 +38,8 @@
     "exploring": "exploring",
     "ffRunning": "ff...",
     "ffFailed": "ff failed",
-    "draftTasksBadge": "{{done}}/{{total}} dft"
+    "draftTasksBadge": "{{done}}/{{total}} dft",
+    "workerActiveBadge": "worker",
+    "workerActiveTooltip": "An Agent Pool worker is currently assigned to this change"
   }
 }

@@ -38,13 +38,13 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolMgr 
 }
 
 // activeWorkerChanges returns the set of change names currently claimed by an
-// Agent Pool worker, per the pool manager's in-memory state.
-func (h *KanbanHandler) activeWorkerChanges() map[string]bool {
+// Agent Pool worker for workspaceID, per the pool manager's in-memory state.
+func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]bool {
 	active := make(map[string]bool)
 	if h.poolMgr == nil {
 		return active
 	}
-	_, _, workers := h.poolMgr.Status()
+	_, _, workers := h.poolMgr.Status(workspaceID)
 	for _, w := range workers {
 		active[w.ActiveChange] = true
 	}
@@ -68,7 +68,7 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		changes = []openspec.Change{}
 	}
 
-	activeWorkers := h.activeWorkerChanges()
+	activeWorkers := h.activeWorkerChanges(id)
 	for i := range changes {
 		changes[i].WorkerActive = activeWorkers[changes[i].Name]
 	}
@@ -150,7 +150,7 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	detail.WorkerActive = h.activeWorkerChanges()[name]
+	detail.WorkerActive = h.activeWorkerChanges(id)[name]
 	json.NewEncoder(w).Encode(detail)
 }
 
@@ -177,7 +177,7 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.activeWorkerChanges()[name] {
+	if h.activeWorkerChanges(id)[name] {
 		http.Error(w, "a worker is active on this change", http.StatusConflict)
 		return
 	}

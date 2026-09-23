@@ -34,7 +34,7 @@ func (h *PoolHandler) StartPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mgr.Start(req, workspacePath); err != nil {
+	if err := h.mgr.Start(req, id, workspacePath); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -60,8 +60,11 @@ func (h *PoolHandler) GetPoolStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, isRunning, workers := h.mgr.Status()
-	
+	cfg, isRunning, workers := h.mgr.Status(id)
+	if workers == nil {
+		workers = []pool.Worker{}
+	}
+
 	resp := map[string]interface{}{
 		"is_running": isRunning,
 		"config":     cfg,

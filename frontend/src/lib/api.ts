@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { AgentPoolConfig } from '../components/AgentPoolModal'
 
 const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -92,6 +93,12 @@ export const deleteGhost = (workspaceId: string, ghostId: string) =>
 
 export const deleteChange = (workspaceId: string, changeName: string) =>
   api.delete(`/api/workspaces/${workspaceId}/changes/${changeName}`)
+
+export const startPool = (workspaceId: string, config: AgentPoolConfig) =>
+  api.post(`/api/workspaces/${workspaceId}/pool/start`, config)
+
+export const stopPool = (workspaceId: string) =>
+  api.post(`/api/workspaces/${workspaceId}/pool/stop`)
 
 export interface DraftTask {
   id: string

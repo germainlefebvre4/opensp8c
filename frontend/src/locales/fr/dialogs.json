@@ -58,6 +58,21 @@
       "label": "Développement avec Review (HITL)",
       "description": "Les agents travaillent sur des branches isolées. Les cartes terminées attendent votre validation dans la colonne TO REVIEW avant fusion Git."
     },
-    "start": "Démarrer le Pool"
+    "start": "Démarrer le Pool",
+    "statusPanel": {
+      "title": "Pool d'Agents Actif",
+      "workerLabel": "Worker {{id}}",
+      "status": {
+        "idle": "Inactif",
+        "working": "En cours",
+        "testing": "Tests",
+        "healing": "Réparation",
+        "paused": "En pause"
+      },
+      "idleWorkers_one": "{{count}} worker disponible",
+      "idleWorkers_other": "{{count}} workers disponibles",
+      "noWorkers": "Aucun worker n'est actuellement assigné à un change.",
+      "stop": "Arrêter le Pool"
+    }
   }
 }

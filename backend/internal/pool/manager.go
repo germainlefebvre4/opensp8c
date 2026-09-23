@@ -7,27 +7,39 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/watcher"
 )
+
+// Broadcaster notifies subscribers of a workspace about an in-memory event,
+// independently of any filesystem change. watcher.WatcherService satisfies it.
+type Broadcaster interface {
+	Broadcast(workspaceID string, ev watcher.Event)
+}
 
 // Manager orchestrates the agent pool.
 type Manager struct {
 	mu            sync.Mutex
+	workspaceID   string
 	workspacePath string
 	config        AgentPoolConfig
 	activeWorkers map[int]*Worker
 	cancelLoop    context.CancelFunc
 	isRunning     bool
+	broadcaster   Broadcaster
 }
 
-// NewManager creates a new pool manager.
-func NewManager() *Manager {
+// NewManager creates a new pool manager. broadcaster may be nil, in which
+// case pool state changes are simply not published as events.
+func NewManager(broadcaster Broadcaster) *Manager {
 	return &Manager{
 		activeWorkers: make(map[int]*Worker),
+		broadcaster:   broadcaster,
 	}
 }
 
-// Start begins the orchestration loop with the given configuration.
-func (m *Manager) Start(cfg AgentPoolConfig, workspacePath string) error {
+// Start begins the orchestration loop with the given configuration, on
+// behalf of workspaceID.
+func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspacePath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -43,6 +55,7 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspacePath string) error {
 	}
 
 	m.config = cfg
+	m.workspaceID = workspaceID
 	m.workspacePath = workspacePath
 	m.isRunning = true
 
@@ -50,6 +63,8 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspacePath string) error {
 	m.cancelLoop = cancel
 
 	go m.orchestrationLoop(ctx)
+
+	m.broadcastLocked()
 
 	return nil
 }
@@ -75,12 +90,22 @@ func (m *Manager) Stop() {
 	}
 	m.activeWorkers = make(map[int]*Worker)
 	m.isRunning = false
+
+	m.broadcastLocked()
+
+	m.workspaceID = ""
 }
 
-// Status returns the current status of the pool and its workers.
-func (m *Manager) Status() (AgentPoolConfig, bool, []Worker) {
+// Status returns the current status of the pool and its workers, as seen by
+// workspaceID. If the pool is running on behalf of a different workspace, it
+// is reported as not running rather than leaking that workspace's state.
+func (m *Manager) Status(workspaceID string) (AgentPoolConfig, bool, []Worker) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if !m.isRunning || m.workspaceID != workspaceID {
+		return AgentPoolConfig{}, false, nil
+	}
 
 	var workers []Worker
 	for _, w := range m.activeWorkers {
@@ -88,6 +113,23 @@ func (m *Manager) Status() (AgentPoolConfig, bool, []Worker) {
 	}
 
 	return m.config, m.isRunning, workers
+}
+
+// broadcastLocked publishes a pool_updated event for the workspace the pool
+// currently runs for. Callers must hold m.mu.
+func (m *Manager) broadcastLocked() {
+	if m.broadcaster == nil || m.workspaceID == "" {
+		return
+	}
+	m.broadcaster.Broadcast(m.workspaceID, watcher.Event{Type: "pool_updated"})
+}
+
+// notify is the lock-free-callable counterpart of broadcastLocked, for use
+// by goroutines (e.g. a running worker) that don't already hold m.mu.
+func (m *Manager) notify() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.broadcastLocked()
 }
 
 func (m *Manager) orchestrationLoop(ctx context.Context) {
@@ -159,4 +201,6 @@ func (m *Manager) startWorker(changeName string) {
 
 	// Start worker routine asynchronously
 	go m.runWorker(ctx, worker)
+
+	m.broadcastLocked()
 }

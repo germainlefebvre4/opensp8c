@@ -13,8 +13,9 @@ import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { useChanges } from '../hooks/useChanges'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
+import { usePoolStatus } from '../hooks/usePoolStatus'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, api } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import type { Change } from '../hooks/useChanges'
 
@@ -37,6 +38,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const { data: changes = [], isLoading } = useChanges(workspaceId)
   const { data: archivedChanges = [] } = useArchivedChanges(workspaceId)
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
+  const { data: poolStatus } = usePoolStatus(workspaceId)
   const qc = useQueryClient()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -53,7 +55,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false)
-  const [isPoolRunning, setIsPoolRunning] = useState(false)
+  const isPoolRunning = poolStatus?.is_running ?? false
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const leadingColumns = [
@@ -65,8 +67,8 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const handleStartPool = async (config: AgentPoolConfig) => {
     try {
-      await api.post(`/workspaces/${workspaceId}/pool/start`, config)
-      setIsPoolRunning(true)
+      await startPool(workspaceId, config)
+      qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
     } catch (err) {
       console.error('Failed to start pool', err)
     }
@@ -74,8 +76,9 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const handleStopPool = async () => {
     try {
-      await api.post(`/workspaces/${workspaceId}/pool/stop`)
-      setIsPoolRunning(false)
+      await stopPool(workspaceId)
+      qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
+      setIsPoolModalOpen(false)
     } catch (err) {
       console.error('Failed to stop pool', err)
     }
@@ -247,7 +250,7 @@ export function KanbanPage({ workspaceId }: Props) {
               </div>
               
               <button
-                onClick={() => isPoolRunning ? handleStopPool() : setIsPoolModalOpen(true)}
+                onClick={() => setIsPoolModalOpen(true)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   isPoolRunning 
                     ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
@@ -413,10 +416,12 @@ export function KanbanPage({ workspaceId }: Props) {
           </div>
         )}
 
-        <AgentPoolModal 
-          isOpen={isPoolModalOpen} 
-          onClose={() => setIsPoolModalOpen(false)} 
-          onStart={handleStartPool} 
+        <AgentPoolModal
+          isOpen={isPoolModalOpen}
+          onClose={() => setIsPoolModalOpen(false)}
+          onStart={handleStartPool}
+          onStop={handleStopPool}
+          poolStatus={poolStatus}
         />
 
         {resetDialog && (
