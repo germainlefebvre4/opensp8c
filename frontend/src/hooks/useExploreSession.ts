@@ -2,10 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { wsURL } from '../lib/api'
 import {
   appendQuestionMessage,
+  applyToolCalls,
+  applyToolResult,
   buildAnswerWSPayload,
   extractText,
+  extractToolCalls,
+  extractToolResult,
   findActiveQuestionMessage,
   markQuestionAnswered,
+  mergeAssistantText,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
   type AgentInfo,
@@ -69,6 +74,16 @@ export function useExploreSession(workspaceId: string, changeName: string) {
           return
         }
 
+        const toolCalls = extractToolCalls(data)
+        if (toolCalls.length) {
+          setMessages(prev => applyToolCalls(prev, toolCalls))
+        }
+
+        const toolResult = extractToolResult(data)
+        if (toolResult) {
+          setMessages(prev => applyToolResult(prev, toolResult))
+        }
+
         // Claude stream-json format: extract text content
         const text = extractText(data)
         if (!text) return
@@ -76,16 +91,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         setWaiting(false)
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (last?.role === 'assistant' && last.partial) {
-            return [
-              ...prev.slice(0, -1),
-              { role: 'assistant', content: last.content + text, partial: isPartial },
-            ]
-          }
-          return [...prev, { role: 'assistant', content: text, partial: isPartial }]
-        })
+        setMessages(prev => mergeAssistantText(prev, text, isPartial))
       } catch {
         // non-JSON line, treat as plain text
         if (ev.data) {

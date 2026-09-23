@@ -13,6 +13,7 @@ import { useToast } from '../hooks/useToast'
 import { deleteGhost } from '../lib/api'
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { ToolCallRow } from './ToolCallRow'
 
 interface Props {
   workspaceId: string
@@ -250,20 +251,21 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                   <p className="text-xs text-slate-400 pt-2">{t('emptyLog')}</p>
                 ) : (
                   ffRun.messages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`max-w-[90%] px-3 py-2 rounded-xl text-xs break-words ${
-                        msg.role === 'user'
-                          ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
-                          : 'self-start bg-slate-100 text-slate-800'
-                      }`}
-                    >
+                    <div key={i} className="w-full px-1 py-1 text-xs break-words">
+                      <p className="text-[10px] font-semibold text-slate-400 mb-1">
+                        {msg.role === 'user' ? t('role.user', { ns: 'explore' }) : t('role.assistant', { ns: 'explore' })}
+                      </p>
+                      {msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className="flex flex-col gap-1 mb-2">
+                          {msg.toolCalls.map(tc => <ToolCallRow key={tc.id} toolCall={tc} />)}
+                        </div>
+                      )}
                       {msg.role === 'assistant' ? (
                         <article className="prose prose-slate prose-xs max-w-none text-left">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </article>
                       ) : (
-                        <span className="whitespace-pre-wrap">{msg.content}</span>
+                        <span className="whitespace-pre-wrap text-slate-800">{msg.content}</span>
                       )}
                     </div>
                   ))

@@ -4,10 +4,15 @@ import { api, wsURL } from '../lib/api'
 import { useChanges } from './useChanges'
 import {
   appendQuestionMessage,
+  applyToolCalls,
+  applyToolResult,
   buildAnswerWSPayload,
   extractText,
+  extractToolCalls,
+  extractToolResult,
   findActiveQuestionMessage,
   markQuestionAnswered,
+  mergeAssistantText,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
   type AgentInfo,
@@ -160,6 +165,20 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
           return
         }
 
+        const toolCalls = extractToolCalls(data)
+        if (toolCalls.length) {
+          setMessages(prev => applyToolCalls(prev, toolCalls))
+        }
+
+        const toolResult = extractToolResult(data)
+        if (toolResult) {
+          setMessages(prev => {
+            const updated = applyToolResult(prev, toolResult)
+            if (sid) saveMessages(sid, updated.filter(m => !m.partial))
+            return updated
+          })
+        }
+
         const text = extractText(data)
         if (!text) return
 
@@ -167,23 +186,11 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
         setMessages(prev => {
-          const last = prev[prev.length - 1]
-          if (last?.role === 'assistant' && last.partial) {
-            const updated = [
-              ...prev.slice(0, -1),
-              { role: 'assistant' as const, content: last.content + text, partial: isPartial },
-            ]
-            if (!isPartial) {
-              // Message complete: save to localStorage
-              pendingAssistantRef.current = last.content + text
-              const toSave = updated.filter(m => !m.partial)
-              if (sid) saveMessages(sid, toSave)
-            }
-            return updated
-          }
-          const updated = [...prev, { role: 'assistant' as const, content: text, partial: isPartial }]
-          if (!isPartial && sid) {
-            saveMessages(sid, updated.filter(m => !m.partial))
+          const updated = mergeAssistantText(prev, text, isPartial)
+          if (!isPartial) {
+            // Message complete: save to localStorage
+            pendingAssistantRef.current = updated[updated.length - 1]?.content ?? ''
+            if (sid) saveMessages(sid, updated.filter(m => !m.partial))
           }
           return updated
         })

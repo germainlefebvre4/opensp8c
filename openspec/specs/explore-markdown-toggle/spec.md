@@ -39,7 +39,7 @@ La préférence de mode raw/rendered SHALL être persistée dans le localStorage
 - **THEN** le panel s'initialise en mode `raw` sans erreur
 
 ### Requirement: Rendu conditionnel des messages selon le mode
-Les messages de l'assistant SHALL être rendus différemment selon le mode actif ; les messages utilisateur SHALL toujours être rendus en texte brut.
+Les messages de l'assistant SHALL être rendus différemment selon le mode actif ; les messages utilisateur SHALL toujours être rendus en texte brut. Ce rendu s'applique au contenu du tour plein-largeur (`explore-message-layout`), sans lien avec un fond de bulle.
 
 #### Scenario: Messages assistant en mode rendered
 - **WHEN** le mode `rendered` est actif
@@ -51,7 +51,7 @@ Les messages de l'assistant SHALL être rendus différemment selon le mode actif
 
 #### Scenario: Messages utilisateur toujours en raw
 - **WHEN** le mode `rendered` est actif
-- **THEN** les messages dont le rôle est `user` continuent d'être rendus en texte brut (bg-blue-600)
+- **THEN** les messages dont le rôle est `user` continuent d'être rendus en texte brut, dans le tour plein-largeur qui leur est propre (sans fond de bulle)
 
 #### Scenario: Messages partiels rendus en mode rendered
 - **WHEN** le mode `rendered` est actif et qu'un message assistant est en cours de streaming (`partial: true`)

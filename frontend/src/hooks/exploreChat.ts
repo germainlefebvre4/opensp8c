@@ -22,11 +22,20 @@ export interface QuestionCardData {
   superseded?: boolean
 }
 
+export interface ToolCall {
+  id: string
+  name: string
+  target: string
+  status: 'pending' | 'done'
+  resultPreview?: string
+}
+
 export interface Message {
   role: 'user' | 'assistant'
   content: string
   partial?: boolean
   question?: QuestionCardData
+  toolCalls?: ToolCall[]
 }
 
 export interface AgentInfo {
@@ -127,4 +136,103 @@ export function extractText(data: Record<string, unknown>): string {
   }
   if (typeof data.result === 'string') return data.result
   return ''
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) + '…' : text
+}
+
+/** Content blocks of a raw agent event, whether nested under `message.content` (assistant/user turns) or at the top level (e.g. a `result` event). */
+function contentBlocks(data: Record<string, unknown>): Array<Record<string, unknown>> {
+  if (Array.isArray(data.content)) return data.content as Array<Record<string, unknown>>
+  const message = data.message as Record<string, unknown> | undefined
+  if (message && Array.isArray(message.content)) return message.content as Array<Record<string, unknown>>
+  return []
+}
+
+/** Derives a compact, human-readable target for a tool call from its input, by tool name. */
+function deriveToolTarget(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      return typeof input.file_path === 'string' ? input.file_path : ''
+    case 'Grep':
+      return typeof input.pattern === 'string' ? input.pattern : ''
+    case 'Bash':
+      return typeof input.command === 'string' ? truncate(input.command, 80) : ''
+    default: {
+      const firstValue = Object.values(input ?? {})[0]
+      if (firstValue === undefined) return ''
+      const asText = typeof firstValue === 'string' ? firstValue : JSON.stringify(firstValue)
+      return truncate(asText, 80)
+    }
+  }
+}
+
+/** Extracts pending ToolCall entries from any `tool_use` content blocks in a raw agent event. */
+export function extractToolCalls(data: Record<string, unknown>): ToolCall[] {
+  return contentBlocks(data)
+    .filter(b => b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string')
+    .map(b => {
+      const name = b.name as string
+      const input = (b.input as Record<string, unknown>) ?? {}
+      return { id: b.id as string, name, target: deriveToolTarget(name, input), status: 'pending' as const }
+    })
+}
+
+/** Extracts the `tool_result` matching a captured ToolCall's id, if a raw agent event carries one. */
+export function extractToolResult(data: Record<string, unknown>): { toolUseId: string; preview: string } | null {
+  const block = contentBlocks(data).find(b => b.type === 'tool_result' && typeof b.tool_use_id === 'string')
+  if (!block) return null
+
+  const raw = block.content
+  let preview = ''
+  if (typeof raw === 'string') {
+    preview = raw
+  } else if (Array.isArray(raw)) {
+    preview = (raw as Array<Record<string, unknown>>)
+      .filter(b => b.type === 'text')
+      .map(b => b.text as string)
+      .join('')
+  }
+  return { toolUseId: block.tool_use_id as string, preview: truncate(preview, 300) }
+}
+
+/**
+ * Attaches newly captured tool calls to the assistant message currently being
+ * built (the last message, if it's an in-progress assistant turn), or starts
+ * a new one — so a 100%-tool turn still produces an assistant message.
+ */
+export function applyToolCalls(messages: Message[], calls: ToolCall[]): Message[] {
+  if (!calls.length) return messages
+  const last = messages[messages.length - 1]
+  if (last?.role === 'assistant' && last.partial) {
+    return [...messages.slice(0, -1), { ...last, toolCalls: [...(last.toolCalls ?? []), ...calls] }]
+  }
+  return [...messages, { role: 'assistant', content: '', partial: true, toolCalls: calls }]
+}
+
+/** Updates the ToolCall matching a received tool_result by id, in place, without creating a new message. */
+export function applyToolResult(messages: Message[], result: { toolUseId: string; preview: string }): Message[] {
+  return messages.map(m => {
+    if (!m.toolCalls) return m
+    const idx = m.toolCalls.findIndex(tc => tc.id === result.toolUseId)
+    if (idx === -1) return m
+    const toolCalls = [...m.toolCalls]
+    toolCalls[idx] = { ...toolCalls[idx], status: 'done', resultPreview: result.preview }
+    return { ...m, toolCalls }
+  })
+}
+
+/**
+ * Merges streamed assistant text into the message being built (preserving
+ * its toolCalls), or starts a new assistant message.
+ */
+export function mergeAssistantText(messages: Message[], text: string, isPartial: boolean): Message[] {
+  const last = messages[messages.length - 1]
+  if (last?.role === 'assistant' && last.partial) {
+    return [...messages.slice(0, -1), { ...last, content: last.content + text, partial: isPartial }]
+  }
+  return [...messages, { role: 'assistant', content: text, partial: isPartial }]
 }

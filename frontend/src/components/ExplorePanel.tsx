@@ -6,6 +6,7 @@ import { useExploreSession } from '../hooks/useExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { QuestionCard } from './QuestionCard'
+import { ToolCallRow } from './ToolCallRow'
 
 interface Props {
   workspaceId: string
@@ -143,21 +144,22 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
                 onRequestOtherAnswer={() => textareaRef.current?.focus()}
               />
             ) : (
-              <div
-                key={i}
-                className={`max-w-[85%] px-3 py-2 rounded-xl text-sm break-words ${
-                  msg.role === 'user'
-                    ? 'self-end bg-blue-600 text-white whitespace-pre-wrap'
-                    : 'self-start bg-slate-100 text-slate-800'
-                }`}
-              >
+              <div key={i} className="w-full px-1 py-1 text-sm break-words">
+                <p className="text-[10px] font-semibold text-slate-400 mb-1">
+                  {msg.role === 'user' ? t('role.user') : t('role.assistant')}
+                </p>
+                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                  <div className="flex flex-col gap-1 mb-2">
+                    {msg.toolCalls.map(tc => <ToolCallRow key={tc.id} toolCall={tc} />)}
+                  </div>
+                )}
                 {msg.role === 'assistant' && mode === 'rendered' ? (
                   <article className="prose prose-slate prose-sm max-w-none text-left">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.partial && <span className="opacity-50">▊</span>}
                   </article>
                 ) : (
-                  <span className="whitespace-pre-wrap">
+                  <span className="whitespace-pre-wrap text-slate-800">
                     {msg.content}
                     {msg.partial && <span className="opacity-50">▊</span>}
                   </span>

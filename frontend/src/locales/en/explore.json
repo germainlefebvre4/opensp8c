@@ -33,5 +33,13 @@
   "questionCard": {
     "answered": "-> Your answer: {{answer}}",
     "otherAnswer": "Other answer..."
+  },
+  "toolCall": {
+    "pending": "In progress...",
+    "noPreview": "No result."
+  },
+  "role": {
+    "user": "You",
+    "assistant": "Assistant"
   }
 }

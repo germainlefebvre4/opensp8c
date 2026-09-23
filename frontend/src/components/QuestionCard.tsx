@@ -12,7 +12,7 @@ export function QuestionCard({ question, onAnswer, onRequestOtherAnswer }: Props
 
   if (question.answer !== undefined) {
     return (
-      <div className="self-start max-w-[85%] px-3 py-2 rounded-xl text-sm bg-white border border-slate-200 shadow-sm">
+      <div className="w-full px-3 py-2 rounded-xl text-sm bg-white border border-slate-200 shadow-sm">
         <p className="text-slate-800">{question.text}</p>
         <p className="mt-1.5 text-slate-500 text-xs">
           {t('questionCard.answered', { answer: question.answer })}
@@ -25,7 +25,7 @@ export function QuestionCard({ question, onAnswer, onRequestOtherAnswer }: Props
 
   return (
     <div
-      className={`self-start max-w-[85%] px-3 py-2.5 rounded-xl text-sm bg-white border border-slate-200 shadow-sm ${
+      className={`w-full px-3 py-2.5 rounded-xl text-sm bg-white border border-slate-200 shadow-sm ${
         question.superseded ? 'opacity-50' : ''
       }`}
     >

@@ -1,52 +1,44 @@
 import { useQuery } from '@tanstack/react-query'
 import { getConversationRun } from '../lib/api'
+import {
+  applyToolCalls,
+  applyToolResult,
+  extractText,
+  extractToolCalls,
+  extractToolResult,
+  mergeAssistantText,
+  type Message,
+} from './exploreChat'
 
-export interface ParsedMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-function extractText(data: Record<string, unknown>): string {
-  if (data.type === 'content_block_delta') {
-    const delta = data.delta as Record<string, unknown> | undefined
-    return (delta?.text as string) ?? ''
-  }
-  if (Array.isArray(data.content)) {
-    return (data.content as Array<Record<string, unknown>>)
-      .filter(b => b.type === 'text')
-      .map(b => b.text as string)
-      .join('')
-  }
-  if (typeof data.result === 'string') return data.result
-  return ''
-}
-
-function parseMessages(rawMessages: unknown[]): ParsedMessage[] {
-  const messages: ParsedMessage[] = []
+function parseMessages(rawMessages: unknown[]): Message[] {
+  let messages: Message[] = []
 
   for (const raw of rawMessages) {
     const data = raw as Record<string, unknown>
 
     if (data.type === 'user') {
       const msg = data.message as Record<string, unknown> | undefined
-      const content = (msg?.content as string) ?? ''
-      if (content) {
-        messages.push({ role: 'user', content })
+      if (typeof msg?.content === 'string') {
+        if (msg.content) messages.push({ role: 'user', content: msg.content })
+        continue
+      }
+      const toolResult = extractToolResult(data)
+      if (toolResult) {
+        messages = applyToolResult(messages, toolResult)
       }
       continue
+    }
+
+    const toolCalls = extractToolCalls(data)
+    if (toolCalls.length) {
+      messages = applyToolCalls(messages, toolCalls)
     }
 
     const text = extractText(data)
     if (!text) continue
 
     const isPartial = data.type === 'content_block_delta'
-    const last = messages[messages.length - 1]
-
-    if (isPartial && last?.role === 'assistant') {
-      messages[messages.length - 1] = { role: 'assistant', content: last.content + text }
-    } else {
-      messages.push({ role: 'assistant', content: text })
-    }
+    messages = mergeAssistantText(messages, text, isPartial)
   }
 
   return messages
