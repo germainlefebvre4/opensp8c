@@ -123,3 +123,6 @@ export const updateGhostDraft = (workspaceId: string, ghostId: string, draft: Ex
 
 export const deleteGhostDraft = (workspaceId: string, ghostId: string) =>
   api.delete(`/api/workspaces/${workspaceId}/explorations/${ghostId}/draft`)
+
+export const triggerDocsGenerate = (workspaceId: string) =>
+  api.post(`/api/workspaces/${workspaceId}/docs/generate`)

@@ -32,5 +32,21 @@
   },
   "toc": {
     "title": "On this page"
+  },
+  "docs": {
+    "tabLabel": "Documentation",
+    "title": "Documentation",
+    "emptyState": "No documentation generated for this workspace yet.",
+    "generate": "Generate",
+    "regenerate": "Regenerate",
+    "generating": "Generating…",
+    "stale": "documentation potentially outdated",
+    "staleTooltip": "At least one specification was modified since the last generation",
+    "pages": {
+      "overview": "Overview",
+      "architecture": "Architecture",
+      "domain-model": "Domain model",
+      "workflows": "Workflows"
+    }
   }
 }

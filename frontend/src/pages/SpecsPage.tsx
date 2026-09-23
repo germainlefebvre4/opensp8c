@@ -4,12 +4,16 @@ import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useSpec, useSpecs } from '../hooks/useSpecs'
+import { useDocsLiveState } from '../hooks/useWorkspaceLiveState'
 import { TableOfContents, type Heading } from '../components/TableOfContents'
 import { SpecEditor } from '../components/SpecEditor'
+import { DocumentationPanel } from '../components/DocumentationPanel'
 
 interface Props {
   workspaceId: string
 }
+
+type SubTab = 'specifications' | 'documentation'
 
 function slugify(text: string): string {
   return text
@@ -57,6 +61,9 @@ export function SpecsPage({ workspaceId }: Props) {
   const { t } = useTranslation('specs')
   const { t: tCommon } = useTranslation('common')
   const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<SubTab>('specifications')
+  const { generating: docsGenerating } = useDocsLiveState(workspaceId)
+
   const { data: specs = [], isLoading } = useSpecs(workspaceId)
 
   const selectedParam = searchParams.get('selected')
@@ -111,110 +118,136 @@ export function SpecsPage({ workspaceId }: Props) {
     setIsEditing(false)
   }
 
-  if (isLoading) return (
-    <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
-      {tCommon('loading')}
-    </div>
-  )
+  const subTabClass = (active: boolean) =>
+    `px-3 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
+      active
+        ? 'border-blue-600 text-blue-700'
+        : 'border-transparent text-slate-500 hover:text-slate-800'
+    }`
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      {/* Spec list sidebar */}
-      <aside className="w-44 shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col">
-        <div className="px-4 pt-4 pb-2 shrink-0">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-            {t('title')}
-          </span>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="shrink-0 flex items-center gap-1 px-4 border-b border-slate-200 bg-white">
+        <button
+          onClick={() => setActiveTab('specifications')}
+          className={subTabClass(activeTab === 'specifications')}
+        >
+          {t('title')}
+        </button>
+        <button
+          onClick={() => setActiveTab('documentation')}
+          className={subTabClass(activeTab === 'documentation')}
+        >
+          {t('docs.tabLabel')}
+        </button>
+      </div>
+
+      {activeTab === 'documentation' ? (
+        <DocumentationPanel workspaceId={workspaceId} generating={docsGenerating} />
+      ) : isLoading ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
+          {tCommon('loading')}
         </div>
-        <ScrollArea.Root className="flex-1 overflow-hidden">
-          <ScrollArea.Viewport className="h-full w-full">
-            <div className="px-2 pb-2 flex flex-col gap-0.5">
-              {specs.length === 0 && (
-                <p className="text-xs text-slate-400 px-2 py-2">
-                  {t('emptyState')}
-                </p>
-              )}
-              {specs.map(s => (
-                <button
-                  key={s.name}
-                  onClick={() => handleSelectSpec(s.name)}
-                  className={`w-full text-left px-2.5 py-2 rounded-md text-xs cursor-pointer transition-colors truncate ${
-                    s.name === selectedSpec
-                      ? 'bg-blue-50 text-blue-700 font-semibold'
-                      : 'text-slate-600 hover:bg-white hover:text-slate-800 font-medium'
-                  }`}
-                  title={s.name}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          </ScrollArea.Viewport>
-          <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">
-            <ScrollArea.Thumb className="relative flex-1 rounded-full bg-slate-300" />
-          </ScrollArea.Scrollbar>
-        </ScrollArea.Root>
-      </aside>
-
-      {/* Main content */}
-      {specDetail ? (
-        isEditing ? (
-          <SpecEditor
-            workspaceId={workspaceId}
-            specName={selectedSpec!}
-            initialContent={editBaseContent}
-            serverContent={specDetail.content ?? ''}
-            onCancel={handleExitEdit}
-            onSaveSuccess={handleExitEdit}
-          />
-        ) : (
-          <>
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Header: edit + history link */}
-              <div className="shrink-0 flex items-center justify-between px-6 pt-4 pb-0">
-                <Link
-                  to={`/timeline?${(() => { const p = new URLSearchParams(searchParams); p.set('spec', selectedSpec!); return p.toString() })()}`}
-                  className="text-[11px] text-slate-400 hover:text-blue-600 transition-colors"
-                >
-                  {t('viewHistoryLink')}
-                </Link>
-                <button
-                  onClick={handleEdit}
-                  className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors"
-                >
-                  {t('edit')}
-                </button>
-              </div>
-
-              <ScrollArea.Root className="flex-1 overflow-hidden">
-                <ScrollArea.Viewport className="h-full w-full" ref={setContentEl}>
-                  <div className="px-8 py-4 max-w-3xl text-left">
-                    <article className="prose prose-slate prose-sm max-w-none">
-                      <ReactMarkdown components={markdownComponents}>
-                        {specDetail.content ?? ''}
-                      </ReactMarkdown>
-                    </article>
-                  </div>
-                </ScrollArea.Viewport>
-                <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">
-                  <ScrollArea.Thumb className="relative flex-1 rounded-full bg-slate-300" />
-                </ScrollArea.Scrollbar>
-              </ScrollArea.Root>
-            </div>
-
-            {/* TOC — hidden on small screens, hidden in edit mode */}
-            {headings.length > 0 && (
-              <aside className="w-48 shrink-0 border-l border-slate-100 px-4 py-6 overflow-y-auto hidden lg:block">
-                <TableOfContents headings={headings} contentEl={contentEl} />
-              </aside>
-            )}
-          </>
-        )
       ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-slate-400">
-            {t('selectPrompt')}
-          </p>
+        <div className="flex-1 flex overflow-hidden">
+          {/* Spec list sidebar */}
+          <aside className="w-44 shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col">
+            <div className="px-4 pt-4 pb-2 shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                {t('title')}
+              </span>
+            </div>
+            <ScrollArea.Root className="flex-1 overflow-hidden">
+              <ScrollArea.Viewport className="h-full w-full">
+                <div className="px-2 pb-2 flex flex-col gap-0.5">
+                  {specs.length === 0 && (
+                    <p className="text-xs text-slate-400 px-2 py-2">
+                      {t('emptyState')}
+                    </p>
+                  )}
+                  {specs.map(s => (
+                    <button
+                      key={s.name}
+                      onClick={() => handleSelectSpec(s.name)}
+                      className={`w-full text-left px-2.5 py-2 rounded-md text-xs cursor-pointer transition-colors truncate ${
+                        s.name === selectedSpec
+                          ? 'bg-blue-50 text-blue-700 font-semibold'
+                          : 'text-slate-600 hover:bg-white hover:text-slate-800 font-medium'
+                      }`}
+                      title={s.name}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea.Viewport>
+              <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">
+                <ScrollArea.Thumb className="relative flex-1 rounded-full bg-slate-300" />
+              </ScrollArea.Scrollbar>
+            </ScrollArea.Root>
+          </aside>
+
+          {/* Main content */}
+          {specDetail ? (
+            isEditing ? (
+              <SpecEditor
+                workspaceId={workspaceId}
+                specName={selectedSpec!}
+                initialContent={editBaseContent}
+                serverContent={specDetail.content ?? ''}
+                onCancel={handleExitEdit}
+                onSaveSuccess={handleExitEdit}
+              />
+            ) : (
+              <>
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {/* Header: edit + history link */}
+                  <div className="shrink-0 flex items-center justify-between px-6 pt-4 pb-0">
+                    <Link
+                      to={`/timeline?${(() => { const p = new URLSearchParams(searchParams); p.set('spec', selectedSpec!); return p.toString() })()}`}
+                      className="text-[11px] text-slate-400 hover:text-blue-600 transition-colors"
+                    >
+                      {t('viewHistoryLink')}
+                    </Link>
+                    <button
+                      onClick={handleEdit}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-md transition-colors"
+                    >
+                      {t('edit')}
+                    </button>
+                  </div>
+
+                  <ScrollArea.Root className="flex-1 overflow-hidden">
+                    <ScrollArea.Viewport className="h-full w-full" ref={setContentEl}>
+                      <div className="px-8 py-4 max-w-3xl text-left">
+                        <article className="prose prose-slate prose-sm max-w-none">
+                          <ReactMarkdown components={markdownComponents}>
+                            {specDetail.content ?? ''}
+                          </ReactMarkdown>
+                        </article>
+                      </div>
+                    </ScrollArea.Viewport>
+                    <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">
+                      <ScrollArea.Thumb className="relative flex-1 rounded-full bg-slate-300" />
+                    </ScrollArea.Scrollbar>
+                  </ScrollArea.Root>
+                </div>
+
+                {/* TOC — hidden on small screens, hidden in edit mode */}
+                {headings.length > 0 && (
+                  <aside className="w-48 shrink-0 border-l border-slate-100 px-4 py-6 overflow-y-auto hidden lg:block">
+                    <TableOfContents headings={headings} contentEl={contentEl} />
+                  </aside>
+                )}
+              </>
+            )
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-sm text-slate-400">
+                {t('selectPrompt')}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

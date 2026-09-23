@@ -69,6 +69,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
+	docsHandler := handlers.NewDocsHandler(wsHandler, mgr, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
@@ -98,6 +99,10 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces/{id}/specs/overview", specsHandler.GetOverview)
 		r.Get("/workspaces/{id}/specs/{name}", specsHandler.GetSpec)
 		r.Put("/workspaces/{id}/specs/{name}", specsHandler.UpdateSpec)
+
+		r.Get("/workspaces/{id}/docs", docsHandler.ListDocs)
+		r.Get("/workspaces/{id}/docs/{page}", docsHandler.GetDocPage)
+		r.Post("/workspaces/{id}/docs/generate", docsHandler.TriggerGenerate)
 
 		r.Post("/workspaces/{id}/changes/{name}/archive", archiveHandler.Archive)
 		r.Post("/workspaces/{id}/changes/{name}/retag", tagsHandler.Retag)

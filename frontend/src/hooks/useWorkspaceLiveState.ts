@@ -75,3 +75,45 @@ export function useWorkspaceLiveState(workspaceId: string | null): {
       setFfMap(prev => ({ ...prev, [changeName]: 'running' })),
   }
 }
+
+type DocsStatus = 'running' | 'failed' | null
+
+// useDocsLiveState tracks the workspace's single documentation-generation run
+// over the same SSE event stream, mirroring how ff_* events already drive
+// change state above: it exposes a "generating" boolean and invalidates the
+// docs list query once the run completes, so the Documentation sub-tab
+// refreshes automatically.
+export function useDocsLiveState(workspaceId: string | null): {
+  generating: boolean
+  setGenerating: () => void
+} {
+  const qc = useQueryClient()
+  const [status, setStatus] = useState<DocsStatus>(null)
+
+  useEffect(() => {
+    if (!workspaceId) return
+
+    const es = new EventSource(`${baseURL}/api/workspaces/${workspaceId}/events`)
+
+    es.addEventListener('docs_generation_started', () => {
+      setStatus('running')
+    })
+
+    es.addEventListener('docs_generation_done', () => {
+      setStatus(null)
+      qc.invalidateQueries({ queryKey: ['docs', workspaceId] })
+    })
+
+    es.addEventListener('docs_generation_failed', () => {
+      setStatus('failed')
+      qc.invalidateQueries({ queryKey: ['docs', workspaceId] })
+    })
+
+    return () => es.close()
+  }, [workspaceId, qc])
+
+  return {
+    generating: status === 'running',
+    setGenerating: () => setStatus('running'),
+  }
+}

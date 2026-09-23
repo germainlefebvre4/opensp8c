@@ -32,5 +32,21 @@
   },
   "toc": {
     "title": "Sur cette page"
+  },
+  "docs": {
+    "tabLabel": "Documentation",
+    "title": "Documentation",
+    "emptyState": "Aucune documentation générée pour ce workspace.",
+    "generate": "Générer",
+    "regenerate": "Régénérer",
+    "generating": "Génération en cours…",
+    "stale": "documentation potentiellement obsolète",
+    "staleTooltip": "Au moins une spécification a été modifiée depuis la dernière génération",
+    "pages": {
+      "overview": "Vue d'ensemble",
+      "architecture": "Architecture",
+      "domain-model": "Modèle de domaine",
+      "workflows": "Flux"
+    }
   }
 }
