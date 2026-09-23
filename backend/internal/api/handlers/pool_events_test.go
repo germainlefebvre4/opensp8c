@@ -34,7 +34,6 @@ func TestPoolEvents_StartStopOverSSE(t *testing.T) {
 	workspaceID := workspace.StableID(absPath)
 
 	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}}
-	wsHandler := NewWorkspaceHandler(cfg, "")
 
 	watcherSvc := watcher.NewWatcherService()
 	if err := watcherSvc.StartWatching(workspaceID, absPath); err != nil {
@@ -42,8 +41,9 @@ func TestPoolEvents_StartStopOverSSE(t *testing.T) {
 	}
 	t.Cleanup(func() { watcherSvc.StopWatching(workspaceID) })
 
-	poolMgr := pool.NewManager(watcherSvc)
-	poolHandler := NewPoolHandler(wsHandler, poolMgr)
+	poolReg := pool.NewRegistry(watcherSvc)
+	wsHandler := NewWorkspaceHandler(cfg, "", poolReg)
+	poolHandler := NewPoolHandler(wsHandler, poolReg)
 	eventsHandler := NewEventsHandler(wsHandler, watcherSvc)
 
 	r := chi.NewRouter()

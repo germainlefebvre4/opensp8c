@@ -20,6 +20,7 @@ type Broadcaster interface {
 type Manager struct {
 	mu            sync.Mutex
 	workspaceID   string
+	workspaceName string
 	workspacePath string
 	config        AgentPoolConfig
 	activeWorkers map[int]*Worker
@@ -39,7 +40,7 @@ func NewManager(broadcaster Broadcaster) *Manager {
 
 // Start begins the orchestration loop with the given configuration, on
 // behalf of workspaceID.
-func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspacePath string) error {
+func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspacePath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -56,6 +57,7 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspacePath string) 
 
 	m.config = cfg
 	m.workspaceID = workspaceID
+	m.workspaceName = workspaceName
 	m.workspacePath = workspacePath
 	m.isRunning = true
 
@@ -94,6 +96,7 @@ func (m *Manager) Stop() {
 	m.broadcastLocked()
 
 	m.workspaceID = ""
+	m.workspaceName = ""
 }
 
 // Status returns the current status of the pool and its workers, as seen by
@@ -192,10 +195,14 @@ func (m *Manager) startWorker(changeName string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	worker := &Worker{
-		ID:           id,
-		ActiveChange: changeName,
-		Status:       StatusWorking,
-		CancelFunc:   cancel,
+		ID:             id,
+		WorkspaceID:    m.workspaceID,
+		WorkspaceName:  m.workspaceName,
+		ActiveChange:   changeName,
+		Status:         StatusWorking,
+		DelegationMode: m.config.DelegationMode,
+		StartedAt:      time.Now(),
+		CancelFunc:     cancel,
 	}
 	m.activeWorkers[id] = worker
 

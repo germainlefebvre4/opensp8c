@@ -20,3 +20,7 @@ L'interface utilisateur SHALL inclure, dans le Kanban de chaque workspace, un bo
 #### Scenario: Statut du bouton correct après changement de workspace
 - **WHEN** l'utilisateur navigue du Kanban du workspace `A` (pool actif) vers le Kanban du workspace `B` (aucun pool actif)
 - **THEN** le bouton du workspace `B` affiche l'état "aucun pool actif", indépendamment de l'état affiché précédemment pour le workspace `A`
+
+#### Scenario: Clic sur le bouton pendant qu'un pool tourne déjà
+- **WHEN** l'utilisateur clique sur le bouton d'en-tête alors qu'un pool est déjà en cours d'exécution pour ce workspace
+- **THEN** le panneau d'état du pool s'ouvre à la place de la modale de configuration ; la modale de configuration ne s'affiche pas

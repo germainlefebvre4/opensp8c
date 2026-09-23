@@ -1,16 +1,32 @@
-### Requirement: Modal de configuration et de lancement du pool
-L'interface utilisateur SHALL inclure un bouton de lancement d'action globale dans le Kanban. Lorsqu'aucun pool n'est actif, ce bouton SHALL ouvrir une modale de configuration du Pool d'Agents permettant à l'utilisateur d'ajuster le nombre de workers parallèles (de 1 à 5) et de sélectionner le Mode de Délégation global (`full-autonomy` ou `hitl-review`). Lorsqu'un pool est déjà actif, ce même bouton SHALL ouvrir le panneau d'état du pool (voir "Panneau d'état du pool actif") au lieu de la modale de configuration.
+# Agent Pool UI Specification
 
-#### Scenario: Ouverture et configuration de la modale (aucun pool actif)
-- **WHEN** l'utilisateur clique sur le bouton "Lancer le Pool" et qu'aucun pool n'est en cours d'exécution
+## Purpose
+
+Fournit les contrôles Kanban permettant de configurer, lancer, suivre et réviser le travail de l'Agent Pool sur un workspace.
+
+## Requirements
+
+### Requirement: Modal de configuration et de lancement du pool
+L'interface utilisateur SHALL inclure, dans le Kanban de chaque workspace, un bouton de lancement d'action qui ouvre une modale de configuration du Pool d'Agents pour ce workspace. Cette modale SHALL permettre à l'utilisateur d'ajuster le nombre de workers parallèles (de 1 à 5) et de sélectionner le Mode de Délégation (`full-autonomy` ou `hitl-review`). L'état affiché par ce bouton (actif ou inactif) SHALL toujours refléter le statut réel du pool de ce workspace tel que connu du backend, y compris juste après le chargement de la page ou un changement de workspace, plutôt qu'un état mémorisé localement dans l'interface. Lorsqu'un pool est déjà actif pour ce workspace, ce même bouton SHALL ouvrir le panneau d'état du pool (voir "Panneau d'état du pool actif") au lieu de la modale de configuration.
+
+#### Scenario: Ouverture et configuration de la modale
+- **WHEN** l'utilisateur clique sur le bouton "Lancer le Pool" alors qu'aucun pool n'est actif sur ce workspace
 - **THEN** une modale s'affiche avec un sélecteur numérique pour la taille du pool, un commutateur pour le mode de délégation, et un bouton de confirmation "Démarrer"
 
 #### Scenario: Validation et lancement du pool
 - **WHEN** l'utilisateur clique sur "Démarrer" dans la modale de configuration
-- **THEN** l'application envoie les paramètres au backend via l'API, ferme la modale, et affiche un indicateur visuel de pool actif dans l'en-tête du Kanban
+- **THEN** l'application envoie les paramètres au backend via l'API pour ce workspace, ferme la modale, et affiche un indicateur visuel de pool actif dans l'en-tête du Kanban de ce workspace
+
+#### Scenario: Statut du bouton synchronisé au chargement de la page
+- **WHEN** l'utilisateur ouvre ou recharge le Kanban d'un workspace pour lequel un pool est déjà actif côté backend
+- **THEN** le bouton affiche immédiatement l'état "pool actif" pour ce workspace, sans nécessiter d'action de l'utilisateur
+
+#### Scenario: Statut du bouton correct après changement de workspace
+- **WHEN** l'utilisateur navigue du Kanban du workspace `A` (pool actif) vers le Kanban du workspace `B` (aucun pool actif)
+- **THEN** le bouton du workspace `B` affiche l'état "aucun pool actif", indépendamment de l'état affiché précédemment pour le workspace `A`
 
 #### Scenario: Clic sur le bouton pendant qu'un pool tourne déjà
-- **WHEN** l'utilisateur clique sur le bouton d'en-tête alors qu'un pool est déjà en cours d'exécution
+- **WHEN** l'utilisateur clique sur le bouton d'en-tête alors qu'un pool est déjà en cours d'exécution pour ce workspace
 - **THEN** le panneau d'état du pool s'ouvre à la place de la modale de configuration ; la modale de configuration ne s'affiche pas
 
 ### Requirement: Synchronisation de l'état du bouton avec l'état réel du backend

@@ -21,16 +21,16 @@ import (
 
 // newTestKanbanHandler wires a KanbanHandler against a workspace rooted at
 // workspacePath, mirroring how router.go constructs it.
-func newTestKanbanHandler(t *testing.T, workspacePath string, poolMgr *pool.Manager, prefs *preferences.Service, convStore *conversation.Store, draftsDir string) (*KanbanHandler, string) {
+func newTestKanbanHandler(t *testing.T, workspacePath string, poolReg *pool.Registry, prefs *preferences.Service, convStore *conversation.Store, draftsDir string) (*KanbanHandler, string) {
 	t.Helper()
 	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: workspacePath}}}
-	ws := NewWorkspaceHandler(cfg, "")
+	ws := NewWorkspaceHandler(cfg, "", poolReg)
 	absPath, err := filepath.Abs(workspacePath)
 	if err != nil {
 		t.Fatalf("failed to resolve abs path: %v", err)
 	}
 	workspaceID := workspace.StableID(absPath)
-	h := NewKanbanHandler(ws, prefs, poolMgr, nil, convStore, nil, draftsDir)
+	h := NewKanbanHandler(ws, prefs, poolReg, nil, convStore, nil, draftsDir)
 	return h, workspaceID
 }
 
@@ -60,7 +60,7 @@ func TestDeleteChange_Success(t *testing.T) {
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeDir := writeTodoChange(t, changesDir, "my-change")
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "my-change")
 	h.DeleteChange(rec, req)
@@ -79,7 +79,7 @@ func TestDeleteChange_NotFound(t *testing.T) {
 		t.Fatalf("failed to create changes dir: %v", err)
 	}
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "does-not-exist")
 	h.DeleteChange(rec, req)
@@ -108,7 +108,7 @@ func TestDeleteChange_GhostCascade(t *testing.T) {
 	convBase := filepath.Join(tmpDir, "conversations")
 	convStore := conversation.NewStore(convBase)
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewManager(nil), prefs, convStore, draftsDir)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), prefs, convStore, draftsDir)
 
 	if err := prefs.AddExploration(preferences.ExplorationRecord{
 		ID:          "ghost-1",
@@ -176,10 +176,11 @@ func TestDeleteChange_WorkerActive(t *testing.T) {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "commit", "-q", "-m", "init")
 
-	poolMgr := pool.NewManager(nil)
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolMgr, nil, nil, "")
+	poolReg := pool.NewRegistry(nil)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
+	poolMgr := poolReg.For(workspaceID)
 
-	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, tmpDir); err != nil {
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
 		t.Fatalf("failed to start pool: %v", err)
 	}
 	t.Cleanup(func() {

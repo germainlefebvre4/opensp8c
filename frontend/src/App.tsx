@@ -4,6 +4,7 @@ import { Layout } from './components/Layout'
 import { KanbanPage } from './pages/KanbanPage'
 import { SpecsPage } from './pages/SpecsPage'
 import { TimelinePage } from './pages/TimelinePage'
+import { AgentsPage } from './pages/AgentsPage'
 import { WorkspaceSetup } from './pages/WorkspaceSetup'
 import { useWorkspaces } from './hooks/useWorkspaces'
 import { ToastProvider } from './components/ui/Toast'
@@ -35,6 +36,7 @@ function AppRoutes() {
             path="/timeline"
             element={workspaceId ? <TimelinePage workspaceId={workspaceId} /> : null}
           />
+          <Route path="/agents" element={<AgentsPage />} />
         </Routes>
       )}
     </Layout>

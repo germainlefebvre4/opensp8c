@@ -10,13 +10,13 @@ import (
 
 type PoolHandler struct {
 	ws  *WorkspaceHandler
-	mgr *pool.Manager
+	reg *pool.Registry
 }
 
-func NewPoolHandler(ws *WorkspaceHandler, mgr *pool.Manager) *PoolHandler {
+func NewPoolHandler(ws *WorkspaceHandler, reg *pool.Registry) *PoolHandler {
 	return &PoolHandler{
 		ws:  ws,
-		mgr: mgr,
+		reg: reg,
 	}
 }
 
@@ -27,6 +27,7 @@ func (h *PoolHandler) StartPool(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "workspace not found", http.StatusNotFound)
 		return
 	}
+	workspaceName, _ := h.ws.workspaceName(id)
 
 	var req pool.AgentPoolConfig
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -34,7 +35,7 @@ func (h *PoolHandler) StartPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mgr.Start(req, id, workspacePath); err != nil {
+	if err := h.reg.For(id).Start(req, id, workspaceName, workspacePath); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -49,7 +50,7 @@ func (h *PoolHandler) StopPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.mgr.Stop()
+	h.reg.For(id).Stop()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -60,7 +61,7 @@ func (h *PoolHandler) GetPoolStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, isRunning, workers := h.mgr.Status(id)
+	cfg, isRunning, workers := h.reg.For(id).Status(id)
 	if workers == nil {
 		workers = []pool.Worker{}
 	}
@@ -69,6 +70,23 @@ func (h *PoolHandler) GetPoolStatus(w http.ResponseWriter, r *http.Request) {
 		"is_running": isRunning,
 		"config":     cfg,
 		"workers":    workers,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListAllPools returns every active worker across all workspaces, each
+// tagged with its own workspace identity, change, status, delegation mode
+// and start time. It is not scoped to a single workspace.
+func (h *PoolHandler) ListAllPools(w http.ResponseWriter, r *http.Request) {
+	workers := h.reg.AllWorkers()
+	if workers == nil {
+		workers = []pool.Worker{}
+	}
+
+	resp := map[string]interface{}{
+		"workers": workers,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

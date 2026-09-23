@@ -1,0 +1,12 @@
+{
+  "title": "Agents",
+  "table": {
+    "workspace": "Workspace",
+    "change": "Change",
+    "status": "Status",
+    "delegationMode": "Delegation mode",
+    "duration": "Duration"
+  },
+  "emptyState": "No agent is currently active.",
+  "rowTooltip": "Go to {{workspace}}'s Kanban"
+}

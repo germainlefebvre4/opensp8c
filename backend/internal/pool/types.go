@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"time"
 )
 
 type DelegationMode string
@@ -28,10 +29,14 @@ const (
 )
 
 type Worker struct {
-	ID           int                `json:"id"`
-	ActiveChange string             `json:"active_change"`
-	WorktreePath string             `json:"worktree_path,omitempty"`
-	BranchName   string             `json:"branch_name,omitempty"`
-	Status       WorkerStatus       `json:"status"`
-	CancelFunc   context.CancelFunc `json:"-"`
+	ID             int                `json:"id"`
+	WorkspaceID    string             `json:"workspace_id"`
+	WorkspaceName  string             `json:"workspace_name"`
+	ActiveChange   string             `json:"active_change"`
+	WorktreePath   string             `json:"worktree_path,omitempty"`
+	BranchName     string             `json:"branch_name,omitempty"`
+	Status         WorkerStatus       `json:"status"`
+	DelegationMode DelegationMode     `json:"delegation_mode"`
+	StartedAt      time.Time          `json:"started_at"`
+	CancelFunc     context.CancelFunc `json:"-"`
 }

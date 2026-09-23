@@ -1,9 +1,39 @@
-### Requirement: Configuration globale du pool d'agents
-Le backend SHALL exposer un mécanisme de configuration globale pour le pool d'agents. Cette configuration comprend le nombre maximum d'agents parallèles (`size`) et le mode de délégation unifié (`delegation_mode`), qui peut être `full-autonomy` ou `hitl-review`.
+# Agent Pool Orchestrator Specification
 
-#### Scenario: Configuration valide du pool
-- **WHEN** le client demande à configurer le pool avec une taille de 3 et le mode `hitl-review`
-- **THEN** le backend stocke et applique cette configuration pour tous les futurs workers lancés par le pool
+## Purpose
+
+Orchestre un pool d'agents autonomes qui exécutent en parallèle les changements OpenSpec de la colonne To Do d'un workspace, chacun isolé dans son propre git worktree, avec une boucle d'auto-correction sur échec de validation.
+
+## Requirements
+
+### Requirement: Configuration du pool d'agents par workspace
+Le backend SHALL exposer un mécanisme de configuration du pool d'agents propre à chaque workspace. Cette configuration comprend le nombre maximum d'agents parallèles (`size`, de 1 à 5) et le mode de délégation (`delegation_mode`, `full-autonomy` ou `hitl-review`), appliqués uniquement aux workers lancés pour ce workspace.
+
+#### Scenario: Configuration valide du pool d'un workspace
+- **WHEN** le client demande à configurer le pool du workspace `A` avec une taille de 3 et le mode `hitl-review`
+- **THEN** le backend stocke et applique cette configuration pour tous les futurs workers lancés par le pool de ce workspace, sans affecter la configuration ou l'exécution du pool d'un autre workspace
+
+### Requirement: Exécution concurrente de pools sur plusieurs workspaces
+Le backend SHALL permettre l'exécution simultanée d'un pool d'agents par workspace, chaque pool étant démarré, arrêté et suivi indépendamment des pools des autres workspaces.
+
+#### Scenario: Démarrage de pools sur deux workspaces différents
+- **WHEN** un pool est déjà en cours d'exécution sur le workspace `A` et que le client demande le démarrage d'un pool sur le workspace `B`
+- **THEN** le backend démarre le pool du workspace `B` avec succès, sans interrompre ni modifier le pool en cours sur le workspace `A`
+
+#### Scenario: Refus de double démarrage sur le même workspace
+- **WHEN** un pool est déjà en cours d'exécution sur le workspace `A` et que le client redemande le démarrage d'un pool sur ce même workspace `A`
+- **THEN** le backend refuse la demande et retourne une erreur indiquant qu'un pool est déjà actif pour ce workspace
+
+### Requirement: Visibilité globale des pools actifs
+Le backend SHALL exposer un moyen de lister, en une seule requête, l'ensemble des pools actuellement actifs à travers tous les workspaces, ainsi que leurs workers. Pour chaque worker actif, cette information SHALL inclure l'identifiant et le nom du workspace auquel il appartient, le nom du changement (tâche Kanban) en cours de traitement, et son statut.
+
+#### Scenario: Liste des pools actifs sur plusieurs workspaces
+- **WHEN** un pool avec 2 workers actifs tourne sur le workspace `A` et un pool avec 1 worker actif tourne sur le workspace `B`
+- **THEN** la liste globale retourne les 3 workers, chacun associé à l'identifiant et au nom de son workspace d'origine et au changement qu'il traite
+
+#### Scenario: Aucun pool actif
+- **WHEN** aucun pool n'est en cours d'exécution sur aucun workspace
+- **THEN** la liste globale retourne une liste vide
 
 ### Requirement: Dispatcher de dépendances basé sur un DAG
 Le dispatcher de tâches du backend SHALL lire les dépendances déclarées dans le fichier `.openspec.yaml` de chaque changement situé dans la colonne **Todo** du Kanban. Il SHALL construire un Graphe Dirigé Acyclique (DAG) et distribuer en parallèle uniquement les changements n'ayant pas de dépendances actives en attente de traitement.

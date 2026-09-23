@@ -3,6 +3,7 @@ package pool
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/glefebvre/opensp8c/internal/watcher"
 )
@@ -39,7 +40,7 @@ func TestStatus_ScopedToWorkspace(t *testing.T) {
 	m := NewManager(nil)
 	tmpDir := t.TempDir()
 
-	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", tmpDir); err != nil {
+	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
 		t.Fatalf("failed to start pool: %v", err)
 	}
 	t.Cleanup(m.Stop)
@@ -53,6 +54,45 @@ func TestStatus_ScopedToWorkspace(t *testing.T) {
 	}
 }
 
+// TestStartWorker_StampsWorkspaceIdentity verifies that a worker created by
+// the orchestration loop carries the workspace identity (and start time)
+// that was passed to Start, as Status() would report it. The assertion is
+// made while still holding m.mu, so the real worker goroutine's async
+// teardown (its provisioning will fail against a non-git tmpDir) cannot race
+// the read out from under us.
+func TestStartWorker_StampsWorkspaceIdentity(t *testing.T) {
+	m := NewManager(nil)
+	tmpDir := t.TempDir()
+
+	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	defer m.Stop()
+
+	before := time.Now()
+	m.mu.Lock()
+	m.startWorker("some-change")
+	w, ok := m.activeWorkers[1]
+	var got Worker
+	if ok {
+		got = *w
+	}
+	m.mu.Unlock()
+
+	if !ok {
+		t.Fatalf("expected worker 1 to be registered")
+	}
+	if got.WorkspaceID != "workspace-a" {
+		t.Errorf("expected WorkspaceID %q, got %q", "workspace-a", got.WorkspaceID)
+	}
+	if got.WorkspaceName != "Workspace A" {
+		t.Errorf("expected WorkspaceName %q, got %q", "Workspace A", got.WorkspaceName)
+	}
+	if got.StartedAt.Before(before) {
+		t.Errorf("expected StartedAt to be set at worker creation time, got %v (before %v)", got.StartedAt, before)
+	}
+}
+
 // TestStartStop_BroadcastsPoolUpdated verifies that Start and Stop each emit
 // a pool_updated event for the workspace the pool was started for.
 func TestStartStop_BroadcastsPoolUpdated(t *testing.T) {
@@ -60,7 +100,7 @@ func TestStartStop_BroadcastsPoolUpdated(t *testing.T) {
 	m := NewManager(bc)
 	tmpDir := t.TempDir()
 
-	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", tmpDir); err != nil {
+	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
 		t.Fatalf("failed to start pool: %v", err)
 	}
 	m.Stop()

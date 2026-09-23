@@ -8,16 +8,18 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/workspace"
 )
 
 type WorkspaceHandler struct {
 	cfg     *config.Config
 	cfgPath string
+	poolReg *pool.Registry
 }
 
-func NewWorkspaceHandler(cfg *config.Config, cfgPath string) *WorkspaceHandler {
-	return &WorkspaceHandler{cfg: cfg, cfgPath: cfgPath}
+func NewWorkspaceHandler(cfg *config.Config, cfgPath string, poolReg *pool.Registry) *WorkspaceHandler {
+	return &WorkspaceHandler{cfg: cfg, cfgPath: cfgPath, poolReg: poolReg}
 }
 
 func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +120,11 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if h.poolReg != nil {
+		h.poolReg.Remove(id)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -126,6 +133,16 @@ func (h *WorkspaceHandler) workspacePath(id string) (string, bool) {
 		absPath, _ := filepath.Abs(wc.Path)
 		if workspace.StableID(absPath) == id {
 			return absPath, true
+		}
+	}
+	return "", false
+}
+
+func (h *WorkspaceHandler) workspaceName(id string) (string, bool) {
+	for _, wc := range h.cfg.Workspaces {
+		absPath, _ := filepath.Abs(wc.Path)
+		if workspace.StableID(absPath) == id {
+			return wc.Name, true
 		}
 	}
 	return "", false

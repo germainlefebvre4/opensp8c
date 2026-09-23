@@ -18,18 +18,18 @@ import (
 type KanbanHandler struct {
 	ws        *WorkspaceHandler
 	prefs     *preferences.Service
-	poolMgr   *pool.Manager
+	poolReg   *pool.Registry
 	sessions  *session.Manager
 	convStore *conversation.Store
 	watcher   *watcher.WatcherService
 	draftsDir string
 }
 
-func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolMgr *pool.Manager, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
+func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg *pool.Registry, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
 	return &KanbanHandler{
 		ws:        ws,
 		prefs:     prefs,
-		poolMgr:   poolMgr,
+		poolReg:   poolReg,
 		sessions:  sessions,
 		convStore: convStore,
 		watcher:   watcherSvc,
@@ -38,13 +38,14 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolMgr 
 }
 
 // activeWorkerChanges returns the set of change names currently claimed by an
-// Agent Pool worker for workspaceID, per the pool manager's in-memory state.
+// Agent Pool worker for workspaceID, per that workspace's own pool manager
+// in-memory state.
 func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]bool {
 	active := make(map[string]bool)
-	if h.poolMgr == nil {
+	if h.poolReg == nil {
 		return active
 	}
-	_, _, workers := h.poolMgr.Status(workspaceID)
+	_, _, workers := h.poolReg.For(workspaceID).Status(workspaceID)
 	for _, w := range workers {
 		active[w.ActiveChange] = true
 	}

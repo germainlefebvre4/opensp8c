@@ -61,9 +61,9 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, time.Hour)
 
-	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath)
-	poolMgr := pool.NewManager(watcherSvc)
-	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolMgr, mgr, convStore, watcherSvc, draftsPath(cfgPath))
+	poolRegistry := pool.NewRegistry(watcherSvc)
+	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath, poolRegistry)
+	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolRegistry, mgr, convStore, watcherSvc, draftsPath(cfgPath))
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler)
 	tagsHandler := handlers.NewTagsHandler(wsHandler)
@@ -72,7 +72,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
-	poolHandler := handlers.NewPoolHandler(wsHandler, poolMgr)
+	poolHandler := handlers.NewPoolHandler(wsHandler, poolRegistry)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(jsonContentType)
@@ -80,6 +80,8 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces", wsHandler.List)
 		r.Post("/workspaces", wsHandler.Add)
 		r.Delete("/workspaces/{id}", wsHandler.Delete)
+
+		r.Get("/pools", poolHandler.ListAllPools)
 
 		r.Route("/workspaces/{id}/pool", func(r chi.Router) {
 			r.Post("/start", poolHandler.StartPool)

@@ -50,6 +50,7 @@ export function Layout({ children }: Props) {
             { path: '/', label: t('kanban') },
             { path: '/specs', label: t('specs') },
             { path: '/timeline', label: t('timeline') },
+            { path: '/agents', label: t('agents') },
           ] as const).map(({ path, label }) => (
             <NavLink
               key={path}
