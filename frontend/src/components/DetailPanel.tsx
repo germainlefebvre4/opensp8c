@@ -6,14 +6,15 @@ import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
 import { useDeleteChange } from '../hooks/useDeleteChange'
 import { useToggleTask } from '../hooks/useToggleTask'
-import { useConversationRuns } from '../hooks/useConversationRuns'
-import { useConversationRun } from '../hooks/useConversationRun'
+import { useActivityTimeline } from '../hooks/useActivityTimeline'
+import { ActivityTimelineBar } from './ActivityTimelineBar'
+import { toggleTypeInFilter } from '../lib/timelineUtils'
+import { getActivityColor } from '../lib/activityColors'
 import { useRetag } from '../hooks/useRetag'
 import { useToast } from '../hooks/useToast'
 import { deleteGhost } from '../lib/api'
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
-import { ToolCallRow } from './ToolCallRow'
 
 interface Props {
   workspaceId: string
@@ -22,7 +23,7 @@ interface Props {
   associatedGhostId?: string
 }
 
-type Tab = 'tasks' | 'proposal' | 'design' | 'log' | 'tags' | 'actions'
+type Tab = 'tasks' | 'proposal' | 'design' | 'conversation' | 'tags' | 'actions'
 type ViewMode = 'raw' | 'rendered'
 
 const STATUS_KEY_MAP: Record<string, string> = {
@@ -54,7 +55,6 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const [pendingTaskIdx, setPendingTaskIdx] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('tasks')
   const [viewMode, setViewMode] = useState<ViewMode>('rendered')
-  const [selectedRunTs, setSelectedRunTs] = useState<string | null>(null)
 
   const [isBannerSolidifying, setIsBannerSolidifying] = useState(false)
 
@@ -68,9 +68,18 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     }
   }
 
-  const { data: ffRuns } = useConversationRuns(workspaceId, changeName, 'ff')
-  const activeRunTs = selectedRunTs ?? (ffRuns?.[0]?.ts ?? null)
-  const { data: ffRun, isLoading: runLoading } = useConversationRun(workspaceId, changeName, 'ff', activeRunTs)
+  const { data: activities, isLoading: activityLoading } = useActivityTimeline(workspaceId, changeName)
+  const [selectedActivityTypes, setSelectedActivityTypes] = useState<Set<string> | null>(null)
+
+  const handleToggleActivityType = (type: string) => {
+    setSelectedActivityTypes(prev => {
+      const current = prev ?? new Set((activities || []).map(a => a.type))
+      return toggleTypeInFilter(current, type)
+    })
+  }
+
+  const activeActivityTypes = selectedActivityTypes ?? new Set((activities || []).map(a => a.type))
+  const filteredActivities = (activities || []).filter(a => activeActivityTypes.has(a.type))
 
   const handleArchiveClick = () => {
     setArchiveError(null)
@@ -112,7 +121,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     { id: 'tasks', label: t('tabs.tasks') },
     { id: 'proposal', label: t('tabs.proposal') },
     { id: 'design', label: t('tabs.design') },
-    { id: 'log', label: t('tabs.log') },
+    { id: 'conversation', label: t('tabs.conversation') },
     { id: 'tags', label: t('tabs.tags') },
     { id: 'actions', label: t('tabs.actions') },
   ]
@@ -219,56 +228,76 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
           </div>
 
           {/* Content */}
-          {activeTab === 'log' ? (
+          {activeTab === 'conversation' ? (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Run selector */}
-              {ffRuns && ffRuns.length > 1 && (
-                <div className="shrink-0 px-3 py-2 border-b border-slate-100 flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400">{t('run')}</span>
-                  <select
-                    value={activeRunTs ?? ''}
-                    onChange={e => setSelectedRunTs(e.target.value)}
-                    className="text-[10px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white cursor-pointer focus:outline-none"
-                  >
-                    {ffRuns.map(r => (
-                      <option key={r.ts} value={r.ts}>
-                        {r.ts} ({r.messageCount} msgs)
-                      </option>
-                    ))}
-                  </select>
+              {/* Timeline bar and Legend */}
+              {activities && activities.length > 0 && (
+                <div className="shrink-0 p-3 border-b border-slate-100 bg-slate-50/50">
+                  <ActivityTimelineBar
+                    entries={activities}
+                    selectedTypes={activeActivityTypes}
+                    onToggleType={handleToggleActivityType}
+                  />
                 </div>
               )}
-              {/* Messages */}
+              {/* Activity list */}
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-                {!ffRuns || ffRuns.length === 0 ? (
-                  <p className="text-xs text-slate-400 pt-2">{t('emptyRuns')}</p>
-                ) : runLoading ? (
+                {activityLoading ? (
                   <div className="flex items-center gap-2 text-xs text-slate-400 pt-2">
                     <Loader2 size={12} className="animate-spin" />
                     {tCommon('loading')}
                   </div>
-                ) : !ffRun || ffRun.messages.length === 0 ? (
-                  <p className="text-xs text-slate-400 pt-2">{t('emptyLog')}</p>
+                ) : !activities || activities.length === 0 ? (
+                  <p className="text-xs text-slate-400 pt-2">{t('emptyActivity')}</p>
+                ) : filteredActivities.length === 0 ? (
+                  <p className="text-xs text-slate-400 pt-2">{t('emptyActivity')}</p>
                 ) : (
-                  ffRun.messages.map((msg, i) => (
-                    <div key={i} className="w-full px-1 py-1 text-xs break-words">
-                      <p className="text-[10px] font-semibold text-slate-400 mb-1">
-                        {msg.role === 'user' ? t('role.user', { ns: 'explore' }) : t('role.assistant', { ns: 'explore' })}
-                      </p>
-                      {msg.toolCalls && msg.toolCalls.length > 0 && (
-                        <div className="flex flex-col gap-1 mb-2">
-                          {msg.toolCalls.map(tc => <ToolCallRow key={tc.id} toolCall={tc} />)}
+                  filteredActivities.map((entry, i) => {
+                    const colorInfo = getActivityColor(entry.category, entry.type)
+                    const timeStr = entry.ts ? new Date(entry.ts).toLocaleTimeString() : ''
+                    return (
+                      <div
+                        key={`${entry.ts}-${entry.type}-${i}`}
+                        className="w-full px-2.5 py-2 rounded-md border border-slate-100 bg-white hover:bg-slate-50/60 transition-colors text-xs flex flex-col gap-1.5 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0"
+                              style={{
+                                backgroundColor: colorInfo.badgeBg,
+                                color: colorInfo.badgeText,
+                                border: `1px solid ${colorInfo.badgeBorder}`,
+                              }}
+                            >
+                              {entry.type}
+                            </span>
+                            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                              {entry.category}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 text-[10px] text-slate-400">
+                            {entry.durationMs != null && entry.durationMs > 0 && (
+                              <span className="font-mono bg-slate-100 px-1 py-0.2 rounded text-slate-600">
+                                {entry.durationMs}ms
+                              </span>
+                            )}
+                            <span>{timeStr}</span>
+                          </div>
                         </div>
-                      )}
-                      {msg.role === 'assistant' ? (
-                        <article className="prose prose-slate prose-xs max-w-none text-left">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        </article>
-                      ) : (
-                        <span className="whitespace-pre-wrap text-slate-800">{msg.content}</span>
-                      )}
-                    </div>
-                  ))
+
+                        {entry.category === 'agent' ? (
+                          <article className="prose prose-slate prose-xs max-w-none text-left pl-0.5">
+                            <ReactMarkdown>{entry.summary}</ReactMarkdown>
+                          </article>
+                        ) : (
+                          <p className="text-[11px] text-slate-700 pl-0.5 break-words whitespace-pre-wrap leading-relaxed">
+                            {entry.summary}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })
                 )}
               </div>
             </div>

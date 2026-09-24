@@ -370,16 +370,18 @@ func ReorderReady(changesDir string, orderedNames []string) error {
 	return nil
 }
 
-func ToggleTask(workspacePath, changeName string, index int) error {
+func ToggleTask(workspacePath, changeName string, index int) (string, bool, error) {
 	tasksPath := filepath.Join(workspacePath, "openspec", "changes", changeName, "tasks.md")
 	data, err := os.ReadFile(tasksPath)
 	if err != nil {
-		return err
+		return "", false, err
 	}
 
 	lines := strings.Split(string(data), "\n")
 	taskIdx := 0
 	found := false
+	var taskText string
+	var done bool
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "- [") {
@@ -389,8 +391,12 @@ func ToggleTask(workspacePath, changeName string, index int) error {
 			if strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") {
 				lines[i] = strings.Replace(line, "- [x]", "- [ ]", 1)
 				lines[i] = strings.Replace(lines[i], "- [X]", "- [ ]", 1)
+				done = false
+				taskText = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmed, "- [x]"), "- [X]"))
 			} else {
 				lines[i] = strings.Replace(line, "- [ ]", "- [x]", 1)
+				done = true
+				taskText = strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ]"))
 			}
 			found = true
 			break
@@ -399,8 +405,11 @@ func ToggleTask(workspacePath, changeName string, index int) error {
 	}
 
 	if !found {
-		return os.ErrNotExist
+		return "", false, os.ErrNotExist
 	}
-	return os.WriteFile(tasksPath, []byte(strings.Join(lines, "\n")), 0644)
+	if err := os.WriteFile(tasksPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		return "", false, err
+	}
+	return taskText, done, nil
 }
 

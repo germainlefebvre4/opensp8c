@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
@@ -20,29 +21,33 @@ type Broadcaster interface {
 
 // Manager orchestrates the agent pool.
 type Manager struct {
-	mu            sync.Mutex
-	workspaceID   string
-	workspaceName string
-	workspacePath string
-	config        AgentPoolConfig
-	activeWorkers map[int]*Worker
-	cancelLoop    context.CancelFunc
-	isRunning     bool
-	broadcaster   Broadcaster
-	sessionMgr    *session.Manager
-	prefs         *preferences.Service
+	mu               sync.Mutex
+	workspaceID      string
+	workspaceName    string
+	workspacePath    string
+	config           AgentPoolConfig
+	activeWorkers    map[int]*Worker
+	lastWorkerStatus map[int]WorkerStatus
+	cancelLoop       context.CancelFunc
+	isRunning        bool
+	broadcaster      Broadcaster
+	sessionMgr       *session.Manager
+	prefs            *preferences.Service
+	activityStore    *activity.Store
 }
 
 // NewManager creates a new pool manager. broadcaster may be nil, in which
 // case pool state changes are simply not published as events. sessionMgr and
 // prefs are used to resolve which agent CLI (and custom env) to invoke for a
 // given workspace/change, the same resolution used by interactive sessions.
-func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service) *Manager {
+func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store) *Manager {
 	return &Manager{
-		activeWorkers: make(map[int]*Worker),
-		broadcaster:   broadcaster,
-		sessionMgr:    sessionMgr,
-		prefs:         prefs,
+		activeWorkers:    make(map[int]*Worker),
+		lastWorkerStatus: make(map[int]WorkerStatus),
+		broadcaster:      broadcaster,
+		sessionMgr:       sessionMgr,
+		prefs:            prefs,
+		activityStore:    actStore,
 	}
 }
 
@@ -129,10 +134,27 @@ func (m *Manager) Status(workspaceID string) (AgentPoolConfig, bool, []Worker) {
 // broadcastLocked publishes a pool_updated event for the workspace the pool
 // currently runs for. Callers must hold m.mu.
 func (m *Manager) broadcastLocked() {
-	if m.broadcaster == nil || m.workspaceID == "" {
-		return
+	if m.broadcaster != nil && m.workspaceID != "" {
+		m.broadcaster.Broadcast(m.workspaceID, watcher.Event{Type: "pool_updated"})
 	}
-	m.broadcaster.Broadcast(m.workspaceID, watcher.Event{Type: "pool_updated"})
+
+	if m.activityStore != nil && m.workspaceID != "" {
+		for id, w := range m.activeWorkers {
+			if w.ActiveChange != "" && m.lastWorkerStatus[id] != w.Status {
+				m.lastWorkerStatus[id] = w.Status
+				_ = m.activityStore.Append(m.workspaceID, w.ActiveChange, activity.Entry{
+					Type:     "pool.worker_status",
+					Category: "pool",
+					Summary:  fmt.Sprintf("Worker %d: %s", w.ID, w.Status),
+					Meta: map[string]any{
+						"worker_id": w.ID,
+						"status":    string(w.Status),
+						"change":    w.ActiveChange,
+					},
+				})
+			}
+		}
+	}
 }
 
 // notify is the lock-free-callable counterpart of broadcastLocked, for use

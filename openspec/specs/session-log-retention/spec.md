@@ -5,19 +5,19 @@ TBD - created by archiving change session-trace-logging. Update Purpose after ar
 ## Requirements
 ### Requirement: Rétention configurable des logs de change
 
-Le backend SHALL purger les logs de conversation d'un change (`conversations/<workspaceId>/<changeName>/**`, tous kinds confondus) `changeLogRetentionDays` jours après l'archivage de ce change, valeur lue depuis `backend/config.yaml` (défaut 15 si absente ou ≤ 0).
+Le backend SHALL purger les logs de conversation d'un change (`conversations/<workspaceId>/<changeName>/**`, tous kinds confondus) et les entrées d'activité de ce change (`activity/<workspaceId>/<changeName>/**`) `changeLogRetentionDays` jours après l'archivage de ce change, valeur lue depuis `backend/config.yaml` (défaut 15 si absente ou ≤ 0).
 
 #### Scenario: Change archivé depuis plus longtemps que le délai configuré
 - **WHEN** le job de purge s'exécute ET un dossier `openspec/changes/archive/<date>-<name>/` existe avec `<date>` antérieure à `now - changeLogRetentionDays`
-- **THEN** le dossier `conversations/<workspaceId>/<name>/` est supprimé s'il existe
+- **THEN** les dossiers `conversations/<workspaceId>/<name>/` et `activity/<workspaceId>/<name>/` sont supprimés s'ils existent
 
 #### Scenario: Change archivé récemment
 - **WHEN** le job de purge s'exécute ET un change a été archivé il y a moins de `changeLogRetentionDays` jours
-- **THEN** ses logs de conversation ne sont pas supprimés
+- **THEN** ni ses logs de conversation ni ses entrées d'activité ne sont supprimés
 
 #### Scenario: Change non archivé
 - **WHEN** un change existe encore dans `openspec/changes/<name>/` (non archivé)
-- **THEN** ses logs de conversation ne sont jamais purgés par cette règle
+- **THEN** ni ses logs de conversation ni ses entrées d'activité ne sont jamais purgés par cette règle
 
 ### Requirement: Rétention configurable des logs d'exploration non promue
 

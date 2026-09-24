@@ -3,7 +3,7 @@
     "tasks": "Tasks",
     "proposal": "Proposal",
     "design": "Design",
-    "log": "Log",
+    "conversation": "Conversation",
     "tags": "Tags",
     "actions": "Actions"
   },
@@ -22,7 +22,8 @@
   "archiving": "Archiving...",
   "emptyLog": "Empty log.",
   "emptyTasks": "No tasks defined.",
-  "emptyRuns": "No ff runs yet.",
+  "emptyRuns": "No activity recorded yet.",
+  "emptyActivity": "No activity recorded yet.",
   "proposalUnavailable": "proposal.md not available.",
   "designUnavailable": "design.md not available.",
   "tagsNotGenerated": "Tags not yet generated.",
@@ -45,5 +46,24 @@
   "delete": "Delete",
   "deleting": "Deleting...",
   "deleteDisabledWorkerActive": "An Agent Pool worker is currently active on this change.",
-  "deleteError": "Error while deleting the change: {{error}}"
+  "deleteError": "Error while deleting the change: {{error}}",
+  "activity": {
+    "timeline": "Activity Timeline",
+    "filterLegend": "Filter by type",
+    "categories": {
+      "kanban": "Kanban",
+      "pool": "Pool",
+      "git": "Git",
+      "agent": "Agent",
+      "tool:bash": "Bash",
+      "tool:read": "Read",
+      "tool:edit": "Edit",
+      "tool:write": "Write",
+      "tool:other": "Other tool",
+      "fallback": "Other"
+    },
+    "duration": "{{ms}}ms",
+    "seconds": "{{s}}s",
+    "durationLabel": "Duration"
+  }
 }

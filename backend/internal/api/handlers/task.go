@@ -6,16 +6,21 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/go-chi/chi/v5"
 )
 
 type TaskHandler struct {
-	ws *WorkspaceHandler
+	ws       *WorkspaceHandler
+	actStore *activity.Store
 }
 
-func NewTaskHandler(ws *WorkspaceHandler) *TaskHandler {
-	return &TaskHandler{ws: ws}
+func NewTaskHandler(ws *WorkspaceHandler, actStore *activity.Store) *TaskHandler {
+	return &TaskHandler{
+		ws:       ws,
+		actStore: actStore,
+	}
 }
 
 func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
@@ -35,13 +40,33 @@ func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := openspec.ToggleTask(path, name, index); err != nil {
+	taskText, done, err := openspec.ToggleTask(path, name, index)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.Error(w, "task not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if h.actStore != nil {
+		summary := taskText
+		if done {
+			summary = "Completed: " + taskText
+		} else {
+			summary = "Uncompleted: " + taskText
+		}
+		_ = h.actStore.Append(id, name, activity.Entry{
+			Type:     "kanban.task_toggled",
+			Category: "kanban",
+			Summary:  summary,
+			Meta: map[string]any{
+				"task":  taskText,
+				"done":  done,
+				"index": index,
+			},
+		})
 	}
 
 	w.WriteHeader(http.StatusOK)

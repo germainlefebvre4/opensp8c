@@ -3,6 +3,7 @@ package pool
 import (
 	"sync"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 )
@@ -11,9 +12,10 @@ import (
 // It lets independent pools run concurrently for different workspaces while
 // reusing the existing single-workspace Manager implementation unchanged.
 type Registry struct {
-	broadcaster Broadcaster
-	sessionMgr  *session.Manager
-	prefs       *preferences.Service
+	broadcaster   Broadcaster
+	sessionMgr    *session.Manager
+	prefs         *preferences.Service
+	activityStore *activity.Store
 
 	mu       sync.Mutex
 	managers map[string]*Manager
@@ -22,12 +24,13 @@ type Registry struct {
 // NewRegistry creates a Registry whose Managers publish pool state changes
 // through broadcaster (may be nil, see NewManager), and resolve agents via
 // sessionMgr/prefs.
-func NewRegistry(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service) *Registry {
+func NewRegistry(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store) *Registry {
 	return &Registry{
-		broadcaster: broadcaster,
-		sessionMgr:  sessionMgr,
-		prefs:       prefs,
-		managers:    make(map[string]*Manager),
+		broadcaster:   broadcaster,
+		sessionMgr:    sessionMgr,
+		prefs:         prefs,
+		activityStore: actStore,
+		managers:      make(map[string]*Manager),
 	}
 }
 
@@ -41,7 +44,7 @@ func (reg *Registry) For(workspaceID string) *Manager {
 		return m
 	}
 
-	m := NewManager(reg.broadcaster, reg.sessionMgr, reg.prefs)
+	m := NewManager(reg.broadcaster, reg.sessionMgr, reg.prefs, reg.activityStore)
 	reg.managers[workspaceID] = m
 	return m
 }

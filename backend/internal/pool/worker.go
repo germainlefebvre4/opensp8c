@@ -33,6 +33,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.activeWorkers, w.ID)
+		delete(m.lastWorkerStatus, w.ID)
 		m.mu.Unlock()
 		m.notify()
 	}()

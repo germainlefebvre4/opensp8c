@@ -31,6 +31,11 @@ export function useWorkspaceEvents(workspaceId: string | null) {
       qc.invalidateQueries({ queryKey: ['spec', workspaceId, data.name] })
     })
 
+    es.addEventListener('activity_appended', (e: MessageEvent) => {
+      const data = JSON.parse(e.data) as { name: string }
+      qc.invalidateQueries({ queryKey: ['activity', workspaceId, data.name] })
+    })
+
     return () => {
       es.close()
     }

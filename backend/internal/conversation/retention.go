@@ -11,21 +11,26 @@ import (
 	"github.com/glefebvre/opensp8c/internal/workspace"
 )
 
+// ActivityPurger purges activity logs for an archived change.
+type ActivityPurger interface {
+	DeleteChangeActivity(wsID, changeName string) error
+}
+
 // StartRetentionLoop runs an immediate sweep and then repeats on the given
 // interval for the lifetime of the process. Intended to be launched with `go`.
-func StartRetentionLoop(cfg *config.Config, prefs *preferences.Service, convStore *Store, interval time.Duration) {
-	RunRetentionSweep(cfg, prefs, convStore)
+func StartRetentionLoop(cfg *config.Config, prefs *preferences.Service, convStore *Store, actStore ActivityPurger, interval time.Duration) {
+	RunRetentionSweep(cfg, prefs, convStore, actStore)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		RunRetentionSweep(cfg, prefs, convStore)
+		RunRetentionSweep(cfg, prefs, convStore, actStore)
 	}
 }
 
-// RunRetentionSweep applies the two conversation log retention policies
+// RunRetentionSweep applies the conversation and activity log retention policies
 // (archived changes, inactive unpromoted explorations) to every configured
 // workspace, deleting logs past their configured TTL.
-func RunRetentionSweep(cfg *config.Config, prefs *preferences.Service, convStore *Store) {
+func RunRetentionSweep(cfg *config.Config, prefs *preferences.Service, convStore *Store, actStore ActivityPurger) {
 	now := time.Now().UTC()
 	changeTTL := time.Duration(cfg.ChangeLogRetentionDaysOrDefault()) * 24 * time.Hour
 	exploreTTL := time.Duration(cfg.ExploreLogRetentionDaysOrDefault()) * 24 * time.Hour
@@ -36,14 +41,14 @@ func RunRetentionSweep(cfg *config.Config, prefs *preferences.Service, convStore
 			continue
 		}
 		wsID := workspace.StableID(absPath)
-		sweepArchivedChanges(convStore, wsID, absPath, now, changeTTL)
+		sweepArchivedChanges(convStore, actStore, wsID, absPath, now, changeTTL)
 		sweepInactiveExplorations(convStore, prefs, wsID, now, exploreTTL)
 	}
 }
 
-// sweepArchivedChanges deletes conversation logs for changes archived longer
+// sweepArchivedChanges deletes conversation and activity logs for changes archived longer
 // ago than ttl, based on the date encoded in the archive folder name.
-func sweepArchivedChanges(convStore *Store, wsID, workspacePath string, now time.Time, ttl time.Duration) {
+func sweepArchivedChanges(convStore *Store, actStore ActivityPurger, wsID, workspacePath string, now time.Time, ttl time.Duration) {
 	archiveDir := filepath.Join(workspacePath, "openspec", "changes", "archive")
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
@@ -57,11 +62,20 @@ func sweepArchivedChanges(convStore *Store, wsID, workspacePath string, now time
 		if !ok || now.Sub(archivedAt) < ttl {
 			continue
 		}
-		if err := convStore.DeleteChangeLogs(wsID, name); err != nil {
-			log.Printf("[retention] failed to delete change logs %s/%s: %v", wsID, name, err)
-			continue
+		if convStore != nil {
+			if err := convStore.DeleteChangeLogs(wsID, name); err != nil {
+				log.Printf("[retention] failed to delete change logs %s/%s: %v", wsID, name, err)
+			} else {
+				log.Printf("[retention] deleted change logs %s/%s (archived %s)", wsID, name, archivedAt.Format("2006-01-02"))
+			}
 		}
-		log.Printf("[retention] deleted change logs %s/%s (archived %s)", wsID, name, archivedAt.Format("2006-01-02"))
+		if actStore != nil {
+			if err := actStore.DeleteChangeActivity(wsID, name); err != nil {
+				log.Printf("[retention] failed to delete activity logs %s/%s: %v", wsID, name, err)
+			} else {
+				log.Printf("[retention] deleted activity logs %s/%s (archived %s)", wsID, name, archivedAt.Format("2006-01-02"))
+			}
+		}
 	}
 }
 

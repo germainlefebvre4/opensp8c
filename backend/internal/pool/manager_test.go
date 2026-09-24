@@ -1,10 +1,12 @@
 package pool
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 )
 
@@ -37,7 +39,7 @@ func (b *mockBroadcaster) snapshot() []broadcastCall {
 // workspace is reported as not running when queried for a different one,
 // so the UI never shows another workspace's pool state as its own.
 func TestStatus_ScopedToWorkspace(t *testing.T) {
-	m := NewManager(nil, nil, nil)
+	m := NewManager(nil, nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
@@ -61,7 +63,7 @@ func TestStatus_ScopedToWorkspace(t *testing.T) {
 // teardown (its provisioning will fail against a non-git tmpDir) cannot race
 // the read out from under us.
 func TestStartWorker_StampsWorkspaceIdentity(t *testing.T) {
-	m := NewManager(nil, nil, nil)
+	m := NewManager(nil, nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
@@ -97,7 +99,7 @@ func TestStartWorker_StampsWorkspaceIdentity(t *testing.T) {
 // a pool_updated event for the workspace the pool was started for.
 func TestStartStop_BroadcastsPoolUpdated(t *testing.T) {
 	bc := &mockBroadcaster{}
-	m := NewManager(bc, nil, nil)
+	m := NewManager(bc, nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
@@ -114,7 +116,82 @@ func TestStartStop_BroadcastsPoolUpdated(t *testing.T) {
 			t.Errorf("expected event for workspace-a, got %q", call.workspaceID)
 		}
 		if call.ev.Type != "pool_updated" {
-			t.Errorf("expected event type pool_updated, got %q", call.ev.Type)
+			t.Errorf("expected pool_updated event, got %q", call.ev.Type)
 		}
+	}
+}
+
+// TestWorkerStatusTransition_BroadcastsAndAppendsActivity verifies that a
+// worker status transition emits both pool_updated broadcast and appends a pool.worker_status
+// entry to activity.jsonl for the assigned change.
+func TestWorkerStatusTransition_BroadcastsAndAppendsActivity(t *testing.T) {
+	tmpDir := t.TempDir()
+	actStore := activity.NewStore(filepath.Join(tmpDir, "activity"), nil)
+	bc := &mockBroadcaster{}
+	m := NewManager(bc, nil, nil, actStore)
+
+	wsID := "workspace-test"
+	changeName := "feature-worker"
+
+	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, wsID, "Workspace Test", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	defer m.Stop()
+
+	// Initial start emitted 1 event
+	bcEvents := bc.snapshot()
+	if len(bcEvents) != 1 {
+		t.Fatalf("expected 1 event on Start, got %d", len(bcEvents))
+	}
+
+	// Create worker
+	m.mu.Lock()
+	m.startWorker(changeName)
+	worker := m.activeWorkers[1]
+	m.mu.Unlock()
+
+	// startWorker calls broadcastLocked(), so bc should now have 2 events
+	bcEvents = bc.snapshot()
+	if len(bcEvents) != 2 {
+		t.Fatalf("expected 2 events after startWorker, got %d", len(bcEvents))
+	}
+
+	entries, err := actStore.Read(wsID, changeName)
+	if err != nil {
+		t.Fatalf("failed to read activity: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 activity entry, got %d", len(entries))
+	}
+	if entries[0].Type != "pool.worker_status" {
+		t.Errorf("expected type pool.worker_status, got %s", entries[0].Type)
+	}
+	if entries[0].Category != "pool" {
+		t.Errorf("expected category pool, got %s", entries[0].Category)
+	}
+	if entries[0].Meta["status"] != string(StatusWorking) {
+		t.Errorf("expected status working, got %v", entries[0].Meta["status"])
+	}
+
+	// Now transition worker status to StatusTesting and notify
+	m.mu.Lock()
+	worker.Status = StatusTesting
+	m.broadcastLocked()
+	m.mu.Unlock()
+
+	bcEvents = bc.snapshot()
+	if len(bcEvents) != 3 {
+		t.Fatalf("expected 3 events after status change, got %d", len(bcEvents))
+	}
+
+	entries, err = actStore.Read(wsID, changeName)
+	if err != nil {
+		t.Fatalf("failed to read activity: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 activity entries, got %d", len(entries))
+	}
+	if entries[1].Meta["status"] != string(StatusTesting) {
+		t.Errorf("expected status testing, got %v", entries[1].Meta["status"])
 	}
 }

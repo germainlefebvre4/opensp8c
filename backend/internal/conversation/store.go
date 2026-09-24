@@ -242,6 +242,25 @@ func (s *Store) List(wsID, changeName, kind string) ([]RunMeta, error) {
 	return listDir(s.dir(wsID, changeName, kind))
 }
 
+// ListKinds returns all kind subdirectories for a given workspace and change.
+func (s *Store) ListKinds(wsID, changeName string) ([]string, error) {
+	dir := filepath.Join(s.basePath, wsID, changeName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	var kinds []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !strings.HasPrefix(e.Name(), "_") {
+			kinds = append(kinds, e.Name())
+		}
+	}
+	return kinds, nil
+}
+
 func (s *Store) Load(wsID, changeName, kind, ts string) ([][]byte, error) {
 	return loadDir(s.dir(wsID, changeName, kind), ts)
 }

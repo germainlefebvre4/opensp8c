@@ -144,3 +144,15 @@ export const deleteGhostDraft = (workspaceId: string, ghostId: string) =>
 
 export const triggerDocsGenerate = (workspaceId: string) =>
   api.post(`/api/workspaces/${workspaceId}/docs/generate`)
+
+export interface ActivityEntry {
+  ts: string
+  type: string
+  category: string
+  summary: string
+  durationMs?: number
+  meta?: Record<string, unknown>
+}
+
+export const getActivity = (workspaceId: string, changeName: string) =>
+  api.get<ActivityEntry[]>(`/api/workspaces/${workspaceId}/changes/${changeName}/activity`).then(r => r.data)

@@ -116,7 +116,7 @@ func TestManager_SkipsReadyAndPicksLowestOrder(t *testing.T) {
 	// so a worker can live for far less than a polling interval - capture()
 	// via the broadcaster below instead of polling Status() on a timer.
 	capture := &activeChangeCapture{}
-	mgr := NewManager(capture, nil, nil)
+	mgr := NewManager(capture, nil, nil, nil)
 	capture.mgr = mgr
 	workspaceID := "test-ws"
 	if err := mgr.Start(AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {

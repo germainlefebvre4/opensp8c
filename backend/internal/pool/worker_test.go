@@ -224,7 +224,7 @@ func TestExtractActivity_TruncatesLongRawLines(t *testing.T) {
 // once per stdout line.
 func TestRunTurn_ThrottlesActivityBroadcasts(t *testing.T) {
 	bc := &mockBroadcaster{}
-	m := NewManager(bc, nil, nil)
+	m := NewManager(bc, nil, nil, nil)
 	m.workspaceID = "ws-1"
 
 	proc, stdinR, stdoutW := newPipeSubprocess()
@@ -305,7 +305,7 @@ func newWorkerTestManager(t *testing.T, repoDir string, cfg AgentPoolConfig, stu
 	startSubprocessFn = stub
 	t.Cleanup(func() { startSubprocessFn = origStart })
 
-	m := NewManager(nil, nil, nil)
+	m := NewManager(nil, nil, nil, nil)
 	m.workspacePath = repoDir
 	m.config = cfg
 	return m

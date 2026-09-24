@@ -39,21 +39,6 @@ Le backend SHALL exposer `GET /api/workspaces/{id}/changes/{name}/conversations/
 - **WHEN** le timestamp ne correspond à aucun fichier existant
 - **THEN** le backend retourne 404 Not Found
 
-### Requirement: Affichage du log ff dans le DetailPanel
-Le DetailPanel SHALL exposer un onglet **"Log"** listant les runs ff disponibles pour le changement ouvert. Le run le plus récent SHALL être sélectionné par défaut. Les messages SHALL être affichés en lecture seule dans le même format de rendu que les messages explore (réutilisation du renderer existant). Aucune zone de saisie n'est présente dans cet onglet.
-
-#### Scenario: Onglet Log avec runs disponibles
-- **WHEN** l'utilisateur ouvre le DetailPanel d'un changement ayant au moins un run ff
-- **THEN** l'onglet "Log" est visible et affiche le run le plus récent par défaut
-
-#### Scenario: Sélection d'un run antérieur
-- **WHEN** l'utilisateur sélectionne un run plus ancien dans la liste
-- **THEN** les messages de ce run s'affichent à la place du run courant
-
-#### Scenario: Onglet Log sans runs
-- **WHEN** le changement n'a encore aucun run ff
-- **THEN** l'onglet "Log" est visible mais affiche un message vide ("Aucun run ff pour l'instant")
-
 ### Requirement: Résolution de chemin pour les sessions d'exploration pré-promotion
 
 Le `ConversationStore` SHALL exposer une résolution de chemin dédiée aux sessions d'exploration anonymes, indexée par `ghostSessionId` plutôt que par `changeName`, sous `conversations/<workspaceId>/_explore/<ghostSessionId>/<kind>/<ts>.jsonl`.

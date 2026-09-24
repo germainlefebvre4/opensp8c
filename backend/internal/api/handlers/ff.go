@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/openspec"
@@ -23,17 +24,19 @@ type FFHandler struct {
 	ws        *WorkspaceHandler
 	mgr       *session.Manager
 	convStore *conversation.Store
+	actStore  *activity.Store
 	watcher   *watcher.WatcherService
 
 	mu      sync.Mutex
 	running map[string]struct{} // key: wsID+"/"+changeName
 }
 
-func NewFFHandler(ws *WorkspaceHandler, mgr *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService) *FFHandler {
+func NewFFHandler(ws *WorkspaceHandler, mgr *session.Manager, convStore *conversation.Store, actStore *activity.Store, watcherSvc *watcher.WatcherService) *FFHandler {
 	return &FFHandler{
 		ws:        ws,
 		mgr:       mgr,
 		convStore: convStore,
+		actStore:  actStore,
 		watcher:   watcherSvc,
 		running:   make(map[string]struct{}),
 	}
@@ -113,7 +116,16 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.markRunning(wsID, changeName)
-	h.watcher.Broadcast(wsID, watcher.Event{Type: "ff_started", Name: changeName})
+	if h.watcher != nil {
+		h.watcher.Broadcast(wsID, watcher.Event{Type: "ff_started", Name: changeName})
+	}
+	if h.actStore != nil {
+		_ = h.actStore.Append(wsID, changeName, activity.Entry{
+			Type:     "kanban.ff_triggered",
+			Category: "kanban",
+			Summary:  "Fast-forward triggered",
+		})
+	}
 
 	initMsg := map[string]interface{}{
 		"type": "user",
@@ -185,6 +197,14 @@ func (h *FFHandler) ResetTasks(w http.ResponseWriter, r *http.Request) {
 	if err := openspec.ClearKanbanState(changeDir); err != nil && !os.IsNotExist(err) {
 		http.Error(w, "failed to reset kanban state: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if h.actStore != nil {
+		_ = h.actStore.Append(wsID, changeName, activity.Entry{
+			Type:     "kanban.tasks_reset",
+			Category: "kanban",
+			Summary:  "Tasks reset",
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -1,3 +1,11 @@
+# workspace-events Specification
+
+## Purpose
+
+Diffusion d'événements temps-réel SSE pour les changements de fichiers, l'état du pool et l'activité dans le workspace.
+
+## Requirements
+
 ### Requirement: Stream SSE d'événements de changement par workspace
 Le backend SHALL exposer un endpoint SSE `/api/workspaces/{id}/events` qui pousse des événements temps-réel quand les fichiers OpenSpec du workspace changent sur le filesystem. Le stream SHALL rester ouvert jusqu'à déconnexion du client. Le backend SHALL surveiller récursivement `openspec/changes/` via fsnotify et envoyer un événement typé pour chaque changement détecté, avec debounce de 150ms par change pour absorber les rafales d'écritures.
 
@@ -58,3 +66,14 @@ Le backend SHALL émettre, sur le même stream SSE `/api/workspaces/{id}/events`
 #### Scenario: Réception côté client
 - **WHEN** le frontend reçoit un événement `pool_updated` sur le stream SSE
 - **THEN** il invalide et recharge l'état du pool (`GET /workspaces/{id}/pool/status`) ainsi que la liste des changes, pour refléter à jour le bouton d'en-tête, le panneau d'état, et les badges `worker_active` sur les cartes
+
+### Requirement: Événement SSE d'ajout d'une entrée d'activité
+Le backend SHALL émettre, sur le même stream SSE `/api/workspaces/{id}/events`, un événement `activity_appended` chaque fois qu'une nouvelle entrée est ajoutée à l'`ActivityStore` d'un change (toggle de tâche, déclenchement de run, reset de tâches, transition de statut worker, commit git détecté). Cet événement inclut le nom du change concerné et ne SHALL PAS être soumis au debounce de 150ms utilisé pour les événements liés aux fichiers.
+
+#### Scenario: Ajout d'une entrée d'activité
+- **WHEN** une nouvelle entrée est ajoutée à l'`ActivityStore` du change `<changeName>`
+- **THEN** le serveur envoie `event: activity_appended\ndata: {"name":"<changeName>"}\n\n` à tous les clients abonnés au stream de ce workspace
+
+#### Scenario: Réception côté client
+- **WHEN** le frontend reçoit un événement `activity_appended` pour le change actuellement affiché dans le DetailPanel
+- **THEN** il invalide et recharge le flux fusionné (`GET /changes/{name}/activity`) pour refléter la nouvelle entrée dans l'onglet Conversation

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/workspace"
@@ -49,7 +50,7 @@ func TestRunRetentionSweep_ChangeArchivedExpiredVsFresh(t *testing.T) {
 	}
 	prefs := preferences.NewService(filepath.Join(t.TempDir(), "preferences.json"))
 
-	RunRetentionSweep(cfg, prefs, store)
+	RunRetentionSweep(cfg, prefs, store, nil)
 
 	if _, err := os.Stat(filepath.Join(convDir, wsID, "old-change")); !os.IsNotExist(err) {
 		t.Errorf("expected old-change logs purged (archived %d days ago), got err=%v", 20, err)
@@ -91,7 +92,7 @@ func TestRunRetentionSweep_ExplorationExpiredVsFresh(t *testing.T) {
 		ExploreLogRetentionDays: 15,
 	}
 
-	RunRetentionSweep(cfg, prefs, store)
+	RunRetentionSweep(cfg, prefs, store, nil)
 
 	if _, err := os.Stat(filepath.Join(convDir, wsID, "_explore", "ghost-old")); !os.IsNotExist(err) {
 		t.Errorf("expected ghost-old logs purged, got err=%v", err)
@@ -127,9 +128,39 @@ func TestRunRetentionSweep_PromotedExplorationExcludedFromExploreRule(t *testing
 		ExploreLogRetentionDays: 15,
 	}
 
-	RunRetentionSweep(cfg, prefs, store)
+	RunRetentionSweep(cfg, prefs, store, nil)
 
 	if _, err := os.Stat(filepath.Join(convDir, wsID, "promoted-change")); err != nil {
 		t.Errorf("expected promoted change logs untouched by the explore rule, got err=%v", err)
+	}
+}
+
+func TestRunRetentionSweep_ActivityPurgedWhenChangeArchivedExpired(t *testing.T) {
+	old := time.Now().UTC().AddDate(0, 0, -20).Format("2006-01-02")
+	recent := time.Now().UTC().AddDate(0, 0, -2).Format("2006-01-02")
+
+	wsPath, wsID := setupRetentionWorkspace(t, []string{
+		old + "-old-change",
+		recent + "-recent-change",
+	})
+
+	actDir := t.TempDir()
+	actStore := activity.NewStore(actDir, nil)
+	_ = actStore.Append(wsID, "old-change", activity.Entry{Type: "kanban.task_toggled", Ts: "2026-01-01T00:00:00Z"})
+	_ = actStore.Append(wsID, "recent-change", activity.Entry{Type: "kanban.task_toggled", Ts: "2026-01-01T00:00:00Z"})
+
+	cfg := &config.Config{
+		Workspaces:             []config.WorkspaceConfig{{Name: "ws", Path: wsPath}},
+		ChangeLogRetentionDays: 15,
+	}
+	prefs := preferences.NewService(filepath.Join(t.TempDir(), "preferences.json"))
+
+	RunRetentionSweep(cfg, prefs, nil, actStore)
+
+	if _, err := os.Stat(filepath.Join(actDir, wsID, "old-change")); !os.IsNotExist(err) {
+		t.Errorf("expected old-change activity directory purged (archived 20 days ago), got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(actDir, wsID, "recent-change")); err != nil {
+		t.Errorf("expected recent-change activity kept, got err=%v", err)
 	}
 }

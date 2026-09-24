@@ -66,6 +66,11 @@ export function useWorkspaceLiveState(workspaceId: string | null): {
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     })
 
+    es.addEventListener('activity_appended', (e: MessageEvent) => {
+      const data = JSON.parse(e.data) as { name: string }
+      qc.invalidateQueries({ queryKey: ['activity', workspaceId, data.name] })
+    })
+
     return () => es.close()
   }, [workspaceId, qc])
 

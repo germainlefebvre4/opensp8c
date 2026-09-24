@@ -3,7 +3,7 @@
     "tasks": "Tâches",
     "proposal": "Proposal",
     "design": "Design",
-    "log": "Log",
+    "conversation": "Conversation",
     "tags": "Tags",
     "actions": "Actions"
   },
@@ -22,7 +22,8 @@
   "archiving": "Archivage...",
   "emptyLog": "Log vide.",
   "emptyTasks": "Aucune tâche définie.",
-  "emptyRuns": "Aucun run ff pour l'instant.",
+  "emptyRuns": "Aucune activité enregistrée pour l'instant.",
+  "emptyActivity": "Aucune activité enregistrée pour l'instant.",
   "proposalUnavailable": "proposal.md non disponible.",
   "designUnavailable": "design.md non disponible.",
   "tagsNotGenerated": "Tags non encore générés.",
@@ -45,5 +46,24 @@
   "delete": "Supprimer",
   "deleting": "Suppression...",
   "deleteDisabledWorkerActive": "Un worker de l'Agent Pool est actuellement actif sur ce change.",
-  "deleteError": "Erreur lors de la suppression du change : {{error}}"
+  "deleteError": "Erreur lors de la suppression du change : {{error}}",
+  "activity": {
+    "timeline": "Frise d'activité",
+    "filterLegend": "Filtrer par type",
+    "categories": {
+      "kanban": "Kanban",
+      "pool": "Pool",
+      "git": "Git",
+      "agent": "Agent",
+      "tool:bash": "Bash",
+      "tool:read": "Lecture",
+      "tool:edit": "Édition",
+      "tool:write": "Écriture",
+      "tool:other": "Autre outil",
+      "fallback": "Autre"
+    },
+    "duration": "{{ms}}ms",
+    "seconds": "{{s}}s",
+    "durationLabel": "Durée"
+  }
 }

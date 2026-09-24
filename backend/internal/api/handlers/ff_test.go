@@ -8,11 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/config"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
+	"github.com/glefebvre/opensp8c/internal/session"
+	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/go-chi/chi/v5"
 )
 
 func resetTasksRequest(workspaceID, changeName string) (*httptest.ResponseRecorder, *http.Request) {
@@ -24,7 +30,16 @@ func resetTasksRequest(workspaceID, changeName string) (*httptest.ResponseRecord
 	return httptest.NewRecorder(), req
 }
 
-func TestFFHandler_ResetTasks_ClearsKanbanState(t *testing.T) {
+func triggerFFRequest(workspaceID, changeName string) (*httptest.ResponseRecorder, *http.Request) {
+	req := httptest.NewRequest("POST", "/workspaces/"+workspaceID+"/changes/"+changeName+"/ff", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", workspaceID)
+	rctx.URLParams.Add("name", changeName)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	return httptest.NewRecorder(), req
+}
+
+func TestFFHandler_ResetTasks_ClearsKanbanStateAndAppendsActivity(t *testing.T) {
 	tmpDir := t.TempDir()
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeDir := filepath.Join(changesDir, "my-change")
@@ -45,7 +60,8 @@ func TestFFHandler_ResetTasks_ClearsKanbanState(t *testing.T) {
 		t.Fatalf("failed to resolve abs path: %v", err)
 	}
 	workspaceID := workspace.StableID(absPath)
-	h := NewFFHandler(ws, nil, nil, nil)
+	actStore := activity.NewStore(filepath.Join(tmpDir, "activity"), nil)
+	h := NewFFHandler(ws, nil, nil, actStore, nil)
 
 	rec, req := resetTasksRequest(workspaceID, "my-change")
 	h.ResetTasks(rec, req)
@@ -72,5 +88,79 @@ func TestFFHandler_ResetTasks_ClearsKanbanState(t *testing.T) {
 	content := string(data)
 	if strings.Contains(content, "launched:") || strings.Contains(content, "order:") {
 		t.Errorf("expected launched/order fields to be removed from .openspec.yaml, got: %s", content)
+	}
+
+	entries, err := actStore.Read(workspaceID, "my-change")
+	if err != nil {
+		t.Fatalf("actStore.Read: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 activity entry, got %d", len(entries))
+	}
+	if entries[0].Type != "kanban.tasks_reset" {
+		t.Errorf("expected type kanban.tasks_reset, got %s", entries[0].Type)
+	}
+	if entries[0].Category != "kanban" {
+		t.Errorf("expected category kanban, got %s", entries[0].Category)
+	}
+}
+
+func TestFFHandler_TriggerFF_AppendsActivity(t *testing.T) {
+	tmpDir := t.TempDir()
+	binDir := filepath.Join(tmpDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	claudeScript := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(claudeScript, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("failed to write mock claude script: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	changeDir := filepath.Join(tmpDir, "openspec", "changes", "ff-change")
+	if err := os.MkdirAll(changeDir, 0755); err != nil {
+		t.Fatalf("failed to create change dir: %v", err)
+	}
+
+	absPath, err := filepath.Abs(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to resolve abs path: %v", err)
+	}
+	workspaceID := workspace.StableID(absPath)
+	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}}
+	ws := NewWorkspaceHandler(cfg, "", nil)
+
+	prefDir := filepath.Join(tmpDir, "prefs.json")
+	prefSvc := preferences.NewService(prefDir)
+
+	convStore := conversation.NewStore(filepath.Join(tmpDir, "conversations"))
+	actStore := activity.NewStore(filepath.Join(tmpDir, "activity"), nil)
+	mgr := session.NewManager(prefSvc, convStore)
+	watcherSvc := watcher.NewWatcherService()
+
+	h := NewFFHandler(ws, mgr, convStore, actStore, watcherSvc)
+
+	rec, req := triggerFFRequest(workspaceID, "ff-change")
+	h.TriggerFF(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Wait briefly for goroutine to finish
+	time.Sleep(50 * time.Millisecond)
+
+	entries, err := actStore.Read(workspaceID, "ff-change")
+	if err != nil {
+		t.Fatalf("failed to read activity: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 activity entry, got %d", len(entries))
+	}
+	if entries[0].Type != "kanban.ff_triggered" {
+		t.Errorf("expected type kanban.ff_triggered, got %s", entries[0].Type)
+	}
+	if entries[0].Category != "kanban" {
+		t.Errorf("expected category kanban, got %s", entries[0].Category)
 	}
 }

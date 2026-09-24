@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/api/handlers"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/conversation"
@@ -45,6 +47,13 @@ func draftsPath(cfgPath string) string {
 	return filepath.Join(filepath.Dir(cfgPath), "drafts")
 }
 
+func activityPath(cfgPath string) string {
+	if p := os.Getenv("ACTIVITY_PATH"); p != "" {
+		return p
+	}
+	return filepath.Join(filepath.Dir(cfgPath), "activity")
+}
+
 func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r := chi.NewRouter()
 
@@ -62,16 +71,21 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		_ = watcherSvc.StartWatching(workspace.StableID(absPath), absPath)
 	}
 
-	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, time.Hour)
+	activityStore := activity.NewStore(activityPath(cfgPath), watcherSvc)
+	activity.StartGitWatcherLoop(context.Background(), activityStore, cfg, "", 2*time.Second)
 
-	poolRegistry := pool.NewRegistry(watcherSvc, mgr, prefsSvc)
+	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, activityStore, time.Hour)
+
+	poolRegistry := pool.NewRegistry(watcherSvc, mgr, prefsSvc, activityStore)
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath, poolRegistry)
+	activityHandler := handlers.NewActivityHandler(wsHandler, convStore, activityStore)
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolRegistry, mgr, convStore, watcherSvc, draftsPath(cfgPath))
+
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler, prefsSvc)
 	tagsHandler := handlers.NewTagsHandler(wsHandler, prefsSvc)
-	taskHandler := handlers.NewTaskHandler(wsHandler)
-	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
+	taskHandler := handlers.NewTaskHandler(wsHandler, activityStore)
+	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, activityStore, watcherSvc)
 	docsHandler := handlers.NewDocsHandler(wsHandler, mgr, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
@@ -119,6 +133,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Post("/workspaces/{id}/changes/{name}/ff", ffHandler.TriggerFF)
 		r.Get("/workspaces/{id}/changes/{name}/conversations/{kind}", ffHandler.ListConversationRuns)
 		r.Get("/workspaces/{id}/changes/{name}/conversations/{kind}/{ts}", ffHandler.GetConversationRun)
+		r.Get("/workspaces/{id}/changes/{name}/activity", activityHandler.GetActivity)
 
 		r.Get("/workspaces/{id}/changes/{name}/explore", exploreHandler.HandleWS)
 		r.Delete("/workspaces/{id}/changes/{name}/explore", exploreHandler.StopSession)

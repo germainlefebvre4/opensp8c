@@ -38,7 +38,7 @@ func TestActiveWorkerChanges_ScopedPerWorkspace(t *testing.T) {
 		{Name: "workspace-b", Path: tmpB},
 	}}
 	ws := NewWorkspaceHandler(cfg, "", nil)
-	reg := pool.NewRegistry(nil, nil, nil)
+	reg := pool.NewRegistry(nil, nil, nil, nil)
 	h := NewKanbanHandler(ws, nil, reg, nil, nil, nil, "")
 
 	idA := workspace.StableID(mustAbs(t, tmpA))

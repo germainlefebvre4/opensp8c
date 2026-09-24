@@ -47,7 +47,7 @@ func twoWorkspaceHandler(t *testing.T, pathA, pathB string) (h *PoolHandler, reg
 		{Name: "workspace-b", Path: pathB},
 	}}
 	ws := NewWorkspaceHandler(cfg, "", nil)
-	reg = pool.NewRegistry(nil, nil, nil)
+	reg = pool.NewRegistry(nil, nil, nil, nil)
 	h = NewPoolHandler(ws, reg)
 
 	idA = workspace.StableID(mustAbs(t, pathA))
