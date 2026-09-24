@@ -27,18 +27,19 @@ Le Kanban SHALL autoriser uniquement les transitions suivantes par drag-and-drop
 - `todo → ready` : rétrogradation (démarque le change "lancé" ; refusée si un worker est actif sur ce change)
 - `ready → to-explore`, `todo → to-explore` ou `in-progress → to-explore` : reset tasks (confirmation requise)
 
+Le drop vers une colonne cible autorisée SHALL être accepté dès que le pointeur se trouve à l'intérieur des bornes de la colonne cible, que cette colonne soit vide ou qu'elle contienne déjà d'autres cartes, et que le curseur soit relâché sur une carte existante ou sur l'espace vide de la colonne.
 Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non accepté). Les cartes des colonnes **Done** et **Archived** SHALL être non-draggables.
 
 #### Scenario: Drag valide to-explore (change normal) vers todo
-- **WHEN** l'utilisateur dépose un change normal (non-ghost) de la colonne "to-explore" sur "ready"
+- **WHEN** l'utilisateur dépose un change normal (non-ghost) de la colonne "to-explore" sur "ready", que "ready" soit vide ou contienne des cartes
 - **THEN** le drop est accepté et FF est déclenché directement sans dialog
 
 #### Scenario: Drag valide to-explore (ghost card) vers todo
-- **WHEN** l'utilisateur dépose un ghost card nommé de la colonne "to-explore" sur "ready"
+- **WHEN** l'utilisateur dépose un ghost card nommé de la colonne "to-explore" sur "ready", que "ready" soit vide ou contienne des cartes
 - **THEN** le drop est accepté et la dialog de confirmation s'affiche avant toute action
 
 #### Scenario: Drag valide ready vers todo (promotion)
-- **WHEN** l'utilisateur dépose une carte de la colonne "ready" sur "todo"
+- **WHEN** l'utilisateur dépose une carte de la colonne "ready" sur "todo", que "todo" soit vide ou contienne des cartes
 - **THEN** le drop est accepté, aucune confirmation n'est demandée, et le change est marqué "lancé"
 
 #### Scenario: Drag valide todo vers ready (rétrogradation)
@@ -50,11 +51,11 @@ Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non
 - **THEN** le drop est visuellement accepté mais l'appel API échoue (409), la carte retourne à "todo", et un message d'erreur est affiché
 
 #### Scenario: Drag valide todo/in-progress vers to-explore
-- **WHEN** l'utilisateur dépose une carte de "todo" ou "in-progress" sur "to-explore"
+- **WHEN** l'utilisateur dépose une carte de "todo" ou "in-progress" sur "to-explore", sur une carte ou l'espace vide
 - **THEN** le drop est accepté et une confirmation de reset tasks est demandée
 
 #### Scenario: Drag valide ready vers to-explore
-- **WHEN** l'utilisateur dépose une carte de la colonne "ready" sur "to-explore"
+- **WHEN** l'utilisateur dépose une carte de la colonne "ready" sur "to-explore", sur une carte ou l'espace vide
 - **THEN** le drop est accepté et une confirmation de reset tasks est demandée
 
 #### Scenario: Drag invalide (done ou archived comme source)
@@ -66,15 +67,16 @@ Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non
 - **THEN** la colonne cible refuse visuellement le drop et la carte retourne à sa position d'origine
 
 ### Requirement: Indicateur visuel de drag en cours
-Pendant un drag actif, la colonne cible autorisée SHALL afficher un indicateur visuel de zone de dépôt (highlight de bordure ou fond). Les colonnes non autorisées pour cette source ne SHALL pas afficher d'indicateur de dépôt.
+Pendant un drag actif, la colonne cible autorisée SHALL afficher un indicateur visuel continu de zone de dépôt (highlight de bordure ou fond) tant que le curseur survole la colonne, qu'il survole l'espace vide de la colonne ou une carte contenue dans celle-ci. Les colonnes non autorisées pour cette source ne SHALL pas afficher d'indicateur de dépôt.
 
 #### Scenario: Survol d'une colonne acceptante
-- **WHEN** l'utilisateur drag une carte au-dessus d'une colonne qui accepte ce drop
-- **THEN** la colonne affiche un highlight visuel (bordure ou fond légèrement coloré)
+- **WHEN** l'utilisateur drag une carte au-dessus d'une colonne qui accepte ce drop (sur son espace vide ou sur une de ses cartes)
+- **THEN** la colonne affiche de manière continue un highlight visuel (bordure ou fond légèrement coloré) sans clignotement
 
 #### Scenario: Survol d'une colonne rejetante
 - **WHEN** l'utilisateur drag une carte au-dessus d'une colonne qui n'accepte pas ce drop
 - **THEN** aucun highlight n'est affiché sur cette colonne
+
 
 ### Requirement: Blocage du drag pendant ff en cours
 Si un subprocess ff est actif pour un changement (spinner visible sur la carte), la carte SHALL être non-draggable jusqu'à réception de l'événement `ff_done` ou `ff_failed`.

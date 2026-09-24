@@ -52,7 +52,14 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
   const isDraggable = DRAGGABLE_STATUSES.has(change.kanban_status) && ffStatus !== 'running' && !isGhostNaming
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: change.name,
-    disabled: !isDraggable,
+    data: {
+      status: change.kanban_status,
+      kanban_status: change.kanban_status,
+    },
+    disabled: {
+      draggable: !isDraggable,
+      droppable: change.kanban_status !== 'ready',
+    },
   })
   const sortableStyle = { transform: CSS.Transform.toString(transform), transition }
   const isDimmed = isDragging && !isOverlay

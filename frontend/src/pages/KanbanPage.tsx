@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { ClientRect, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
+import { createKanbanCollisionDetection } from '../lib/kanbanCollision'
 import { KanbanColumn } from '../components/KanbanColumn'
 import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
@@ -27,7 +28,7 @@ import type { Change } from '../hooks/useChanges'
 const VALID_DROPS: Record<string, string[]> = {
   'to-explore': ['ready'],
   'ready': ['to-explore', 'todo'],
-  'todo': ['ready', 'in-progress'],
+  'todo': ['ready', 'in-progress', 'to-explore'],
   'in-progress': ['to-explore', 'to-review', 'done'],
   'to-review': ['in-progress', 'done'],
 }
@@ -72,6 +73,15 @@ export function KanbanPage({ workspaceId }: Props) {
   )
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const collisionDetection = useMemo(
+    () =>
+      createKanbanCollisionDetection({
+        getSourceStatus: id => changes.find(c => c.name === id)?.kanban_status,
+        getReadyCardIds: () =>
+          changes.filter(c => c.kanban_status === 'ready').map(c => c.name),
+      }),
+    [changes]
+  )
   const leadingColumns = [
     { title: t('columns.toExplore'), status: 'to-explore' },
     { title: t('columns.ready'), status: 'ready' },
@@ -292,7 +302,7 @@ export function KanbanPage({ workspaceId }: Props) {
   )
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <DragOverlay modifiers={[clampModifier]}>
         {activeChange && (
           <ChangeCard

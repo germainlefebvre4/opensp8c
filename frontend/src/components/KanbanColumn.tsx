@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { useDroppable } from '@dnd-kit/core'
+import { useDroppable, useDndContext } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
@@ -40,6 +40,9 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
   const [collapsed, setCollapsed] = useState(false)
 
   const { setNodeRef, isOver } = useDroppable({ id: status })
+  const { over } = useDndContext()
+  const overId = over ? String(over.id) : null
+  const isOverColumn = isOver || (overId ? changes.some(c => c.name === overId) : false)
   const isValidForDrag = dragSourceStatus ? validDropSources.includes(dragSourceStatus) : false
 
   const visible = maxVisible !== undefined ? changes.slice(0, visibleCount) : changes
@@ -49,9 +52,9 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
     <div
       ref={setNodeRef}
       className={`${className ?? 'flex-1'} min-w-[220px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
-        isOver && isValidForDrag
+        isOverColumn && isValidForDrag
           ? 'bg-violet-50 border-violet-300'
-          : isOver && dragSourceStatus && !isValidForDrag
+          : isOverColumn && dragSourceStatus && !isValidForDrag
           ? 'bg-red-50 border-red-200'
           : 'bg-slate-50 border-slate-100'
       }`}
