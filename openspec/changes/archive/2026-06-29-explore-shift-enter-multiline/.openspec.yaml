@@ -1,9 +1,10 @@
 schema: spec-driven
 created: "2026-06-29"
 tags:
-    type: ""
+    type: []
     complexity: 2
     components:
         - explore-session
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

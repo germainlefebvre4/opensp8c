@@ -18,7 +18,7 @@ Le Kanban Board SHALL afficher une barre de recherche textuelle en haut de la zo
 - **THEN** un bouton `×` est visible dans ou à côté du champ
 
 ### Requirement: Filtrage instantané des changes par nom et par tags
-La saisie dans la barre de recherche SHALL filtrer instantanément les changes affichés dans toutes les colonnes Kanban (actives et Archived) sur `change.name` et sur les tags du change (`type` et `components`), de façon insensible à la casse. Seuls les changes dont le nom ou un tag contient la chaîne saisie sont affichés.
+La saisie dans la barre de recherche SHALL filtrer instantanément les changes affichés dans toutes les colonnes Kanban (actives et Archived) sur `change.name` et sur les tags du change (`type` et `components`), de façon insensible à la casse. Un change est retenu si son nom contient la chaîne saisie, ou si au moins une valeur de son tableau `tags.type`, ou au moins une valeur de son tableau `tags.components`, contient la chaîne saisie.
 
 #### Scenario: Filtre par sous-chaîne sur le nom
 - **WHEN** l'utilisateur saisit "auth" dans la barre de recherche
@@ -30,7 +30,11 @@ La saisie dans la barre de recherche SHALL filtrer instantanément les changes a
 
 #### Scenario: Filtre par type applicatif
 - **WHEN** l'utilisateur saisit "frontend" dans la barre de recherche
-- **THEN** les cartes dont le tag `type` est "frontend" sont affichées, en plus des cartes dont le nom contient "frontend"
+- **THEN** les cartes dont le tableau `tags.type` contient une valeur correspondant à "frontend" sont affichées, en plus des cartes dont le nom contient "frontend"
+
+#### Scenario: Filtre par type applicatif sur un change à plusieurs types
+- **WHEN** l'utilisateur saisit "backend" et qu'un change a `tags.type: [frontend, backend]`
+- **THEN** la carte de ce change est affichée, car "backend" correspond à l'une des valeurs de son tableau `type`
 
 #### Scenario: Filtre par composant
 - **WHEN** l'utilisateur saisit "explore-panel" dans la barre de recherche

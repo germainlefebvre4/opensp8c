@@ -13,7 +13,7 @@ import (
 )
 
 type Tags struct {
-	Type                string   `json:"type" yaml:"type"`
+	Type                []string `json:"type" yaml:"type"`
 	Complexity          int      `json:"complexity" yaml:"complexity"`
 	Components          []string `json:"components" yaml:"components"`
 	AgentSpecialization []string `json:"agent_specialization" yaml:"agent_specialization"`

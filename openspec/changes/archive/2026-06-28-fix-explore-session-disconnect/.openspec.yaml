@@ -1,10 +1,12 @@
 schema: spec-driven
 created: "2026-06-28"
 tags:
-    type: backend
+    type:
+        - backend
     complexity: 2
     components:
         - explore-session
         - developer-tooling
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

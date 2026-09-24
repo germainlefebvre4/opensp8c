@@ -1,10 +1,12 @@
 schema: spec-driven
 created: "2026-06-28"
 tags:
-    type: frontend
+    type:
+        - frontend
     complexity: 2
     components:
         - api-router
         - workspace-management
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

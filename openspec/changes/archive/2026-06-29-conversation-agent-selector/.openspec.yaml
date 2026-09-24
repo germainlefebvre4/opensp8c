@@ -1,12 +1,13 @@
 schema: spec-driven
 created: "2026-06-29"
 tags:
-    type: ""
+    type: []
     complexity: 4
     components:
         - api-router
         - explore-session
         - workspace-management
         - ui-layout-modes
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

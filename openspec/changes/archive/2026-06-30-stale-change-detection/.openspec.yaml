@@ -1,11 +1,12 @@
 schema: spec-driven
 created: "2026-06-29"
 tags:
-    type: ""
+    type: []
     complexity: 3
     components:
         - kanban-board
         - api-router
         - workspace-management
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

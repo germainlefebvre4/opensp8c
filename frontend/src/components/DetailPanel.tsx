@@ -381,12 +381,16 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        {data.tags.type && (
+                        {data.tags.type && data.tags.type.length > 0 && (
                           <div className="flex items-center gap-2">
                             <span className="text-[11px] text-slate-400 w-20 shrink-0">{t('type')}</span>
-                            <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">
-                              {data.tags.type}
-                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {data.tags.type.map(typeValue => (
+                                <span key={typeValue} className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                                  {typeValue}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         )}
 

@@ -1,7 +1,9 @@
 schema: spec-driven
 created: "2026-06-25"
 tags:
-    type: fullstack
+    type:
+        - frontend
+        - backend
     complexity: 5
     components:
         - kanban-board
@@ -11,5 +13,6 @@ tags:
         - workspace-management
         - explore-session
         - specs-view
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

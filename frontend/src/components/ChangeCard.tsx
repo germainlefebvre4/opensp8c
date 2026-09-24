@@ -195,11 +195,14 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
               {tKanban('card.projetBadge')}
             </span>
           )}
-          {change.tags.type && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium border border-blue-100">
-              {change.tags.type === 'frontend' ? '🖥' : change.tags.type === 'backend' ? '⚙' : change.tags.type === 'batch' ? '⚡' : '🔀'} {change.tags.type}
+          {change.tags.type?.map(t => (
+            <span
+              key={t}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium border border-blue-100"
+            >
+              {t === 'frontend' ? '🖥' : t === 'backend' ? '⚙' : t === 'batch' ? '⚡' : '🔀'} {t}
             </span>
-          )}
+          ))}
           {change.tags.complexity > 0 && (
             <span className="text-[10px] text-slate-400 font-mono tracking-tighter">
               {'●'.repeat(change.tags.complexity)}{'○'.repeat(5 - change.tags.complexity)}

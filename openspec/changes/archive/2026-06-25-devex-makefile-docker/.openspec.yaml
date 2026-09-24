@@ -1,10 +1,13 @@
 schema: spec-driven
 created: "2026-06-25"
 tags:
-    type: fullstack
+    type:
+        - frontend
+        - backend
     complexity: 3
     components:
         - api-router
         - developer-tooling
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

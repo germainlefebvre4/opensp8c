@@ -105,7 +105,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const matchesSearch = (c: Change, q: string): boolean => {
     const lower = q.toLowerCase()
     if (c.name.toLowerCase().includes(lower)) return true
-    if (c.tags?.type?.toLowerCase().includes(lower)) return true
+    if (c.tags?.type?.some(t => t.toLowerCase().includes(lower))) return true
     if (c.tags?.components?.some(comp => comp.toLowerCase().includes(lower))) return true
     return false
   }

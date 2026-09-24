@@ -1,10 +1,12 @@
 schema: spec-driven
 created: "2026-09-23"
 tags:
-    type: frontend
+    type:
+        - frontend
     complexity: 3
     components:
         - explore-session
         - ui-layout-modes
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-09-23"

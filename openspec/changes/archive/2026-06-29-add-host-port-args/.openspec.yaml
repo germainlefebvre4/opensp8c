@@ -1,9 +1,11 @@
 schema: spec-driven
 created: "2026-06-29"
 tags:
-    type: backend
+    type:
+        - backend
     complexity: 1
     components:
         - api-router
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

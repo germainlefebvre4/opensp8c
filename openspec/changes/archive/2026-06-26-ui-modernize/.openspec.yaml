@@ -1,12 +1,14 @@
 schema: spec-driven
 created: "2026-06-26"
 tags:
-    type: frontend
+    type:
+        - frontend
     complexity: 4
     components:
         - kanban-board
         - specs-view
         - workspace-management
         - ui-layout-modes
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"

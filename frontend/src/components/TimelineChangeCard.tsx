@@ -22,7 +22,6 @@ const TYPE_ICONS: Record<string, string> = {
   frontend: '🖥',
   backend: '⚙',
   batch: '⚡',
-  fullstack: '🔀',
 }
 
 export function TimelineChangeCard({ change: c, specChips, extraComps, onFilterClick }: Props) {
@@ -41,14 +40,15 @@ export function TimelineChangeCard({ change: c, specChips, extraComps, onFilterC
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-800">{c.name}</span>
-          {c.tags?.type && (
+          {c.tags?.type.map(t => (
             <button
-              onClick={() => onFilterClick(c.tags!.type)}
+              key={t}
+              onClick={() => onFilterClick(t)}
               className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 cursor-pointer transition-colors"
             >
-              {TYPE_ICONS[c.tags.type] ?? ''} {c.tags.type}
+              {TYPE_ICONS[t] ?? ''} {t}
             </button>
-          )}
+          ))}
           {(c.tags?.complexity ?? 0) > 0 && (
             <span className="text-[10px] font-mono tracking-tighter text-slate-400">
               {'●'.repeat(c.tags!.complexity)}{'○'.repeat(5 - c.tags!.complexity)}

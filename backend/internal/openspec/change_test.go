@@ -3,6 +3,7 @@ package openspec
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -28,7 +29,8 @@ func TestListChangesParsesTagsWithoutAgentSpecialization(t *testing.T) {
 schema: spec-driven
 created: "2024-01-01"
 tags:
-  type: backend
+  type:
+    - backend
   complexity: 2
   components:
     - kanban
@@ -48,7 +50,7 @@ tags:
 	if tags == nil {
 		t.Fatal("expected tags to be parsed")
 	}
-	if tags.Type != "backend" || tags.Complexity != 2 {
+	if !reflect.DeepEqual(tags.Type, []string{"backend"}) || tags.Complexity != 2 {
 		t.Errorf("unexpected tags: %+v", tags)
 	}
 	if tags.AgentSpecialization == nil || len(tags.AgentSpecialization) != 0 {
@@ -64,7 +66,8 @@ func TestListChangesParsesTagsWithAgentSpecialization(t *testing.T) {
 schema: spec-driven
 created: "2024-01-01"
 tags:
-  type: backend
+  type:
+    - backend
   complexity: 2
   components:
     - kanban

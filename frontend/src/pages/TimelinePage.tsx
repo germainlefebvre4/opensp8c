@@ -63,7 +63,7 @@ export function TimelinePage({ workspaceId }: Props) {
     return allChanges.filter(c =>
       activeFilters.every(f => {
         if (changeToSpecs[c.name]?.includes(f)) return true
-        if (c.tags?.type === f) return true
+        if (c.tags?.type?.includes(f)) return true
         if (c.tags?.components?.includes(f)) return true
         return false
       })

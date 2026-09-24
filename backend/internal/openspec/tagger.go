@@ -14,26 +14,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DeriveType infers the application layer from file paths in tasks.md content.
-func DeriveType(tasksMd string) string {
-	hasFrontend := strings.Contains(tasksMd, "frontend/")
-	hasBackend := strings.Contains(tasksMd, "backend/")
-	hasBatch := strings.Contains(tasksMd, "scripts/") ||
-		strings.Contains(tasksMd, "batch/") ||
-		strings.Contains(tasksMd, "cmd/")
-
-	switch {
-	case hasFrontend && hasBackend:
-		return "fullstack"
-	case hasFrontend:
-		return "frontend"
-	case hasBackend:
-		return "backend"
-	case hasBatch:
-		return "batch"
-	default:
-		return ""
+// DeriveType infers the application layers from file paths in tasks.md content.
+func DeriveType(tasksMd string) []string {
+	types := []string{}
+	if strings.Contains(tasksMd, "frontend/") {
+		types = append(types, "frontend")
 	}
+	if strings.Contains(tasksMd, "backend/") {
+		types = append(types, "backend")
+	}
+	if strings.Contains(tasksMd, "scripts/") ||
+		strings.Contains(tasksMd, "batch/") ||
+		strings.Contains(tasksMd, "cmd/") {
+		types = append(types, "batch")
+	}
+	return types
 }
 
 // ExtractVocabulary collects all component slugs used across the workspace.

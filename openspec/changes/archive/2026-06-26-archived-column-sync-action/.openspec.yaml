@@ -1,11 +1,14 @@
 schema: spec-driven
 created: "2026-06-26"
 tags:
-    type: fullstack
+    type:
+        - frontend
+        - backend
     complexity: 3
     components:
         - kanban-board
         - change-status
         - api-router
+    agent_specialization: []
     _auto: true
     _tagged_at: "2026-06-30"
