@@ -32,6 +32,7 @@
   "type": "Type",
   "complexity": "Complexité",
   "components": "Composants",
+  "agentSpecialization": "Spécialisation",
   "ghostBanner": {
     "label": "Brouillon d'exploration actif",
     "freeze": "Figer le change"

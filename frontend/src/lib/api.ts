@@ -43,6 +43,12 @@ export interface Preferences {
   env: Record<string, string>
   systemEnv?: Record<string, string>
   nativeQuestionMode?: boolean
+  customAgentSpecializations?: string[]
+}
+
+export interface AgentSpecializations {
+  base: string[]
+  custom: string[]
 }
 
 export const getAgents = () =>
@@ -53,6 +59,9 @@ export const getPreferences = () =>
 
 export const patchPreferences = (data: Partial<Preferences>) =>
   api.patch('/api/preferences', data)
+
+export const getAgentSpecializations = () =>
+  api.get<AgentSpecializations>('/api/agent-specializations').then(r => r.data)
 
 export const patchTask = (workspaceId: string, changeName: string, taskIndex: number) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/${taskIndex}`)

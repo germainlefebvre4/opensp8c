@@ -168,6 +168,25 @@ func TestDefaultAgentPreservedWithExplorations(t *testing.T) {
 	}
 }
 
+func TestSetCustomAgentSpecializationsPersistsAcrossReload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "prefs.json")
+
+	svc1 := NewService(path)
+	if err := svc1.SetCustomAgentSpecializations([]string{"ml-ops", "embedded"}); err != nil {
+		t.Fatalf("SetCustomAgentSpecializations: %v", err)
+	}
+
+	svc2 := NewService(path)
+	p, err := svc2.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(p.CustomAgentSpecializations) != 2 || p.CustomAgentSpecializations[0] != "ml-ops" || p.CustomAgentSpecializations[1] != "embedded" {
+		t.Errorf("expected persisted custom specializations, got %v", p.CustomAgentSpecializations)
+	}
+}
+
 func TestFileCreatedWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sub", "prefs.json")

@@ -5,6 +5,7 @@ export interface Tags {
   type: string
   complexity: number
   components: string[]
+  agent_specialization: string[]
   auto: boolean
   tagged_at: string
 }

@@ -77,12 +77,30 @@ func ExtractVocabulary(workspaceRoot string) []string {
 }
 
 type llmTagResult struct {
-	Complexity int      `json:"complexity"`
-	Components []string `json:"components"`
+	Complexity          int      `json:"complexity"`
+	Components          []string `json:"components"`
+	AgentSpecialization []string `json:"agent_specialization"`
+}
+
+// FilterToVocabulary keeps only the values present in the given closed vocabulary,
+// discarding anything else (e.g. a hallucinated LLM value).
+func FilterToVocabulary(values, vocabulary []string) []string {
+	allowed := make(map[string]struct{}, len(vocabulary))
+	for _, v := range vocabulary {
+		allowed[v] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := allowed[v]; ok {
+			filtered = append(filtered, v)
+		}
+	}
+	return filtered
 }
 
 // LLMDeriveComplexityAndComponents calls `claude -p` to extract semantic tags.
-func LLMDeriveComplexityAndComponents(proposal, design string, vocabulary []string) (int, []string, error) {
+func LLMDeriveComplexityAndComponents(proposal, design string, vocabulary []string, specializationVocabulary []string) (int, []string, []string, error) {
 	vocabStr := "none yet"
 	if len(vocabulary) > 0 {
 		vocabStr = strings.Join(vocabulary, ", ")
@@ -91,8 +109,9 @@ func LLMDeriveComplexityAndComponents(proposal, design string, vocabulary []stri
 	prompt := `You are analyzing a software change. Return ONLY a JSON object (no markdown, no explanation) with:
 - "complexity": integer 1-5 (1=trivial fix, 5=major architectural change)
 - "components": array of kebab-case slugs identifying application areas touched
+- "agent_specialization": array of one or more slugs chosen ONLY from this closed vocabulary (never invent a new value): ` + strings.Join(specializationVocabulary, ", ") + `
 
-Existing vocabulary (prefer these when matching, create new kebab-case slug only if no match):
+Existing vocabulary for components (prefer these when matching, create new kebab-case slug only if no match):
 ` + vocabStr + `
 
 Change description:
@@ -105,7 +124,7 @@ Technical design:
 ` + design + `
 ---
 
-Return ONLY valid JSON like: {"complexity": 2, "components": ["kanban-board", "search-bar"]}`
+Return ONLY valid JSON like: {"complexity": 2, "components": ["kanban-board", "search-bar"], "agent_specialization": ["frontend"]}`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -113,7 +132,7 @@ Return ONLY valid JSON like: {"complexity": 2, "components": ["kanban-board", "s
 	cmd := exec.CommandContext(ctx, "claude", "-p", prompt)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 
 	raw := strings.TrimSpace(string(out))
@@ -124,7 +143,7 @@ Return ONLY valid JSON like: {"complexity": 2, "components": ["kanban-board", "s
 
 	var result llmTagResult
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 
 	if result.Complexity < 1 {
@@ -134,12 +153,14 @@ Return ONLY valid JSON like: {"complexity": 2, "components": ["kanban-board", "s
 		result.Complexity = 5
 	}
 
-	return result.Complexity, result.Components, nil
+	agentSpecialization := FilterToVocabulary(result.AgentSpecialization, specializationVocabulary)
+
+	return result.Complexity, result.Components, agentSpecialization, nil
 }
 
 // TagChange derives and writes semantic tags for a change.
 // If forceRetag is false, skips changes with _auto: false.
-func TagChange(changeRoot, workspaceRoot string, forceRetag bool) error {
+func TagChange(changeRoot, workspaceRoot string, forceRetag bool, specializationVocabulary []string) error {
 	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
 
 	data, err := os.ReadFile(metaPath)
@@ -175,12 +196,13 @@ func TagChange(changeRoot, workspaceRoot string, forceRetag bool) error {
 
 	// Try LLM — graceful degradation if unavailable
 	if len(proposal) > 0 {
-		complexity, components, err := LLMDeriveComplexityAndComponents(
-			string(proposal), string(design), vocabulary,
+		complexity, components, agentSpecialization, err := LLMDeriveComplexityAndComponents(
+			string(proposal), string(design), vocabulary, specializationVocabulary,
 		)
 		if err == nil {
 			tags.Complexity = complexity
 			tags.Components = components
+			tags.AgentSpecialization = agentSpecialization
 		}
 	}
 

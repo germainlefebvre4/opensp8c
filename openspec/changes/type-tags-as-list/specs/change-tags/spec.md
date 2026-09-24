@@ -24,7 +24,7 @@ Le service de tagging SHALL dériver le champ `type` en analysant les chemins de
 - **WHEN** `tasks.md` contient des lignes avec des chemins `frontend/...` et aucun chemin `backend/` ni `scripts/`/`batch/`
 - **THEN** le champ `type` dérivé est `[frontend]`
 
-#### Scenario: Tasks.md avec chemins mixtes frontend et backend
+#### Scenario: Tasks.md avec chemins mixtes
 - **WHEN** `tasks.md` contient des chemins `frontend/` et `backend/`
 - **THEN** le champ `type` dérivé est `[frontend, backend]`
 

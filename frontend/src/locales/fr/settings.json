@@ -1,0 +1,14 @@
+{
+  "title": "Réglages",
+  "specializations": {
+    "title": "Tags de spécialisation agent",
+    "description": "Gérer le vocabulaire fermé utilisé pour classifier les changes par spécialisation technique.",
+    "baseList": "Liste de base",
+    "customList": "Tags personnalisés",
+    "emptyCustomList": "Aucun tag personnalisé défini.",
+    "addPlaceholder": "ex : ml-ops",
+    "add": "Ajouter",
+    "removeTooltip": "Supprimer ce tag",
+    "invalidFormat": "Utilisez uniquement du kebab-case (lettres minuscules, chiffres, tirets)."
+  }
+}

@@ -23,12 +23,13 @@ type ExplorationRecord struct {
 }
 
 type Preferences struct {
-	DefaultAgent       string                  `json:"defaultAgent"`
-	Sessions           map[string]SessionEntry `json:"sessions,omitempty"`
-	SessionAgents      map[string]string       `json:"sessionAgents,omitempty"` // legacy: migration source only
-	Explorations       []ExplorationRecord     `json:"explorations,omitempty"`
-	Env                map[string]string       `json:"env,omitempty"` // Custom hot-injected environment variables
-	NativeQuestionMode bool                    `json:"nativeQuestionMode,omitempty"`
+	DefaultAgent               string                  `json:"defaultAgent"`
+	Sessions                   map[string]SessionEntry `json:"sessions,omitempty"`
+	SessionAgents              map[string]string       `json:"sessionAgents,omitempty"` // legacy: migration source only
+	Explorations               []ExplorationRecord     `json:"explorations,omitempty"`
+	Env                        map[string]string       `json:"env,omitempty"` // Custom hot-injected environment variables
+	NativeQuestionMode         bool                    `json:"nativeQuestionMode,omitempty"`
+	CustomAgentSpecializations []string                `json:"customAgentSpecializations,omitempty"`
 }
 
 type Service struct {
@@ -123,6 +124,17 @@ func (s *Service) SetEnv(env map[string]string) error {
 		return err
 	}
 	p.Env = env
+	return s.save(p)
+}
+
+func (s *Service) SetCustomAgentSpecializations(specializations []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	p.CustomAgentSpecializations = specializations
 	return s.save(p)
 }
 

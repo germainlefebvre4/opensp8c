@@ -59,6 +59,64 @@ func TestGetPreferencesWithSystemEnv(t *testing.T) {
 	}
 }
 
+func TestCustomAgentSpecializationsGetReflectsPatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	prefSvc := preferences.NewService(filepath.Join(tmpDir, "preferences.json"))
+	handler := NewPreferencesHandler(prefSvc)
+
+	patchBody := bytes.NewBufferString(`{"customAgentSpecializations":["ml-ops","embedded"]}`)
+	patchReq := httptest.NewRequest("PATCH", "/api/preferences", patchBody)
+	patchRec := httptest.NewRecorder()
+	handler.PatchPreferences(patchRec, patchReq)
+
+	if patchRec.Code != http.StatusNoContent {
+		t.Fatalf("expected PATCH code 204, got %d", patchRec.Code)
+	}
+
+	req := httptest.NewRequest("GET", "/api/preferences", nil)
+	rec := httptest.NewRecorder()
+	handler.GetPreferences(rec, req)
+
+	var resp struct {
+		CustomAgentSpecializations []string `json:"customAgentSpecializations"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.CustomAgentSpecializations) != 2 || resp.CustomAgentSpecializations[0] != "ml-ops" || resp.CustomAgentSpecializations[1] != "embedded" {
+		t.Errorf("expected customAgentSpecializations to reflect PATCH, got %v", resp.CustomAgentSpecializations)
+	}
+}
+
+func TestCustomAgentSpecializationsPatchStripsBaseDuplicates(t *testing.T) {
+	tmpDir := t.TempDir()
+	prefSvc := preferences.NewService(filepath.Join(tmpDir, "preferences.json"))
+	handler := NewPreferencesHandler(prefSvc)
+
+	patchBody := bytes.NewBufferString(`{"customAgentSpecializations":["frontend","ml-ops","frontend"]}`)
+	patchReq := httptest.NewRequest("PATCH", "/api/preferences", patchBody)
+	patchRec := httptest.NewRecorder()
+	handler.PatchPreferences(patchRec, patchReq)
+
+	if patchRec.Code != http.StatusNoContent {
+		t.Fatalf("expected PATCH code 204, got %d", patchRec.Code)
+	}
+
+	req := httptest.NewRequest("GET", "/api/preferences", nil)
+	rec := httptest.NewRecorder()
+	handler.GetPreferences(rec, req)
+
+	var resp struct {
+		CustomAgentSpecializations []string `json:"customAgentSpecializations"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.CustomAgentSpecializations) != 1 || resp.CustomAgentSpecializations[0] != "ml-ops" {
+		t.Errorf("expected only ['ml-ops'] persisted (base duplicate and inner dup stripped), got %v", resp.CustomAgentSpecializations)
+	}
+}
+
 func TestNativeQuestionModeDefaultAndPatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	prefSvc := preferences.NewService(filepath.Join(tmpDir, "preferences.json"))

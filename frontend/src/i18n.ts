@@ -11,6 +11,7 @@ import enExplore from './locales/en/explore.json'
 import enDialogs from './locales/en/dialogs.json'
 import enTimeline from './locales/en/timeline.json'
 import enAgents from './locales/en/agents.json'
+import enSettings from './locales/en/settings.json'
 
 import frCommon from './locales/fr/common.json'
 import frNavigation from './locales/fr/navigation.json'
@@ -22,13 +23,14 @@ import frExplore from './locales/fr/explore.json'
 import frDialogs from './locales/fr/dialogs.json'
 import frTimeline from './locales/fr/timeline.json'
 import frAgents from './locales/fr/agents.json'
+import frSettings from './locales/fr/settings.json'
 
 const savedLang = localStorage.getItem('lang') ?? 'en'
 
 i18n.use(initReactI18next).init({
   lng: savedLang,
   fallbackLng: 'en',
-  ns: ['common', 'navigation', 'kanban', 'detailPanel', 'workspace', 'specs', 'explore', 'dialogs', 'timeline', 'agents'],
+  ns: ['common', 'navigation', 'kanban', 'detailPanel', 'workspace', 'specs', 'explore', 'dialogs', 'timeline', 'agents', 'settings'],
   defaultNS: 'common',
   resources: {
     en: {
@@ -42,6 +44,7 @@ i18n.use(initReactI18next).init({
       dialogs: enDialogs,
       timeline: enTimeline,
       agents: enAgents,
+      settings: enSettings,
     },
     fr: {
       common: frCommon,
@@ -54,6 +57,7 @@ i18n.use(initReactI18next).init({
       dialogs: frDialogs,
       timeline: frTimeline,
       agents: frAgents,
+      settings: frSettings,
     },
   },
   interpolation: { escapeValue: false },

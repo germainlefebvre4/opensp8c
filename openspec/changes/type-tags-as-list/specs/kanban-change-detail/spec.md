@@ -5,7 +5,7 @@
 ### Requirement: Afficher les tags dans le DetailPanel
 Le `DetailPanel` SHALL afficher une section **Tags** lorsqu'un change possède une section `tags` dans son `.openspec.yaml`. La section affiche un badge par valeur du tableau `tags.type` (ou aucun badge de type si la liste est vide), le niveau de complexité, et la liste des composants touchés. Si le change n'a pas encore de tags, la section est absente sans erreur.
 
-#### Scenario: Change avec tags complets et un seul type
+#### Scenario: Change avec tags complets
 - **WHEN** le DetailPanel s'ouvre pour un change possédant `tags.type: [frontend]`, `tags.complexity` et `tags.components`
 - **THEN** la section Tags est affichée avec un badge type "frontend", l'indicateur de complexité (points ou étoiles sur 5), et les chips de composants
 

@@ -32,6 +32,7 @@
   "type": "Type",
   "complexity": "Complexity",
   "components": "Components",
+  "agentSpecialization": "Specialization",
   "ghostBanner": {
     "label": "Active exploration draft",
     "freeze": "Freeze the change"

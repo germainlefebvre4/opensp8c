@@ -17,6 +17,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/api"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 func main() {
@@ -54,12 +55,17 @@ func main() {
 
 	// Background batch: tag all untagged changes in each workspace
 	go func() {
+		prefsSvc := preferences.NewService(api.PreferencesPath(cfgPath))
+		specializationVocabulary := openspec.CombineSpecializationVocabulary(nil)
+		if p, err := prefsSvc.Load(); err == nil {
+			specializationVocabulary = openspec.CombineSpecializationVocabulary(p.CustomAgentSpecializations)
+		}
 		for _, wc := range cfg.Workspaces {
 			absPath, err := filepath.Abs(wc.Path)
 			if err != nil {
 				continue
 			}
-			tagUntaggedChanges(absPath)
+			tagUntaggedChanges(absPath, specializationVocabulary)
 		}
 	}()
 
@@ -89,7 +95,7 @@ func main() {
 	log.Println("Server stopped")
 }
 
-func tagUntaggedChanges(workspacePath string) {
+func tagUntaggedChanges(workspacePath string, specializationVocabulary []string) {
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
 
 	type changeEntry struct {
@@ -136,6 +142,6 @@ func tagUntaggedChanges(workspacePath string) {
 	})
 
 	for _, e := range entries {
-		_ = openspec.TagChange(e.root, workspacePath, false)
+		_ = openspec.TagChange(e.root, workspacePath, false, specializationVocabulary)
 	}
 }

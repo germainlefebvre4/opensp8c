@@ -1,0 +1,14 @@
+{
+  "title": "Settings",
+  "specializations": {
+    "title": "Agent specialization tags",
+    "description": "Manage the closed vocabulary used to classify changes by technical specialization.",
+    "baseList": "Base list",
+    "customList": "Custom tags",
+    "emptyCustomList": "No custom tag defined.",
+    "addPlaceholder": "e.g. ml-ops",
+    "add": "Add",
+    "removeTooltip": "Remove this tag",
+    "invalidFormat": "Use kebab-case only (lowercase letters, digits, hyphens)."
+  }
+}

@@ -21,7 +21,10 @@ import (
 	"github.com/glefebvre/opensp8c/ui"
 )
 
-func preferencesPath(cfgPath string) string {
+// PreferencesPath returns the resolved preferences.json path for a given config
+// path, honoring the PREFERENCES_PATH override. Exported so callers outside this
+// package (e.g. the startup tagging batch) can build the same preferences.Service.
+func PreferencesPath(cfgPath string) string {
 	if p := os.Getenv("PREFERENCES_PATH"); p != "" {
 		return p
 	}
@@ -49,7 +52,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
-	prefsSvc := preferences.NewService(preferencesPath(cfgPath))
+	prefsSvc := preferences.NewService(PreferencesPath(cfgPath))
 	convStore := conversation.NewStore(conversationsPath(cfgPath))
 	mgr := session.NewManager(prefsSvc, convStore)
 
@@ -65,14 +68,15 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath, poolRegistry)
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolRegistry, mgr, convStore, watcherSvc, draftsPath(cfgPath))
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
-	archiveHandler := handlers.NewArchiveHandler(wsHandler)
-	tagsHandler := handlers.NewTagsHandler(wsHandler)
+	archiveHandler := handlers.NewArchiveHandler(wsHandler, prefsSvc)
+	tagsHandler := handlers.NewTagsHandler(wsHandler, prefsSvc)
 	taskHandler := handlers.NewTaskHandler(wsHandler)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, watcherSvc)
 	docsHandler := handlers.NewDocsHandler(wsHandler, mgr, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))
 	eventsHandler := handlers.NewEventsHandler(wsHandler, watcherSvc)
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
+	specializationsHandler := handlers.NewSpecializationsHandler(prefsSvc)
 	poolHandler := handlers.NewPoolHandler(wsHandler, poolRegistry)
 
 	r.Route("/api", func(r chi.Router) {
@@ -131,6 +135,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/agents", prefsHandler.ListAgents)
 		r.Get("/preferences", prefsHandler.GetPreferences)
 		r.Patch("/preferences", prefsHandler.PatchPreferences)
+		r.Get("/agent-specializations", specializationsHandler.GetAgentSpecializations)
 	})
 
 	r.Handle("/*", staticHandler(ui.FS()))

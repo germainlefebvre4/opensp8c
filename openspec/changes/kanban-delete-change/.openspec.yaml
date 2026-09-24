@@ -4,7 +4,11 @@ tags:
     type: frontend
     complexity: 3
     components:
-        - kanban-board
-        - change-status
+        - kanban-change-detail
+        - agent-pool-status-visibility
+        - explore-session
+    agent_specialization:
+        - frontend
+        - backend
     _auto: true
-    _tagged_at: "2026-09-22"
+    _tagged_at: "2026-09-23"

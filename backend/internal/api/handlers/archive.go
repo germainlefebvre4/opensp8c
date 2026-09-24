@@ -8,14 +8,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 type ArchiveHandler struct {
-	ws *WorkspaceHandler
+	ws    *WorkspaceHandler
+	prefs *preferences.Service
 }
 
-func NewArchiveHandler(ws *WorkspaceHandler) *ArchiveHandler {
-	return &ArchiveHandler{ws: ws}
+func NewArchiveHandler(ws *WorkspaceHandler, prefs *preferences.Service) *ArchiveHandler {
+	return &ArchiveHandler{ws: ws, prefs: prefs}
 }
 
 func (h *ArchiveHandler) Archive(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +50,7 @@ func (h *ArchiveHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		changesDir := filepath.Join(path, "openspec", "changes")
 		changeRoot := filepath.Join(changesDir, "archive", name)
-		_ = openspec.TagChange(changeRoot, path, false)
+		specializationVocabulary := specializationVocabularyFor(h.prefs)
+		_ = openspec.TagChange(changeRoot, path, false, specializationVocabulary)
 	}()
 }

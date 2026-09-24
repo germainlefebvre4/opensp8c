@@ -205,6 +205,14 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
               {'●'.repeat(change.tags.complexity)}{'○'.repeat(5 - change.tags.complexity)}
             </span>
           )}
+          {change.tags.agent_specialization?.map(spec => (
+            <span
+              key={spec}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium border border-emerald-100"
+            >
+              {spec}
+            </span>
+          ))}
         </div>
       )}
 

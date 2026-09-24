@@ -4,12 +4,11 @@ tags:
     type: fullstack
     complexity: 3
     components:
-        - change-tags
-        - kanban-change-search
-        - kanban-change-detail
-        - activity-timeline
+        - change-status
+        - agent-specialization
     agent_specialization:
-        - frontend
         - backend
+        - frontend
+        - api-design
     _auto: true
     _tagged_at: "2026-09-23"

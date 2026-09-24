@@ -412,6 +412,19 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                             </div>
                           </div>
                         )}
+
+                        {data.tags.agent_specialization && data.tags.agent_specialization.length > 0 && (
+                          <div className="flex items-start gap-2">
+                            <span className="text-[11px] text-slate-400 w-20 shrink-0 pt-0.5">{t('agentSpecialization')}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {data.tags.agent_specialization.map(spec => (
+                                <span key={spec} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                  {spec}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

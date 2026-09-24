@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
@@ -37,19 +38,25 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		"GEMINI_MODEL":         os.Getenv("GEMINI_MODEL"),
 		"GEMINI_SANDBOX":       os.Getenv("GEMINI_SANDBOX"),
 	}
+	customAgentSpecializations := p.CustomAgentSpecializations
+	if customAgentSpecializations == nil {
+		customAgentSpecializations = []string{}
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"defaultAgent":       p.DefaultAgent,
-		"env":                env,
-		"systemEnv":          systemEnv,
-		"nativeQuestionMode": p.NativeQuestionMode,
+		"defaultAgent":               p.DefaultAgent,
+		"env":                        env,
+		"systemEnv":                  systemEnv,
+		"nativeQuestionMode":         p.NativeQuestionMode,
+		"customAgentSpecializations": customAgentSpecializations,
 	})
 }
 
 func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		DefaultAgent       string            `json:"defaultAgent"`
-		Env                map[string]string `json:"env"`
-		NativeQuestionMode *bool             `json:"nativeQuestionMode"`
+		DefaultAgent               string            `json:"defaultAgent"`
+		Env                        map[string]string `json:"env"`
+		NativeQuestionMode         *bool             `json:"nativeQuestionMode"`
+		CustomAgentSpecializations []string          `json:"customAgentSpecializations"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -76,6 +83,14 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 
 	if body.NativeQuestionMode != nil {
 		if err := h.prefs.SetNativeQuestionMode(*body.NativeQuestionMode); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.CustomAgentSpecializations != nil {
+		sanitized := openspec.SanitizeCustomSpecializations(body.CustomAgentSpecializations)
+		if err := h.prefs.SetCustomAgentSpecializations(sanitized); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
 			return
 		}

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getAgents, getPreferences, patchPreferences } from '../lib/api'
+import { getAgents, getAgentSpecializations, getPreferences, patchPreferences } from '../lib/api'
 
 export function useAgents() {
   return useQuery({
@@ -20,6 +20,16 @@ export function usePatchPreferences() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: patchPreferences,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preferences'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preferences'] })
+      qc.invalidateQueries({ queryKey: ['agent-specializations'] })
+    },
+  })
+}
+
+export function useAgentSpecializations() {
+  return useQuery({
+    queryKey: ['agent-specializations'],
+    queryFn: getAgentSpecializations,
   })
 }

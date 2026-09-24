@@ -7,14 +7,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 type TagsHandler struct {
-	ws *WorkspaceHandler
+	ws    *WorkspaceHandler
+	prefs *preferences.Service
 }
 
-func NewTagsHandler(ws *WorkspaceHandler) *TagsHandler {
-	return &TagsHandler{ws: ws}
+func NewTagsHandler(ws *WorkspaceHandler, prefs *preferences.Service) *TagsHandler {
+	return &TagsHandler{ws: ws, prefs: prefs}
 }
 
 func (h *TagsHandler) Retag(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +39,8 @@ func (h *TagsHandler) Retag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := openspec.TagChange(changeRoot, workspacePath, true); err != nil {
+	specializationVocabulary := specializationVocabularyFor(h.prefs)
+	if err := openspec.TagChange(changeRoot, workspacePath, true, specializationVocabulary); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

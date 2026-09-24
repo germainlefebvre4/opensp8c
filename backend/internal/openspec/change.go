@@ -13,11 +13,12 @@ import (
 )
 
 type Tags struct {
-	Type       string   `json:"type" yaml:"type"`
-	Complexity int      `json:"complexity" yaml:"complexity"`
-	Components []string `json:"components" yaml:"components"`
-	Auto       bool     `json:"auto" yaml:"_auto"`
-	TaggedAt   string   `json:"tagged_at" yaml:"_tagged_at"`
+	Type                string   `json:"type" yaml:"type"`
+	Complexity          int      `json:"complexity" yaml:"complexity"`
+	Components          []string `json:"components" yaml:"components"`
+	AgentSpecialization []string `json:"agent_specialization" yaml:"agent_specialization"`
+	Auto                bool     `json:"auto" yaml:"_auto"`
+	TaggedAt            string   `json:"tagged_at" yaml:"_tagged_at"`
 }
 
 type Change struct {
@@ -153,6 +154,9 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 	data, err := os.ReadFile(metaPath)
 	if err == nil {
 		_ = yaml.Unmarshal(data, &meta)
+	}
+	if meta.Tags != nil && meta.Tags.AgentSpecialization == nil {
+		meta.Tags.AgentSpecialization = []string{}
 	}
 
 	tasksPath := filepath.Join(changeDir, "tasks.md")
