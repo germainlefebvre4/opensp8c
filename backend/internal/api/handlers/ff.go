@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/go-chi/chi/v5"
@@ -146,6 +148,12 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+
+		changeDir := filepath.Join(workspacePath, "openspec", "changes", changeName)
+		if err := openspec.SetLaunched(changeDir, false); err != nil {
+			log.Printf("[ff] failed to set launched=false for %s: %v", changeName, err)
+		}
+
 		h.watcher.Broadcast(wsID, watcher.Event{Type: "ff_done", Name: changeName})
 	}()
 
@@ -167,11 +175,18 @@ func (h *FFHandler) ResetTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasksPath := filepath.Join(workspacePath, "openspec", "changes", changeName, "tasks.md")
+	changeDir := filepath.Join(workspacePath, "openspec", "changes", changeName)
+	tasksPath := filepath.Join(changeDir, "tasks.md")
 	if err := os.WriteFile(tasksPath, []byte{}, 0644); err != nil && !os.IsNotExist(err) {
 		http.Error(w, "failed to reset tasks: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if err := openspec.ClearKanbanState(changeDir); err != nil && !os.IsNotExist(err) {
+		http.Error(w, "failed to reset kanban state: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

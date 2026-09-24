@@ -35,6 +35,8 @@ type Change struct {
 	IsGhost           bool     `json:"is_ghost,omitempty"`
 	GhostID           string   `json:"ghost_id,omitempty"`
 	WorkerActive      bool     `json:"worker_active,omitempty"`
+	Launched          bool     `json:"launched,omitempty"`
+	Order             int      `json:"order,omitempty"`
 }
 
 type Task struct {
@@ -58,6 +60,8 @@ type openspecMeta struct {
 	Created      string   `yaml:"created"`
 	Tags         *Tags    `yaml:"tags"`
 	Dependencies []string `yaml:"dependencies,omitempty"`
+	Launched     *bool    `yaml:"launched,omitempty"`
+	Order        *int     `yaml:"order,omitempty"`
 }
 
 type openspecProjectConfig struct {
@@ -133,10 +137,12 @@ func ListArchivedChanges(workspacePath string) ([]Change, error) {
 	return changes, nil
 }
 
-func deriveStatus(done, total int) string {
+func deriveStatus(done, total int, launched bool) string {
 	switch {
 	case total == 0:
 		return "to-explore"
+	case !launched:
+		return "ready"
 	case done == 0:
 		return "todo"
 	case done < total:
@@ -161,7 +167,8 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 
 	tasksPath := filepath.Join(changeDir, "tasks.md")
 	done, total := parseTaskProgress(tasksPath)
-	status := deriveStatus(done, total)
+	effectiveLaunched := meta.Launched == nil || *meta.Launched
+	status := deriveStatus(done, total, effectiveLaunched)
 
 	daysSince := -1
 	isStale := false
@@ -170,6 +177,11 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 		if (status == "in-progress" || status == "done") && daysSince >= threshold {
 			isStale = true
 		}
+	}
+
+	order := 0
+	if meta.Order != nil {
+		order = *meta.Order
 	}
 
 	return &Change{
@@ -183,6 +195,8 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 		IsStale:           isStale,
 		Tags:              meta.Tags,
 		Dependencies:      meta.Dependencies,
+		Launched:          effectiveLaunched,
+		Order:             order,
 	}, nil
 }
 
@@ -271,6 +285,85 @@ func readFileContent(path string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// SetLaunched marks a change's persistent "launched" state, promoting it
+// between the Ready and To Do kanban columns without touching tasks.md.
+func SetLaunched(changeRoot string, launched bool) error {
+	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
+
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return err
+	}
+
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+
+	meta.Launched = &launched
+
+	out, err := yaml.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath, out, 0644)
+}
+
+// ClearKanbanState removes the persistent "launched"/"order" fields from a
+// change's .openspec.yaml, resetting it to a clean pre-Ready state.
+func ClearKanbanState(changeRoot string) error {
+	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
+
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return err
+	}
+
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+
+	meta.Launched = nil
+	meta.Order = nil
+
+	out, err := yaml.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath, out, 0644)
+}
+
+// ReorderReady assigns sequential priority ranks (1..N) to the changes named
+// in orderedNames, in that order, persisting each one's .openspec.yaml.
+func ReorderReady(changesDir string, orderedNames []string) error {
+	for i, name := range orderedNames {
+		metaPath := filepath.Join(changesDir, name, ".openspec.yaml")
+
+		data, err := os.ReadFile(metaPath)
+		if err != nil {
+			return err
+		}
+
+		var meta openspecMeta
+		if err := yaml.Unmarshal(data, &meta); err != nil {
+			return err
+		}
+
+		order := i + 1
+		meta.Order = &order
+
+		out, err := yaml.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(metaPath, out, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ToggleTask(workspacePath, changeName string, index int) error {

@@ -17,6 +17,25 @@ import (
 	"github.com/glefebvre/opensp8c/internal/workspace"
 )
 
+// TestWorkspaceList_TaskCountsIncludesReady verifies GET /api/workspaces
+// reports a "ready" key in task_counts even when no changes exist yet.
+func TestWorkspaceList_TaskCountsIncludesReady(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "openspec", "changes"), 0755); err != nil {
+		t.Fatalf("failed to create changes dir: %v", err)
+	}
+
+	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}}
+	ws := NewWorkspaceHandler(cfg, "", pool.NewRegistry(nil))
+
+	rec := httptest.NewRecorder()
+	ws.List(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil))
+
+	if !strings.Contains(rec.Body.String(), `"ready":0`) {
+		t.Fatalf("expected task_counts to include \"ready\":0, got %s", rec.Body.String())
+	}
+}
+
 func deleteWorkspaceRequest(workspaceID string) (*httptest.ResponseRecorder, *http.Request) {
 	req := httptest.NewRequest(http.MethodDelete, "/workspaces/"+workspaceID, nil)
 	rctx := chi.NewRouteContext()

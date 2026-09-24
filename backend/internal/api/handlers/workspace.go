@@ -28,6 +28,7 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 		absPath, _ := filepath.Abs(wc.Path)
 		counts := map[string]int{
 			"to-explore":  0,
+			"ready":       0,
 			"todo":        0,
 			"in-progress": 0,
 			"done":        0,

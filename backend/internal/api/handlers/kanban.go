@@ -193,6 +193,99 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Launch marks a change "launched", promoting it from Ready to To Do and
+// making it eligible for Agent Pool pickup. Idempotent.
+func (h *KanbanHandler) Launch(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	name := chi.URLParam(r, "name")
+
+	path, ok := h.ws.workspacePath(id)
+	if !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	changeDir := filepath.Join(path, "openspec", "changes", name)
+	if _, err := os.Stat(changeDir); err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "change not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := openspec.SetLaunched(changeDir, true); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Unlaunch marks a change "not launched", demoting it from To Do to Ready.
+// Refused while an Agent Pool worker is actively working on the change.
+func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	name := chi.URLParam(r, "name")
+
+	path, ok := h.ws.workspacePath(id)
+	if !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	changeDir := filepath.Join(path, "openspec", "changes", name)
+	if _, err := os.Stat(changeDir); err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "change not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if h.activeWorkerChanges(id)[name] {
+		http.Error(w, "a worker is active on this change", http.StatusConflict)
+		return
+	}
+
+	if err := openspec.SetLaunched(changeDir, false); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReorderReady persists the priority rank of the Ready column's changes,
+// sequentially numbered in the order given by the request body.
+func (h *KanbanHandler) ReorderReady(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	path, ok := h.ws.workspacePath(id)
+	if !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Order []string `json:"order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	changesDir := filepath.Join(path, "openspec", "changes")
+	if err := openspec.ReorderReady(changesDir, body.Order); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // cascadeDeleteGhost removes the ghost exploration record matching changeName,
 // if any, mirroring ExploreHandler.DeleteGhost's cleanup sequence.
 func (h *KanbanHandler) cascadeDeleteGhost(workspaceID, changeName string) {

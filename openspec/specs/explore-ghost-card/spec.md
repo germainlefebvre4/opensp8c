@@ -49,7 +49,7 @@ Le ghost card SHALL être affiché dans la colonne "to-explore" avec un traiteme
 
 #### Scenario: Ghost card draggable après nommage
 - **WHEN** le ghost card a reçu son nom via ghost_named
-- **THEN** la carte est draggable vers la colonne "todo"
+- **THEN** la carte est draggable vers la colonne "ready"
 
 ### Requirement: Persistance des ghost records au redémarrage serveur
 Le backend SHALL charger les ghost records depuis `preferences.json` au démarrage. L'endpoint de listing des changes SHALL inclure les ghost records dans la réponse.

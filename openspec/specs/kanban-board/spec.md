@@ -1,5 +1,11 @@
+## Purpose
+
+Spec du Kanban Board : colonnes, cartes de changement, ouverture de l'ExplorePanel, mise en page plein écran, et rafraîchissement automatique via SSE.
+
+## Requirements
+
 ### Requirement: Afficher les changements en colonnes Kanban
-Le Kanban Board SHALL afficher les changements OpenSpec répartis en cinq slots horizontaux d'égale largeur : **To Explore**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif.
+Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots horizontaux d'égale largeur : **To Explore**, **Ready**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif.
 
 #### Scenario: Chargement du Kanban avec changements archivés
 - **WHEN** l'utilisateur ouvre le Kanban Board ou change de workspace actif
@@ -21,8 +27,12 @@ Le Kanban Board SHALL afficher les changements OpenSpec répartis en cinq slots 
 - **WHEN** un changement n'a pas de fichier `tasks.md` (ou tasks_total == 0)
 - **THEN** il est affiché dans la colonne **To Explore**
 
-#### Scenario: Changement avec tasks non démarrées
-- **WHEN** un changement a un `tasks.md` avec des tasks mais aucune cochée (`tasks_done == 0`)
+#### Scenario: Changement avec tasks non démarrées et non lancé
+- **WHEN** un changement a un `tasks.md` avec des tasks mais aucune cochée (`tasks_done == 0`), et n'est pas marqué "lancé" (voir `kanban-ready-column`)
+- **THEN** il est affiché dans la colonne **Ready**
+
+#### Scenario: Changement avec tasks non démarrées et lancé
+- **WHEN** un changement a un `tasks.md` avec des tasks mais aucune cochée (`tasks_done == 0`), et est marqué "lancé"
 - **THEN** il est affiché dans la colonne **To Do**
 
 #### Scenario: Changement partiellement complété
@@ -72,7 +82,7 @@ Un séparateur visuel horizontal SHALL être rendu entre les colonnes **Done** e
 - **THEN** une ligne horizontale tenue sépare visuellement la section Done de la section Archived dans le même slot de colonne
 
 ### Requirement: Afficher la carte d'un changement
-Chaque changement SHALL être représenté par une carte épurée affichant : le nom du changement, la progression des tasks (barre de progression + compteur), et — lorsque les tags sont disponibles — un badge de type applicatif et un indicateur de complexité (points sur 5). Les cartes en colonne **Done** SHALL afficher une action rapide **"Sync & Archive"** au survol. Les cartes en colonne **Archived** n'affichent aucune action. Les cartes en colonnes **To Explore**, **To Do**, et **In Progress** SHALL être draggables selon les transitions autorisées. Les cartes en colonnes **Done** et **Archived** SHALL être non-draggables. Quand un subprocess ff est actif pour un changement, sa carte SHALL afficher un spinner à la place du contenu normal et le drag SHALL être désactivé pour cette carte. En cas d'erreur ff (`ff_failed`), la carte SHALL afficher un indicateur d'erreur et le drag est réactivé. Si un changement dans la colonne **To Do** posséde une exploration fantôme active du même nom, il SHALL être affiché comme un change brouillon (draft) visuellement distinct, incluant un bouton d'action explicite "Figer". Lorsque `worker_active` vaut `true` pour un changement, sa carte SHALL afficher un badge indiquant qu'un worker du pool d'agents est actuellement assigné à ce changement, positionné sur la même ligne que le compteur de tâches, aux côtés du badge stale s'il est également présent.
+Chaque changement SHALL être représenté par une carte épurée affichant : le nom du changement, la progression des tasks (barre de progression + compteur), et — lorsque les tags sont disponibles — un badge de type applicatif et un indicateur de complexité (points sur 5). Les cartes en colonne **Done** SHALL afficher une action rapide **"Sync & Archive"** au survol. Les cartes en colonne **Archived** n'affichent aucune action. Les cartes en colonnes **To Explore**, **Ready**, **To Do**, et **In Progress** SHALL être draggables selon les transitions autorisées. Les cartes en colonnes **Done** et **Archived** SHALL être non-draggables. Quand un subprocess ff est actif pour un changement, sa carte SHALL afficher un spinner à la place du contenu normal et le drag SHALL être désactivé pour cette carte. En cas d'erreur ff (`ff_failed`), la carte SHALL afficher un indicateur d'erreur et le drag est réactivé. Si un changement dans la colonne **Ready** ou **To Do** posséde une exploration fantôme active du même nom, il SHALL être affiché comme un change brouillon (draft) visuellement distinct, incluant un bouton d'action explicite "Figer". Lorsque `worker_active` vaut `true` pour un changement, sa carte SHALL afficher un badge indiquant qu'un worker du pool d'agents est actuellement assigné à ce changement, positionné sur la même ligne que le compteur de tâches, aux côtés du badge stale s'il est également présent.
 
 #### Scenario: Carte sans tasks.md
 - **WHEN** le changement n'a pas encore de fichier `tasks.md`
@@ -114,8 +124,8 @@ Chaque changement SHALL être représenté par une carte épurée affichant : le
 - **WHEN** l'utilisateur tente de drag une carte en colonne Archived
 - **THEN** la carte ne peut pas être saisie (drag désactivé sur cette carte)
 
-#### Scenario: Change "brouillon" (unsolidified draft) dans la colonne To Do
-- **WHEN** un changement est dans la colonne "To Do" ET qu'un ghost card actif possède le même nom dans la liste des changements
+#### Scenario: Change "brouillon" (unsolidified draft) dans la colonne Ready ou To Do
+- **WHEN** un changement est dans la colonne "Ready" ou "To Do" ET qu'un ghost card actif possède le même nom dans la liste des changements
 - **THEN** la carte s'affiche avec une opacité légèrement atténuée, une bordure pointillée, un badge violet "projet" et un bouton explicite "Figer" qui permet de consolider le change
 
 #### Scenario: Carte avec un worker du pool d'agents actif

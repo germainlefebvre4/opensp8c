@@ -1,6 +1,8 @@
 package pool
 
 import (
+	"sort"
+
 	"github.com/glefebvre/opensp8c/internal/openspec"
 )
 
@@ -48,6 +50,14 @@ func (s *Scheduler) GetRunnableChanges() []string {
 			runnable = append(runnable, c.Name)
 		}
 	}
+
+	sort.SliceStable(runnable, func(i, j int) bool {
+		ci, cj := s.changeMap[runnable[i]], s.changeMap[runnable[j]]
+		if ci.Order != cj.Order {
+			return ci.Order < cj.Order
+		}
+		return ci.Name < cj.Name
+	})
 
 	return runnable
 }

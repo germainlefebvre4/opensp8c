@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { ClientRect, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
+import { arrayMove } from '@dnd-kit/sortable'
 import { KanbanColumn } from '../components/KanbanColumn'
 import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
@@ -17,14 +18,16 @@ import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
+import { useToast } from '../hooks/useToast'
 import type { Change } from '../hooks/useChanges'
 
 // Maps source status -> allowed drop target statuses
 const VALID_DROPS: Record<string, string[]> = {
-  'to-explore': ['todo'],
-  'todo': ['to-explore', 'in-progress'],
+  'to-explore': ['ready'],
+  'ready': ['to-explore', 'todo'],
+  'todo': ['ready', 'in-progress'],
   'in-progress': ['to-explore', 'to-review', 'done'],
   'to-review': ['in-progress', 'done'],
 }
@@ -36,6 +39,7 @@ interface Props {
 export function KanbanPage({ workspaceId }: Props) {
   const { t } = useTranslation('kanban')
   const { t: tCommon } = useTranslation('common')
+  const { toast } = useToast()
 
   const { data: changes = [], isLoading } = useChanges(workspaceId)
   const { data: archivedChanges = [] } = useArchivedChanges(workspaceId)
@@ -70,6 +74,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const leadingColumns = [
     { title: t('columns.toExplore'), status: 'to-explore' },
+    { title: t('columns.ready'), status: 'ready' },
     { title: t('columns.toDo'), status: 'todo' },
     { title: t('columns.inProgress'), status: 'in-progress' },
     { title: t('columns.toReview'), status: 'to-review' },
@@ -149,17 +154,50 @@ export function KanbanPage({ workspaceId }: Props) {
     if (!over) return
 
     const changeName = active.id as string
-    const targetStatus = over.id as string
+    const overId = over.id as string
     const change = changes.find(c => c.name === changeName)
     if (!change) return
 
     const sourceStatus = change.kanban_status
+
+    // `over.id` is either a column status (dropped on empty column space) or
+    // another card's name (every card is its own droppable via useSortable,
+    // e.g. dropped directly on top of a card) - resolve it to that card's
+    // column status either way.
+    const overChange = changes.find(c => c.name === overId)
+    const targetStatus = overChange ? overChange.kanban_status : overId
+
+    // Intra-column reorder within Ready: dropped on another card already in Ready.
+    if (overChange && sourceStatus === 'ready' && targetStatus === 'ready' && overId !== changeName) {
+      const readyNames = changes
+        .filter(c => c.kanban_status === 'ready')
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map(c => c.name)
+      const oldIndex = readyNames.indexOf(changeName)
+      const newIndex = readyNames.indexOf(overId)
+      if (oldIndex === -1 || newIndex === -1) return
+      const reordered = arrayMove(readyNames, oldIndex, newIndex)
+
+      qc.setQueryData<Change[]>(['changes', workspaceId], old => {
+        if (!old) return old
+        const orderOf = new Map(reordered.map((name, i) => [name, i + 1]))
+        return old.map(c => (orderOf.has(c.name) ? { ...c, order: orderOf.get(c.name)! } : c))
+      })
+
+      try {
+        await reorderReady(workspaceId, reordered)
+      } catch {
+        qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      }
+      return
+    }
+
     const allowed = VALID_DROPS[sourceStatus] ?? []
     if (!allowed.includes(targetStatus)) return
 
     if (getFfStatus(changeName) === 'running') return
 
-    if (targetStatus === 'todo') {
+    if (targetStatus === 'ready' && sourceStatus === 'to-explore') {
       if (change.is_ghost) {
         setPromoteDialog(change)
         return
@@ -172,6 +210,18 @@ export function KanbanPage({ workspaceId }: Props) {
       try {
         await triggerFF(workspaceId, changeName)
       } catch { /* ff_failed will arrive via SSE */ }
+    } else if (targetStatus === 'todo' && sourceStatus === 'ready') {
+      try {
+        await launchChange(workspaceId, changeName)
+        qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      } catch { /* ignore */ }
+    } else if (targetStatus === 'ready' && sourceStatus === 'todo') {
+      try {
+        await unlaunchChange(workspaceId, changeName)
+        qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      } catch (err) {
+        toast({ title: t('errors.unlaunchWorkerActive'), variant: 'error' })
+      }
     } else if (targetStatus === 'to-explore') {
       setResetDialog(change)
     }
@@ -242,7 +292,7 @@ export function KanbanPage({ workspaceId }: Props) {
   )
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <DragOverlay modifiers={[clampModifier]}>
         {activeChange && (
           <ChangeCard
@@ -299,7 +349,13 @@ export function KanbanPage({ workspaceId }: Props) {
                       key={col.status}
                       title={col.title}
                       status={col.status}
-                      changes={filteredChanges.filter(c => c.kanban_status === col.status)}
+                      changes={
+                        col.status === 'ready'
+                          ? filteredChanges
+                            .filter(c => c.kanban_status === 'ready')
+                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                          : filteredChanges.filter(c => c.kanban_status === col.status)
+                      }
                       allChanges={changes}
                       workspaceId={workspaceId}
                       onOpen={name => handleOpen(name, col.status)}

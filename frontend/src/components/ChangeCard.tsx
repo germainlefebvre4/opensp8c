@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loader2, AlertCircle, Trash2, Pin, Cpu } from 'lucide-react'
-import { useDraggable } from '@dnd-kit/core'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { useArchive } from '../hooks/useArchive'
@@ -18,7 +19,7 @@ interface Props {
   isOverlay?: boolean
 }
 
-const DRAGGABLE_STATUSES = new Set(['to-explore', 'todo', 'in-progress'])
+const DRAGGABLE_STATUSES = new Set(['to-explore', 'ready', 'todo', 'in-progress'])
 
 export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false }: Props) {
   const { t: tKanban } = useTranslation('kanban')
@@ -49,10 +50,11 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
   const isGhost = !!change.is_ghost
   const isGhostNaming = isGhost && /^explore-[a-z0-9]{6}$/.test(change.name)
   const isDraggable = DRAGGABLE_STATUSES.has(change.kanban_status) && ffStatus !== 'running' && !isGhostNaming
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: change.name,
     disabled: !isDraggable,
   })
+  const sortableStyle = { transform: CSS.Transform.toString(transform), transition }
   const isDimmed = isDragging && !isOverlay
 
   const isArchived = change.kanban_status === 'archived'
@@ -111,6 +113,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
     return (
       <div
         ref={isOverlay ? undefined : setNodeRef}
+        style={isOverlay ? undefined : sortableStyle}
         {...(isDraggable && !isOverlay ? { ...listeners, ...attributes } : {})}
         onClick={() => onOpen(change.name)}
         className={`border-2 border-dashed border-violet-300 bg-violet-50/40 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer hover:border-violet-400 hover:bg-violet-50 transition-all group ${isDimmed ? 'opacity-40 shadow-lg' : ''}`}
@@ -155,6 +158,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
   return (
     <div
       ref={isOverlay ? undefined : setNodeRef}
+      style={isOverlay ? undefined : sortableStyle}
       {...(isDraggable && !isOverlay ? { ...listeners, ...attributes } : {})}
       onClick={() => !archive.isPending && onOpen(change.name)}
       className={`border rounded-lg px-3 py-2.5 flex flex-col gap-2 shadow-sm transition-all group ${

@@ -51,3 +51,26 @@ func TestScheduler_GetRunnableChanges(t *testing.T) {
 		t.Errorf("Expected runnable changes to be %v, got %v", expected, runnable)
 	}
 }
+
+func TestScheduler_GetRunnableChanges_SortedByOrder(t *testing.T) {
+	changes := []openspec.Change{
+		{
+			Name:         "change-a",
+			KanbanStatus: "todo",
+			Order:        2,
+		},
+		{
+			Name:         "change-b",
+			KanbanStatus: "todo",
+			Order:        1,
+		},
+	}
+
+	scheduler := NewScheduler(changes)
+	runnable := scheduler.GetRunnableChanges()
+
+	expected := []string{"change-b", "change-a"}
+	if !reflect.DeepEqual(runnable, expected) {
+		t.Errorf("Expected runnable changes to be sorted by priority order %v, got %v", expected, runnable)
+	}
+}

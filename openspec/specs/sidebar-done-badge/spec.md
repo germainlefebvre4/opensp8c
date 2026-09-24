@@ -17,7 +17,7 @@ Le menu latéral SHALL afficher une pastille emerald (`bg-emerald-500`) indiquan
 
 #### Scenario: Pastilles visibles au survol
 - **WHEN** l'utilisateur survole un item workspace dans le menu latéral
-- **THEN** toutes les pastilles de comptage (to-explore, todo, in-progress, done) restent visibles
+- **THEN** toutes les pastilles de comptage (to-explore, ready, todo, in-progress, done) restent visibles
 
 #### Scenario: Cohérence couleur avec le Kanban
 - **WHEN** la pastille done est affichée dans le menu latéral

@@ -1,3 +1,9 @@
+## Purpose
+
+Spec de la détection des changes "stale" : calcul de l'activité, seuil configurable, statuts éligibles, et affichage du badge dans ChangeCard.
+
+## Requirements
+
 ### Requirement: Calcul de l'activité d'un change
 Le système SHALL calculer le nombre de jours écoulés depuis la dernière modification de `tasks.md` pour chaque change actif. Ce calcul SHALL être effectué à la demande lors de chaque appel à l'endpoint `/changes`. Si `tasks.md` n'existe pas, `days_since_activity` SHALL valoir `-1`.
 
@@ -25,7 +31,7 @@ Le système SHALL lire `stale_threshold_days` depuis `openspec/config.yaml` du w
 - **THEN** le seuil par défaut de 7 jours est utilisé
 
 ### Requirement: Statuts éligibles au marquage stale
-Seuls les changes avec le statut `in-progress` ou `done` (non-archivé) SHALL pouvoir avoir `is_stale = true`. Les statuts `to-explore`, `todo` et `archived` SHALL toujours avoir `is_stale = false`.
+Seuls les changes avec le statut `in-progress` ou `done` (non-archivé) SHALL pouvoir avoir `is_stale = true`. Les statuts `to-explore`, `ready`, `todo` et `archived` SHALL toujours avoir `is_stale = false`.
 
 #### Scenario: Change in-progress stale
 - **WHEN** un change a le statut `in-progress` et `days_since_activity >= stale_threshold_days`
@@ -37,6 +43,10 @@ Seuls les changes avec le statut `in-progress` ou `done` (non-archivé) SHALL po
 
 #### Scenario: Change todo avec longue inactivité
 - **WHEN** un change a le statut `todo` et `days_since_activity >= stale_threshold_days`
+- **THEN** `is_stale` vaut `false` malgré l'inactivité
+
+#### Scenario: Change ready avec longue inactivité
+- **WHEN** un change a le statut `ready` et `days_since_activity >= stale_threshold_days`
 - **THEN** `is_stale` vaut `false` malgré l'inactivité
 
 ### Requirement: Affichage du badge stale dans ChangeCard

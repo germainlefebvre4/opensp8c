@@ -634,6 +634,11 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 		return
 	}
 
+	changeDir := filepath.Join(workspacePath, "openspec", "changes", ghostName)
+	if err := openspec.SetLaunched(changeDir, false); err != nil {
+		log.Printf("[explore] failed to set launched=false for %s: %v", ghostName, err)
+	}
+
 	// FF succeeded: copy the exploration's conversation logs under the new change
 	// so the change has a copy of the design/specs discussion, while leaving the
 	// original logs active for further exploration.

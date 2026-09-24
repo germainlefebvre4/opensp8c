@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useDroppable } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { ChangeCard } from './ChangeCard'
@@ -24,6 +25,7 @@ interface Props {
 
 const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'to-explore': { badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-400' },
+  'ready': { badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400' },
   'todo': { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   'in-progress': { badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
   'to-review': { badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
@@ -86,22 +88,27 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
 
       {!collapsed && (
         <div className="flex flex-col gap-2 overflow-y-auto">
-          {visible.map(ch => {
-            const associatedGhost = status === 'todo' && allChanges
-              ? allChanges.find(c => c.is_ghost && c.name === ch.name)
-              : undefined
-            return (
-              <ChangeCard
-                key={ch.name}
-                change={ch}
-                workspaceId={workspaceId}
-                onOpen={onOpen}
-                ffStatus={getFfStatus(ch.name)}
-                onDelete={onDeleteGhost}
-                associatedGhostId={associatedGhost?.ghost_id}
-              />
-            )
-          })}
+          <SortableContext
+            items={status === 'ready' ? visible.map(ch => ch.name) : []}
+            strategy={verticalListSortingStrategy}
+          >
+            {visible.map(ch => {
+              const associatedGhost = (status === 'ready' || status === 'todo') && allChanges
+                ? allChanges.find(c => c.is_ghost && c.name === ch.name)
+                : undefined
+              return (
+                <ChangeCard
+                  key={ch.name}
+                  change={ch}
+                  workspaceId={workspaceId}
+                  onOpen={onOpen}
+                  ffStatus={getFfStatus(ch.name)}
+                  onDelete={onDeleteGhost}
+                  associatedGhostId={associatedGhost?.ghost_id}
+                />
+              )
+            })}
+          </SortableContext>
           {hasMore && (
             <button
               onClick={() => setVisibleCount(v => v + (maxVisible ?? 3))}

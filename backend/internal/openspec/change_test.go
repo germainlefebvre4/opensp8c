@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func writeChangeFixture(t *testing.T, changesDir, name, openspecYAML, tasksMd string) {
@@ -55,6 +57,139 @@ tags:
 	}
 	if tags.AgentSpecialization == nil || len(tags.AgentSpecialization) != 0 {
 		t.Errorf("expected agent_specialization to be an empty slice, got %v", tags.AgentSpecialization)
+	}
+}
+
+func TestDeriveStatus_ReadyWhenNotLaunched(t *testing.T) {
+	if got := deriveStatus(0, 3, false); got != "ready" {
+		t.Errorf("expected \"ready\", got %q", got)
+	}
+}
+
+func TestDeriveStatus_TodoWhenLaunched(t *testing.T) {
+	if got := deriveStatus(0, 3, true); got != "todo" {
+		t.Errorf("expected \"todo\", got %q", got)
+	}
+}
+
+func TestListChangesLaunchedAbsentIsBackwardCompatible(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+
+	writeChangeFixture(t, changesDir, "legacy-no-launched", `
+schema: spec-driven
+created: "2024-01-01"
+`, "- [ ] todo item\n")
+
+	changes, err := ListChanges(workspacePath)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(changes))
+	}
+	if changes[0].KanbanStatus != "todo" {
+		t.Errorf("expected kanban_status \"todo\" for change without launched field, got %q", changes[0].KanbanStatus)
+	}
+}
+
+func TestSetLaunchedRoundTrip(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	writeChangeFixture(t, changesDir, "my-change", `
+schema: spec-driven
+created: "2024-01-01"
+`, "- [ ] item\n")
+	changeRoot := filepath.Join(changesDir, "my-change")
+
+	if err := SetLaunched(changeRoot, true); err != nil {
+		t.Fatalf("SetLaunched: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(changeRoot, ".openspec.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if meta.Launched == nil || !*meta.Launched {
+		t.Fatalf("expected launched=true, got %+v", meta.Launched)
+	}
+
+	if err := SetLaunched(changeRoot, false); err != nil {
+		t.Fatalf("SetLaunched: %v", err)
+	}
+	data, err = os.ReadFile(filepath.Join(changeRoot, ".openspec.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	meta = openspecMeta{}
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if meta.Launched == nil || *meta.Launched {
+		t.Fatalf("expected launched=false, got %+v", meta.Launched)
+	}
+}
+
+func TestClearKanbanState(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	writeChangeFixture(t, changesDir, "my-change", `
+schema: spec-driven
+created: "2024-01-01"
+launched: false
+order: 3
+`, "- [ ] item\n")
+	changeRoot := filepath.Join(changesDir, "my-change")
+
+	if err := ClearKanbanState(changeRoot); err != nil {
+		t.Fatalf("ClearKanbanState: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(changeRoot, ".openspec.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if meta.Launched != nil {
+		t.Errorf("expected launched to be cleared, got %+v", meta.Launched)
+	}
+	if meta.Order != nil {
+		t.Errorf("expected order to be cleared, got %+v", meta.Order)
+	}
+}
+
+func TestReorderReady(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	for _, name := range []string{"change-a", "change-b", "change-c"} {
+		writeChangeFixture(t, changesDir, name, `
+schema: spec-driven
+created: "2024-01-01"
+launched: false
+`, "- [ ] item\n")
+	}
+
+	if err := ReorderReady(changesDir, []string{"change-c", "change-a", "change-b"}); err != nil {
+		t.Fatalf("ReorderReady: %v", err)
+	}
+
+	changes, err := ListChanges(workspacePath)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	orders := make(map[string]int, len(changes))
+	for _, c := range changes {
+		orders[c.Name] = c.Order
+	}
+	if orders["change-c"] != 1 || orders["change-a"] != 2 || orders["change-b"] != 3 {
+		t.Errorf("unexpected orders: %+v", orders)
 	}
 }
 

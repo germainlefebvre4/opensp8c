@@ -72,6 +72,15 @@ export const triggerFF = (workspaceId: string, changeName: string) =>
 export const resetTasks = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/reset`)
 
+export const launchChange = (workspaceId: string, changeName: string) =>
+  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/launch`)
+
+export const unlaunchChange = (workspaceId: string, changeName: string) =>
+  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/unlaunch`)
+
+export const reorderReady = (workspaceId: string, order: string[]) =>
+  api.put(`/api/workspaces/${workspaceId}/ready-order`, { order })
+
 export const stopExploreSession = (workspaceId: string, changeName: string) =>
   api.delete(`/api/workspaces/${workspaceId}/changes/${changeName}/explore`)
 

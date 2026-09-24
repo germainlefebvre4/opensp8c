@@ -1,0 +1,18 @@
+schema: spec-driven
+created: "2026-09-24"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 4
+    components:
+        - kanban-ready-column
+        - kanban-board
+        - agent-pool-status-visibility
+        - workspace-events
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+    _auto: true
+    _tagged_at: "2026-09-24"

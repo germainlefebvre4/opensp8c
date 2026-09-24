@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/workspace"
@@ -53,6 +55,192 @@ func writeTodoChange(t *testing.T, changesDir, name string) string {
 		t.Fatalf("failed to write tasks.md: %v", err)
 	}
 	return changeDir
+}
+
+func launchRequest(method, workspaceID, changeName, suffix string, body *bytes.Reader) (*httptest.ResponseRecorder, *http.Request) {
+	var req *http.Request
+	path := "/workspaces/" + workspaceID + "/changes/" + changeName + "/" + suffix
+	if body != nil {
+		req = httptest.NewRequest(method, path, body)
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", workspaceID)
+	rctx.URLParams.Add("name", changeName)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	return httptest.NewRecorder(), req
+}
+
+func writeChangeWithMeta(t *testing.T, changesDir, name, meta string) string {
+	t.Helper()
+	changeDir := filepath.Join(changesDir, name)
+	if err := os.MkdirAll(changeDir, 0755); err != nil {
+		t.Fatalf("failed to create change dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(changeDir, ".openspec.yaml"), []byte(meta), 0644); err != nil {
+		t.Fatalf("failed to write .openspec.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("- [ ] do the thing\n"), 0644); err != nil {
+		t.Fatalf("failed to write tasks.md: %v", err)
+	}
+	return changeDir
+}
+
+func TestKanbanHandler_Launch(t *testing.T) {
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	changeDir := writeChangeWithMeta(t, changesDir, "my-change", "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: false\n")
+
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
+
+	rec, req := launchRequest("PATCH", workspaceID, "my-change", "launch", nil)
+	h.Launch(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	changes, err := openspec.ListChanges(tmpDir)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	_ = changeDir
+	if len(changes) != 1 || changes[0].KanbanStatus != "todo" {
+		t.Fatalf("expected change to be launched (todo), got %+v", changes)
+	}
+}
+
+func TestKanbanHandler_Launch_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "openspec", "changes"), 0755); err != nil {
+		t.Fatalf("failed to create changes dir: %v", err)
+	}
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
+
+	rec, req := launchRequest("PATCH", workspaceID, "does-not-exist", "launch", nil)
+	h.Launch(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestKanbanHandler_Unlaunch(t *testing.T) {
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	writeChangeWithMeta(t, changesDir, "my-change", "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
+
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
+
+	rec, req := launchRequest("PATCH", workspaceID, "my-change", "unlaunch", nil)
+	h.Unlaunch(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	changes, err := openspec.ListChanges(tmpDir)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	if len(changes) != 1 || changes[0].KanbanStatus != "ready" {
+		t.Fatalf("expected change to be unlaunched (ready), got %+v", changes)
+	}
+}
+
+func TestKanbanHandler_Unlaunch_WorkerActive(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	changeName := fmt.Sprintf("worker-busy-%d", time.Now().UnixNano())
+	writeChangeWithMeta(t, changesDir, changeName, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-q")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "commit", "-q", "-m", "init")
+
+	poolReg := pool.NewRegistry(nil)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
+	poolMgr := poolReg.For(workspaceID)
+
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	t.Cleanup(func() {
+		poolMgr.Stop()
+		home, _ := os.UserHomeDir()
+		os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
+	})
+
+	deadline := time.Now().Add(15 * time.Second)
+	active := false
+	for time.Now().Before(deadline) {
+		_, _, workers := poolMgr.Status(workspaceID)
+		for _, w := range workers {
+			if w.ActiveChange == changeName {
+				active = true
+			}
+		}
+		if active {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !active {
+		t.Skip("pool did not pick up the worker within the deadline (stub orchestration timing); skipping 409 assertion")
+	}
+
+	rec, req := launchRequest("PATCH", workspaceID, changeName, "unlaunch", nil)
+	h.Unlaunch(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 while worker is active, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestKanbanHandler_ReorderReady(t *testing.T) {
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	for _, name := range []string{"change-a", "change-b", "change-c"} {
+		writeChangeWithMeta(t, changesDir, name, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: false\n")
+	}
+
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil), nil, nil, "")
+
+	body := bytes.NewReader([]byte(`{"order": ["change-c", "change-a", "change-b"]}`))
+	req := httptest.NewRequest("PUT", "/workspaces/"+workspaceID+"/ready-order", body)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", workspaceID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h.ReorderReady(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	changes, err := openspec.ListChanges(tmpDir)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	orders := make(map[string]int, len(changes))
+	for _, c := range changes {
+		orders[c.Name] = c.Order
+	}
+	if orders["change-c"] != 1 || orders["change-a"] != 2 || orders["change-b"] != 3 {
+		t.Fatalf("unexpected orders: %+v", orders)
+	}
 }
 
 func TestDeleteChange_Success(t *testing.T) {

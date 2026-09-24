@@ -12,7 +12,7 @@ export interface Tags {
 
 export interface Change {
   name: string
-  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
+  kanban_status: 'to-explore' | 'ready' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
   tasks_done: number
   tasks_total: number
   created: string
@@ -23,6 +23,7 @@ export interface Change {
   is_ghost?: boolean
   ghost_id?: string
   worker_active?: boolean
+  order?: number
 }
 
 export function useChanges(workspaceId: string | null) {
