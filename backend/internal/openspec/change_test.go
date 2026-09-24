@@ -229,3 +229,39 @@ tags:
 		t.Errorf("unexpected agent_specialization: %v", tags.AgentSpecialization)
 	}
 }
+
+// TestParseTaskProgress verifies that ParseTaskProgress counts checked vs.
+// total checklist items from an arbitrary tasks.md path, since pool.Manager
+// reuses it to read a worktree's tasks.md rather than the original change's.
+func TestParseTaskProgress(t *testing.T) {
+	dir := t.TempDir()
+	tasksPath := filepath.Join(dir, "tasks.md")
+	content := `# Tasks
+
+- [x] done task
+- [ ] pending task
+- [X] also done (uppercase)
+Not a task line, ignored.
+- [ ] another pending task
+`
+	if err := os.WriteFile(tasksPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	done, total := ParseTaskProgress(tasksPath)
+	if done != 2 {
+		t.Errorf("expected 2 done tasks, got %d", done)
+	}
+	if total != 4 {
+		t.Errorf("expected 4 total tasks, got %d", total)
+	}
+}
+
+// TestParseTaskProgress_MissingFile verifies the fail-soft zero/zero result
+// for a path that doesn't exist (e.g. a worktree that failed to provision).
+func TestParseTaskProgress_MissingFile(t *testing.T) {
+	done, total := ParseTaskProgress(filepath.Join(t.TempDir(), "missing", "tasks.md"))
+	if done != 0 || total != 0 {
+		t.Errorf("expected (0, 0) for a missing file, got (%d, %d)", done, total)
+	}
+}

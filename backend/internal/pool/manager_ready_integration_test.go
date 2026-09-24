@@ -5,9 +5,45 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/glefebvre/opensp8c/internal/watcher"
 )
+
+// activeChangeCapture is a Broadcaster that snapshots any worker's
+// ActiveChange directly off the Manager's map on every pool_updated event.
+// Broadcast is always invoked by the Manager while its own mu is already
+// held (see broadcastLocked's contract), so reading activeWorkers here
+// without re-locking is safe and race-free - unlike polling Status() on a
+// timer, it can never miss a worker that lived for less than a poll
+// interval, since it observes the exact same critical section that
+// creates/removes it.
+type activeChangeCapture struct {
+	mgr *Manager
+
+	mu     sync.Mutex
+	change string
+}
+
+func (c *activeChangeCapture) Broadcast(_ string, _ watcher.Event) {
+	for _, w := range c.mgr.activeWorkers {
+		if w.ActiveChange != "" {
+			c.mu.Lock()
+			if c.change == "" {
+				c.change = w.ActiveChange
+			}
+			c.mu.Unlock()
+		}
+	}
+}
+
+func (c *activeChangeCapture) get() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.change
+}
 
 // writeChange creates a change directory with tasks.md and an optional
 // .openspec.yaml (launched/order), mirroring how the app would generate it.
@@ -66,9 +102,22 @@ func TestManager_SkipsReadyAndPicksLowestOrder(t *testing.T) {
 	}
 	runGit("init", "-q")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
-	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "commit", "-q", "-m", "init")
+	// -c commit.gpgsign=false: disposable fixture repo under t.TempDir(), never
+	// pushed - avoids failing on machines where commit signing needs an
+	// interactive pinentry unavailable to the test runner.
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 
-	mgr := NewManager(nil)
+	// sessionMgr/prefs are left nil: runWorker's nil-guard falls back to a
+	// zero-value agents.AgentConfig (empty CLI), which fails subprocess
+	// startup deterministically without ever touching PATH. This test only
+	// cares about scheduler dispatch order, and must never risk shelling out
+	// to a real agent CLI that happens to be installed on the dev machine.
+	// That failure is now near-instant (rather than the old 2s stub sleep),
+	// so a worker can live for far less than a polling interval - capture()
+	// via the broadcaster below instead of polling Status() on a timer.
+	capture := &activeChangeCapture{}
+	mgr := NewManager(capture, nil, nil)
+	capture.mgr = mgr
 	workspaceID := "test-ws"
 	if err := mgr.Start(AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
 		t.Fatalf("failed to start pool: %v", err)
@@ -84,16 +133,10 @@ func TestManager_SkipsReadyAndPicksLowestOrder(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	var activeChange string
 	for time.Now().Before(deadline) {
-		_, _, workers := mgr.Status(workspaceID)
-		for _, w := range workers {
-			if w.ActiveChange != "" {
-				activeChange = w.ActiveChange
-			}
-		}
-		if activeChange != "" {
+		if activeChange = capture.get(); activeChange != "" {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if activeChange == "" {
 		t.Skip("pool did not pick up a worker within the deadline (stub orchestration timing); skipping")

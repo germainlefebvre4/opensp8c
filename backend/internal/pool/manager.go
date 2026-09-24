@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/preferences"
+	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 )
 
@@ -27,14 +29,20 @@ type Manager struct {
 	cancelLoop    context.CancelFunc
 	isRunning     bool
 	broadcaster   Broadcaster
+	sessionMgr    *session.Manager
+	prefs         *preferences.Service
 }
 
 // NewManager creates a new pool manager. broadcaster may be nil, in which
-// case pool state changes are simply not published as events.
-func NewManager(broadcaster Broadcaster) *Manager {
+// case pool state changes are simply not published as events. sessionMgr and
+// prefs are used to resolve which agent CLI (and custom env) to invoke for a
+// given workspace/change, the same resolution used by interactive sessions.
+func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service) *Manager {
 	return &Manager{
 		activeWorkers: make(map[int]*Worker),
 		broadcaster:   broadcaster,
+		sessionMgr:    sessionMgr,
+		prefs:         prefs,
 	}
 }
 

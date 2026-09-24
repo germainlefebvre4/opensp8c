@@ -37,7 +37,7 @@ func (b *mockBroadcaster) snapshot() []broadcastCall {
 // workspace is reported as not running when queried for a different one,
 // so the UI never shows another workspace's pool state as its own.
 func TestStatus_ScopedToWorkspace(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
@@ -61,7 +61,7 @@ func TestStatus_ScopedToWorkspace(t *testing.T) {
 // teardown (its provisioning will fail against a non-git tmpDir) cannot race
 // the read out from under us.
 func TestStartWorker_StampsWorkspaceIdentity(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
@@ -97,7 +97,7 @@ func TestStartWorker_StampsWorkspaceIdentity(t *testing.T) {
 // a pool_updated event for the workspace the pool was started for.
 func TestStartStop_BroadcastsPoolUpdated(t *testing.T) {
 	bc := &mockBroadcaster{}
-	m := NewManager(bc)
+	m := NewManager(bc, nil, nil)
 	tmpDir := t.TempDir()
 
 	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {

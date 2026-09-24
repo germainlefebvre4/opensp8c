@@ -447,7 +447,14 @@ func (s *Subprocess) CloseStdin() error {
 	return s.stdin.Close()
 }
 
+// Wait blocks until the underlying process exits. It is a no-op for a
+// Subprocess built via NewTestSubprocess (no real process to wait for), so
+// callers that unconditionally Wait() as part of teardown (e.g. a pool
+// worker's cleanup) can be exercised in tests without a real child process.
 func (s *Subprocess) Wait() error {
+	if s.cmd == nil {
+		return nil
+	}
 	return s.cmd.Wait()
 }
 

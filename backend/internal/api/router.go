@@ -64,7 +64,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, time.Hour)
 
-	poolRegistry := pool.NewRegistry(watcherSvc)
+	poolRegistry := pool.NewRegistry(watcherSvc, mgr, prefsSvc)
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath, poolRegistry)
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolRegistry, mgr, convStore, watcherSvc, draftsPath(cfgPath))
 	specsHandler := handlers.NewSpecsHandler(wsHandler)

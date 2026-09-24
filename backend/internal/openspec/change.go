@@ -166,7 +166,7 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 	}
 
 	tasksPath := filepath.Join(changeDir, "tasks.md")
-	done, total := parseTaskProgress(tasksPath)
+	done, total := ParseTaskProgress(tasksPath)
 	effectiveLaunched := meta.Launched == nil || *meta.Launched
 	status := deriveStatus(done, total, effectiveLaunched)
 
@@ -200,7 +200,11 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 	}, nil
 }
 
-func parseTaskProgress(tasksPath string) (done, total int) {
+// ParseTaskProgress counts checked ("- [x]") vs. total ("- [") checklist
+// items in the tasks.md at tasksPath. Exported so callers outside this
+// package (e.g. pool.Manager, which needs to read a worktree's tasks.md
+// rather than the original change's) can reuse the same parsing behavior.
+func ParseTaskProgress(tasksPath string) (done, total int) {
 	f, err := os.Open(tasksPath)
 	if err != nil {
 		return 0, 0

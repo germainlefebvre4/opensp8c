@@ -36,6 +36,7 @@ type Worker struct {
 	WorktreePath   string             `json:"worktree_path,omitempty"`
 	BranchName     string             `json:"branch_name,omitempty"`
 	Status         WorkerStatus       `json:"status"`
+	Activity       string             `json:"activity,omitempty"`
 	DelegationMode DelegationMode     `json:"delegation_mode"`
 	StartedAt      time.Time          `json:"started_at"`
 	CancelFunc     context.CancelFunc `json:"-"`

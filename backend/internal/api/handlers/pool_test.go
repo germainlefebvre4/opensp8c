@@ -47,7 +47,7 @@ func twoWorkspaceHandler(t *testing.T, pathA, pathB string) (h *PoolHandler, reg
 		{Name: "workspace-b", Path: pathB},
 	}}
 	ws := NewWorkspaceHandler(cfg, "", nil)
-	reg = pool.NewRegistry(nil)
+	reg = pool.NewRegistry(nil, nil, nil)
 	h = NewPoolHandler(ws, reg)
 
 	idA = workspace.StableID(mustAbs(t, pathA))
@@ -126,7 +126,7 @@ func setupGitWorkspace(t *testing.T, changeName string) string {
 	}
 	runGit("init", "-q")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
-	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "commit", "-q", "-m", "init")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 	return tmpDir
 }
 

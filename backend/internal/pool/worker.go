@@ -1,13 +1,32 @@
 package pool
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/session"
 )
+
+// activityBroadcastInterval throttles how often an in-flight turn's activity
+// updates trigger a pool_updated broadcast, so a chatty agent doesn't flood
+// clients with a broadcast per stdout line (see design.md decision 4).
+const activityBroadcastInterval = time.Second
+
+// maxActivityLen bounds the fallback raw-line activity text.
+const maxActivityLen = 200
+
+// startSubprocessFn is a seam over session.StartSubprocess so tests can stub
+// subprocess creation without spawning a real agent CLI.
+var startSubprocessFn = session.StartSubprocess
 
 // runWorker coordinates the lifecycle of a worker on a specific change.
 func (m *Manager) runWorker(ctx context.Context, w *Worker) {
@@ -29,92 +48,239 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	w.WorktreePath = worktreePath
 	w.BranchName = "feature/" + w.ActiveChange
 
-	// Note: We need a mechanism to read the change status to see if it's done.
-	// For simulation of the execution loop:
-	for {
-		select {
-		case <-ctx.Done():
-			// Worker cancelled. We keep the worktree around or clean it depending on preference.
-			// Let's just exit.
-			return
-		default:
-		}
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 
-		// Update worker status
-		w.Status = StatusWorking
+	w.Status = StatusWorking
+	m.notify()
+
+	// 2. Start a single agent subprocess for the whole attempt loop (the
+	// initial apply turn and every heal turn share it, so the model sees its
+	// own prior turns). It is terminated when this function returns, on any
+	// exit path (success, paused, or cancellation).
+	procCtx, procCancel := context.WithCancel(ctx)
+	defer procCancel()
+
+	var customEnv map[string]string
+	if m.prefs != nil {
+		if p, err := m.prefs.Load(); err == nil && p != nil {
+			customEnv = p.Env
+		}
+	}
+
+	var agentCfg agents.AgentConfig
+	if m.sessionMgr != nil {
+		agentCfg = m.sessionMgr.ResolveAgentConfig(w.WorkspaceID, w.ActiveChange)
+	}
+
+	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false)
+	if err != nil {
+		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
+		w.Status = StatusPaused
 		m.notify()
+		return
+	}
+	defer func() {
+		_ = proc.CloseStdin()
+		_ = proc.Wait()
+	}()
 
-		// 3.1 Invoke agent CLI (Simulated here because actual integration with Claude/Gemini CLI is complex to stub natively)
-		err = m.invokeAgentApply(ctx, w)
-		if err != nil {
-			log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-			// Might be blocked. Pause.
-			w.Status = StatusPaused
-			m.notify()
-			return
+	// 3. Invoke the agent CLI to implement the remaining tasks.
+	if err := m.invokeAgentApply(w, proc); err != nil {
+		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
+		w.Status = StatusPaused
+		m.notify()
+		return
+	}
+
+	// 4. Run local validation (compilation + tests).
+	w.Status = StatusTesting
+	m.notify()
+	validationErr := m.runValidation(ctx, w)
+
+	// 5. Self-healing loop: re-inject validation errors into the same
+	// subprocess's context until it passes or attempts are exhausted.
+	attempts := 0
+	for validationErr != nil && attempts < m.config.MaxAttempts {
+		attempts++
+		w.Status = StatusHealing
+		m.notify()
+		log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, m.config.MaxAttempts)
+
+		if err := m.invokeAgentHeal(w, proc, validationErr); err != nil {
+			log.Printf("[worker %d] agent heal error: %v\n", w.ID, err)
+			break
 		}
 
-		// 3.2 Run local validation (Compilation + tests)
 		w.Status = StatusTesting
 		m.notify()
-		validationErr := m.runValidation(ctx, w)
+		validationErr = m.runValidation(ctx, w)
+	}
 
-		// 3.3 Healing loop
-		attempts := 0
-		for validationErr != nil && attempts < m.config.MaxAttempts {
-			attempts++
-			w.Status = StatusHealing
-			m.notify()
-			log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, m.config.MaxAttempts)
-
-			// Inject error back to agent
-			err = m.invokeAgentHeal(ctx, w, validationErr)
-			if err != nil {
-				break
-			}
-
-			// Retest
-			w.Status = StatusTesting
-			m.notify()
-			validationErr = m.runValidation(ctx, w)
-		}
-
-		if validationErr != nil {
-			log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
-			w.Status = StatusPaused
-			m.notify()
-			return
-		}
-
-		// 3.4 State Transitions based on Delegation Mode
-		// Assuming tasks are fully complete here. In a real scenario, we'd check if tasks.md has remaining tasks.
-		// For the sake of the architecture, we transition now.
-		if m.config.DelegationMode == ModeFullAutonomy {
-			// Merge and cleanup
-			log.Printf("[worker %d] Full Autonomy: merging change %s\n", w.ID, w.ActiveChange)
-			err = wt.MergeAndCleanup(w.ActiveChange)
-			if err != nil {
-				log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
-			}
-		} else {
-			// HITL Review
-			log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
-			// State remains "to-review" implicitly as we leave the branch unmerged and worktree intact.
-			// The UI will pick this up from the Kanban status.
-		}
-
-		// Job done
+	if validationErr != nil {
+		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
+		w.Status = StatusPaused
+		m.notify()
 		return
+	}
+
+	// 6. Completion check: don't finalize (merge or transition) unless the
+	// worktree's tasks.md has no task left unchecked, even though validation
+	// passed - the agent may have declared victory without actually doing
+	// the remaining work. The worktree mirrors the whole workspace (see
+	// WorktreeController.Provision), so the change's tasks.md lives at its
+	// normal nested path within it, not at the worktree root.
+	tasksPath := filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md")
+	done, total := openspec.ParseTaskProgress(tasksPath)
+	if done < total {
+		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
+		w.Status = StatusPaused
+		m.notify()
+		return
+	}
+
+	// 7. State Transitions based on Delegation Mode
+	if m.config.DelegationMode == ModeFullAutonomy {
+		// Merge and cleanup
+		log.Printf("[worker %d] Full Autonomy: merging change %s\n", w.ID, w.ActiveChange)
+		if err := wt.MergeAndCleanup(w.ActiveChange); err != nil {
+			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
+		}
+	} else {
+		// HITL Review
+		log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
+		// State remains "to-review" implicitly as we leave the branch unmerged and worktree intact.
+		// The UI will pick this up from the Kanban status.
 	}
 }
 
-func (m *Manager) invokeAgentApply(ctx context.Context, w *Worker) error {
-	// Stub for invoking openspec apply or the agent subprocess
-	// cmd := exec.CommandContext(ctx, "openspec", "apply", "--change", w.ActiveChange)
-	// cmd.Dir = w.WorktreePath
-	// ...
-	time.Sleep(2 * time.Second) // simulate work
-	return nil
+// invokeAgentApply writes the initial turn instructing the agent to work
+// through the change's remaining tasks, and waits for it to complete.
+func (m *Manager) invokeAgentApply(w *Worker, proc *session.Subprocess) error {
+	return m.runTurn(w, proc, "/opsx:apply "+w.ActiveChange)
+}
+
+// invokeAgentHeal writes a follow-up turn on the same subprocess, injecting
+// the validation error's text into the agent's context, and waits for it to
+// complete. It never starts a new subprocess.
+func (m *Manager) invokeAgentHeal(w *Worker, proc *session.Subprocess, validationErr error) error {
+	return m.runTurn(w, proc, validationErr.Error())
+}
+
+// runTurn writes a single stream-json user turn to proc's stdin, then reads
+// its stdout until a line signals the turn is complete (a native "result"
+// event, or its Gemini-translated "message_complete" form). While the turn is
+// in flight, it best-effort extracts human-readable activity text from each
+// line into w.Activity and broadcasts pool_updated at most once per second
+// (never once per line). It returns an error if the subprocess ends before
+// signaling completion.
+func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) error {
+	turn := map[string]interface{}{
+		"type": "user",
+		"message": map[string]string{
+			"role":    "user",
+			"content": content,
+		},
+	}
+	data, err := json.Marshal(turn)
+	if err != nil {
+		return fmt.Errorf("failed to encode turn: %w", err)
+	}
+	if _, err := proc.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to write turn to agent subprocess: %w", err)
+	}
+
+	scanner := bufio.NewScanner(proc.Stdout())
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	var lastNotify time.Time
+	for scanner.Scan() {
+		line := scanner.Bytes()
+
+		if isTurnCompleteLine(line) {
+			return nil
+		}
+
+		if activity := extractActivity(line); activity != "" {
+			w.Activity = activity
+			if now := time.Now(); lastNotify.IsZero() || now.Sub(lastNotify) >= activityBroadcastInterval {
+				m.notify()
+				lastNotify = now
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("agent subprocess stdout error before completion: %w", err)
+	}
+	return fmt.Errorf("agent subprocess ended before returning a result")
+}
+
+// isTurnCompleteLine reports whether a stdout line signals the end of an
+// agent turn: a native stream-json "result" event, or the "message_complete"
+// event that translateGeminiLine produces for Gemini's own "result" type.
+func isTurnCompleteLine(line []byte) bool {
+	var data struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(line, &data); err != nil {
+		return false
+	}
+	return data.Type == "result" || data.Type == "message_complete"
+}
+
+// extractActivity best-effort extracts human-readable text from a single
+// stdout line for display as the worker's current activity, otherwise a
+// truncated version of the raw line. Fails soft on invalid JSON or an empty
+// line rather than blocking the apply/heal loop.
+//
+// Two "content_block_delta" shapes are recognized: the native Claude CLI's
+// own stream-json output wraps it as {"type":"stream_event","event":{"type":
+// "content_block_delta","delta":{"type":"text_delta"|"thinking_delta",
+// "text"|"thinking":...}}}, while Gemini's translated output (see
+// translateGeminiLine) uses the flatter {"type":"content_block_delta","delta":
+// {"text":...}}. A delta with neither text nor thinking (e.g. a tool-call's
+// input_json_delta) yields no activity update rather than an empty string
+// overwriting the last meaningful one.
+func extractActivity(line []byte) string {
+	trimmed := strings.TrimSpace(string(line))
+	if trimmed == "" {
+		return ""
+	}
+
+	type delta struct {
+		Text     string `json:"text"`
+		Thinking string `json:"thinking"`
+	}
+	var data struct {
+		Type  string `json:"type"`
+		Delta delta  `json:"delta"`
+		Event struct {
+			Type  string `json:"type"`
+			Delta delta  `json:"delta"`
+		} `json:"event"`
+	}
+	if err := json.Unmarshal(line, &data); err == nil {
+		if data.Type == "stream_event" && data.Event.Type == "content_block_delta" {
+			if data.Event.Delta.Text != "" {
+				return data.Event.Delta.Text
+			}
+			return data.Event.Delta.Thinking
+		}
+		if data.Type == "content_block_delta" {
+			if data.Delta.Text != "" {
+				return data.Delta.Text
+			}
+			return data.Delta.Thinking
+		}
+	}
+
+	if len(trimmed) > maxActivityLen {
+		return trimmed[:maxActivityLen]
+	}
+	return trimmed
 }
 
 func (m *Manager) runValidation(ctx context.Context, w *Worker) error {
@@ -125,16 +291,6 @@ func (m *Manager) runValidation(ctx context.Context, w *Worker) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tests failed: %v\nOutput:\n%s", err, string(out))
-	}
-	return nil
-}
-
-func (m *Manager) invokeAgentHeal(ctx context.Context, w *Worker, validationErr error) error {
-	// Stub for prompting the agent with the validation error.
-	time.Sleep(2 * time.Second) // simulate healing work
-	// In a real implementation we would write the error out to the active subprocess's stdin.
-	if strings.Contains(validationErr.Error(), "unfixable") {
-		return fmt.Errorf("cannot fix")
 	}
 	return nil
 }

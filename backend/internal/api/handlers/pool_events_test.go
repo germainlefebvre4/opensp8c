@@ -41,7 +41,7 @@ func TestPoolEvents_StartStopOverSSE(t *testing.T) {
 	}
 	t.Cleanup(func() { watcherSvc.StopWatching(workspaceID) })
 
-	poolReg := pool.NewRegistry(watcherSvc)
+	poolReg := pool.NewRegistry(watcherSvc, nil, nil)
 	wsHandler := NewWorkspaceHandler(cfg, "", poolReg)
 	poolHandler := NewPoolHandler(wsHandler, poolReg)
 	eventsHandler := NewEventsHandler(wsHandler, watcherSvc)
