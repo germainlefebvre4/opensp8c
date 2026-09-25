@@ -348,16 +348,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		}, nil
 	}
 
-	args := agentCfg.BuildSubprocessArgs(basePrompt, extraSystemPrompt)
-	if claudeSessionID != "" {
-		if agentCfg.ID == "claude" || agentCfg.ID == "gemini" {
-			if resume {
-				args = append(args, "--resume", claudeSessionID)
-			} else {
-				args = append(args, "--session-id", claudeSessionID)
-			}
-		}
-	}
+	args := buildSubprocessArgs(agentCfg, basePrompt, extraSystemPrompt, claudeSessionID, resume)
 	cmd := exec.CommandContext(ctx, agentCfg.CLI, args...)
 
 	stdin, err := cmd.StdinPipe()
@@ -396,9 +387,38 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 	var adaptedStdout io.ReadCloser = stdout
 	if agentCfg.ID == "gemini" {
 		adaptedStdout = newGeminiStdoutReader(stdout)
+	} else if agentCfg.ID == "antigravity" {
+		adaptedStdout = newAntigravityStdoutReader(stdout)
 	}
 
-	return &Subprocess{cmd: cmd, stdin: stdin, stdout: adaptedStdout, agentID: agentCfg.ID}, nil
+	var adaptedStdin io.WriteCloser = stdin
+	if agentCfg.ID == "antigravity" {
+		framing := extraSystemPrompt
+		if resume {
+			framing = ""
+		}
+		adaptedStdin = newAntigravityWriter(stdin, framing)
+	}
+
+	return &Subprocess{cmd: cmd, stdin: adaptedStdin, stdout: adaptedStdout, agentID: agentCfg.ID}, nil
+}
+
+func buildSubprocessArgs(agentCfg agents.AgentConfig, basePrompt, extraSystemPrompt, sessionID string, resume bool) []string {
+	args := agentCfg.BuildSubprocessArgs(basePrompt, extraSystemPrompt)
+	if sessionID != "" {
+		if agentCfg.ID == "claude" || agentCfg.ID == "gemini" {
+			if resume {
+				args = append(args, "--resume", sessionID)
+			} else {
+				args = append(args, "--session-id", sessionID)
+			}
+		} else if agentCfg.ID == "antigravity" {
+			if resume {
+				args = append(args, "--conversation", sessionID)
+			}
+		}
+	}
+	return args
 }
 
 func buildEnv(customEnv map[string]string) []string {
@@ -460,4 +480,11 @@ func (s *Subprocess) Wait() error {
 
 func (s *Subprocess) Stdout() io.ReadCloser {
 	return s.stdout
+}
+
+func (s *Subprocess) ConversationID() string {
+	if agyReader, ok := s.stdout.(*antigravityStdoutReader); ok {
+		return agyReader.ConversationID()
+	}
+	return ""
 }

@@ -427,3 +427,122 @@ func TestRunWorker_FinalizesWhenTasksComplete(t *testing.T) {
 		t.Errorf("expected the feature branch to have been deleted after a successful full-autonomy merge")
 	}
 }
+
+func TestIsTurnCompleteLine_Antigravity(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{
+			name:     "Native Claude result",
+			input:    `{"type":"result","subtype":"success"}`,
+			expected: true,
+		},
+		{
+			name:     "Gemini / Antigravity translated message_complete",
+			input:    `{"type":"message_complete","result":" "}`,
+			expected: true,
+		},
+		{
+			name:     "Raw Antigravity event result",
+			input:    `{"event":"result","result":{"status":"SUCCESS"}}`,
+			expected: true,
+		},
+		{
+			name:     "Active agent step",
+			input:    `{"event":"step_update","step_update":{"state":"ACTIVE","step_type":"agent_response"}}`,
+			expected: false,
+		},
+		{
+			name:     "Content block delta",
+			input:    `{"type":"content_block_delta","delta":{"text":"hello"}}`,
+			expected: false,
+		},
+		{
+			name:     "Plain non-json text",
+			input:    `random text log`,
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isTurnCompleteLine([]byte(tc.input))
+			if got != tc.expected {
+				t.Errorf("expected %v, got %v for %s", tc.expected, got, tc.input)
+			}
+		})
+	}
+}
+
+func TestExtractActivity_Antigravity(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Translated Antigravity content_block_delta",
+			input:    `{"type":"content_block_delta","delta":{"text":"implementing feature..."}}`,
+			expected: "implementing feature...",
+		},
+		{
+			name:     "Translated Antigravity tool_use",
+			input:    `{"type":"content_block_start","content_block":{"type":"tool_use","id":"tool-1","name":"run_command"}}`,
+			expected: "run_command",
+		},
+		{
+			name:     "Raw Antigravity step_update text_delta",
+			input:    `{"event":"step_update","step_update":{"state":"ACTIVE","step_type":"agent_response","text_delta":"analyzing codebase..."}}`,
+			expected: "analyzing codebase...",
+		},
+		{
+			name:     "Raw Antigravity step_update tool",
+			input:    `{"event":"step_update","step_update":{"state":"ACTIVE","step_type":"tool","tool_name":"edit_file"}}`,
+			expected: "edit_file",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractActivity([]byte(tc.input))
+			if got != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, got)
+			}
+		})
+	}
+}
+
+func TestRunTurn_RecognizesAntigravityCompletion(t *testing.T) {
+	t.Run("recognizes translated message_complete", func(t *testing.T) {
+		proc, stdinR, stdoutW := newPipeSubprocess()
+		go func() { _, _ = io.Copy(io.Discard, stdinR) }()
+		go func() {
+			_, _ = stdoutW.Write([]byte(`{"type":"message_complete","result":" "}` + "\n"))
+			_ = stdoutW.Close()
+		}()
+
+		m := &Manager{}
+		w := &Worker{}
+		if err := m.runTurn(w, proc, "execute task"); err != nil {
+			t.Fatalf("expected message_complete to complete turn, got: %v", err)
+		}
+	})
+
+	t.Run("recognizes raw Antigravity result event", func(t *testing.T) {
+		proc, stdinR, stdoutW := newPipeSubprocess()
+		go func() { _, _ = io.Copy(io.Discard, stdinR) }()
+		go func() {
+			_, _ = stdoutW.Write([]byte(`{"event":"result","result":{"status":"SUCCESS"}}` + "\n"))
+			_ = stdoutW.Close()
+		}()
+
+		m := &Manager{}
+		w := &Worker{}
+		if err := m.runTurn(w, proc, "execute task"); err != nil {
+			t.Fatalf("expected event:result to complete turn, got: %v", err)
+		}
+	})
+}
+

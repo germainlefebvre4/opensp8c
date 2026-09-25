@@ -220,31 +220,24 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 }
 
 // isTurnCompleteLine reports whether a stdout line signals the end of an
-// agent turn: a native stream-json "result" event, or the "message_complete"
-// event that translateGeminiLine produces for Gemini's own "result" type.
+// agent turn: a native stream-json "result" event, the "message_complete"
+// event that translateGeminiLine and translateAntigravityLine produce, or
+// raw Antigravity event: "result".
 func isTurnCompleteLine(line []byte) bool {
 	var data struct {
-		Type string `json:"type"`
+		Type  string `json:"type"`
+		Event string `json:"event"`
 	}
 	if err := json.Unmarshal(line, &data); err != nil {
 		return false
 	}
-	return data.Type == "result" || data.Type == "message_complete"
+	return data.Type == "result" || data.Type == "message_complete" || data.Event == "result"
 }
 
 // extractActivity best-effort extracts human-readable text from a single
 // stdout line for display as the worker's current activity, otherwise a
 // truncated version of the raw line. Fails soft on invalid JSON or an empty
 // line rather than blocking the apply/heal loop.
-//
-// Two "content_block_delta" shapes are recognized: the native Claude CLI's
-// own stream-json output wraps it as {"type":"stream_event","event":{"type":
-// "content_block_delta","delta":{"type":"text_delta"|"thinking_delta",
-// "text"|"thinking":...}}}, while Gemini's translated output (see
-// translateGeminiLine) uses the flatter {"type":"content_block_delta","delta":
-// {"text":...}}. A delta with neither text nor thinking (e.g. a tool-call's
-// input_json_delta) yields no activity update rather than an empty string
-// overwriting the last meaningful one.
 func extractActivity(line []byte) string {
 	trimmed := strings.TrimSpace(string(line))
 	if trimmed == "" {
@@ -256,25 +249,46 @@ func extractActivity(line []byte) string {
 		Thinking string `json:"thinking"`
 	}
 	var data struct {
-		Type  string `json:"type"`
-		Delta delta  `json:"delta"`
-		Event struct {
-			Type  string `json:"type"`
-			Delta delta  `json:"delta"`
-		} `json:"event"`
+		Type         string          `json:"type"`
+		Delta        delta           `json:"delta"`
+		Event        json.RawMessage `json:"event"`
+		StepUpdate   struct {
+			StepType  string `json:"step_type"`
+			TextDelta string `json:"text_delta"`
+			ToolName  string `json:"tool_name"`
+		} `json:"step_update"`
+		ContentBlock struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"content_block"`
 	}
 	if err := json.Unmarshal(line, &data); err == nil {
-		if data.Type == "stream_event" && data.Event.Type == "content_block_delta" {
-			if data.Event.Delta.Text != "" {
-				return data.Event.Delta.Text
+		if data.Type == "stream_event" && len(data.Event) > 0 {
+			var evt struct {
+				Type  string `json:"type"`
+				Delta delta  `json:"delta"`
 			}
-			return data.Event.Delta.Thinking
+			if err := json.Unmarshal(data.Event, &evt); err == nil && evt.Type == "content_block_delta" {
+				if evt.Delta.Text != "" {
+					return evt.Delta.Text
+				}
+				return evt.Delta.Thinking
+			}
 		}
 		if data.Type == "content_block_delta" {
 			if data.Delta.Text != "" {
 				return data.Delta.Text
 			}
 			return data.Delta.Thinking
+		}
+		if data.Type == "content_block_start" && data.ContentBlock.Type == "tool_use" && data.ContentBlock.Name != "" {
+			return data.ContentBlock.Name
+		}
+		if data.StepUpdate.TextDelta != "" {
+			return data.StepUpdate.TextDelta
+		}
+		if data.StepUpdate.ToolName != "" {
+			return data.StepUpdate.ToolName
 		}
 	}
 

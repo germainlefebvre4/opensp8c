@@ -152,3 +152,45 @@ func TestSessionPendingQuestion(t *testing.T) {
 		t.Fatalf("expected pending question to be cleared, got %q", got)
 	}
 }
+
+func TestExtractGhostMarkers_AntigravityTranslation(t *testing.T) {
+	t.Run("ExtractGhostNamed from translated Antigravity step_update", func(t *testing.T) {
+		rawAgyLine := `{"event":"step_update","step_update":{"step_index":2,"state":"ACTIVE","step_type":"agent_response","text_delta":"{\"event\":\"ghost_named\",\"name\":\"add-antigravity-support\"}\n"}}`
+		translated := translateAntigravityLine([]byte(rawAgyLine))
+		if translated == nil {
+			t.Fatalf("expected non-nil translated output")
+		}
+
+		gotName := ExtractGhostNamed(translated)
+		if gotName != "add-antigravity-support" {
+			t.Errorf("expected 'add-antigravity-support', got %q", gotName)
+		}
+	})
+
+	t.Run("ExtractGhostQuestion from translated Antigravity step_update", func(t *testing.T) {
+		rawAgyLine := `{"event":"step_update","step_update":{"step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"{\"event\":\"ghost_question\",\"question\":\"Quelle base de données préférez-vous ?\"}\n"}}`
+		translated := translateAntigravityLine([]byte(rawAgyLine))
+		if translated == nil {
+			t.Fatalf("expected non-nil translated output")
+		}
+
+		gotQuestion := ExtractGhostQuestion(translated)
+		if gotQuestion != "Quelle base de données préférez-vous ?" {
+			t.Errorf("expected 'Quelle base de données préférez-vous ?', got %q", gotQuestion)
+		}
+	})
+
+	t.Run("ExtractGhostQuestion embedded in conversational text delta", func(t *testing.T) {
+		rawAgyLine := `{"event":"step_update","step_update":{"step_index":4,"state":"ACTIVE","step_type":"agent_response","text_delta":"J'ai analysé le projet.\n{\"event\":\"ghost_question\",\"question\":\"Faut-il supporter PostgreSQL ?\"}\nMerci de préciser."}}`
+		translated := translateAntigravityLine([]byte(rawAgyLine))
+		if translated == nil {
+			t.Fatalf("expected non-nil translated output")
+		}
+
+		gotQuestion := ExtractGhostQuestion(translated)
+		if gotQuestion != "Faut-il supporter PostgreSQL ?" {
+			t.Errorf("expected 'Faut-il supporter PostgreSQL ?', got %q", gotQuestion)
+		}
+	})
+}
+

@@ -405,6 +405,82 @@ func TestStartSubprocessGeminiBridge_SilencedIDEWarning(t *testing.T) {
 	_ = proc.Wait()
 }
 
+func TestStartSubprocessAntigravityBridge(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockCLIPath := filepath.Join(tmpDir, "mock-agy")
+	mockCLIScript := `#!/bin/sh
+while IFS= read -r line; do
+	echo '{"event":"init","conversation_id":"mock-conv-12345"}'
+	echo '{"event":"step_update","step_update":{"step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Antigravity response"}}'
+	echo '{"event":"result","result":{"conversation_id":"mock-conv-12345","status":"SUCCESS"}}'
+done
+`
+	err := os.WriteFile(mockCLIPath, []byte(mockCLIScript), 0755)
+	if err != nil {
+		t.Fatalf("failed to write mock CLI: %v", err)
+	}
+
+	agentCfg := agents.AgentConfig{
+		ID:    "antigravity",
+		Label: "Antigravity",
+		CLI:   mockCLIPath,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	proc, err := StartSubprocess(ctx, tmpDir, agentCfg, "Framing instructions", "", false, nil, nil, false)
+	if err != nil {
+		t.Fatalf("StartSubprocess failed: %v", err)
+	}
+
+	userMsg := `{"type":"user","message":{"role":"user","content":"Explore app"}}`
+	_, err = proc.Write([]byte(userMsg))
+	if err != nil {
+		t.Fatalf("proc.Write failed: %v", err)
+	}
+
+	scanner := bufio.NewScanner(proc.Stdout())
+
+	// First translated line should be content_block_delta
+	if !scanner.Scan() {
+		t.Fatalf("first scan failed")
+	}
+	line1 := scanner.Text()
+	var msg1 map[string]interface{}
+	if err := json.Unmarshal([]byte(line1), &msg1); err != nil {
+		t.Fatalf("failed to unmarshal line 1: %v", err)
+	}
+	if msg1["type"] != "content_block_delta" {
+		t.Errorf("expected line 1 type content_block_delta, got: %v", msg1["type"])
+	}
+	delta1, _ := msg1["delta"].(map[string]interface{})
+	if delta1["text"] != "Antigravity response" {
+		t.Errorf("expected delta text 'Antigravity response', got: %v", delta1["text"])
+	}
+
+	// Second translated line should be message_complete
+	if !scanner.Scan() {
+		t.Fatalf("second scan failed")
+	}
+	line2 := scanner.Text()
+	var msg2 map[string]interface{}
+	if err := json.Unmarshal([]byte(line2), &msg2); err != nil {
+		t.Fatalf("failed to unmarshal line 2: %v", err)
+	}
+	if msg2["type"] != "message_complete" {
+		t.Errorf("expected line 2 type message_complete, got: %v", msg2["type"])
+	}
+
+	// Check ConversationID was captured
+	if proc.ConversationID() != "mock-conv-12345" {
+		t.Errorf("expected ConversationID 'mock-conv-12345', got: %q", proc.ConversationID())
+	}
+
+	_ = proc.CloseStdin()
+	_ = proc.Wait()
+}
+
 func TestSessionInjectMessage(t *testing.T) {
 	s := &Session{
 		messages: make([][]byte, 0),
@@ -514,3 +590,58 @@ func TestExtractGhostNamed(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildSubprocessArgs_AntigravitySession(t *testing.T) {
+	cfg := agents.AgentConfig{
+		ID:  "antigravity",
+		CLI: "agy",
+	}
+
+	t.Run("Resume existing session passes --conversation", func(t *testing.T) {
+		args := buildSubprocessArgs(cfg, "base", "extra", "conv-12345", true)
+		expected := []string{
+			"--input-format", "stream-json",
+			"--output-format", "stream-json",
+			"--dangerously-skip-permissions",
+			"--conversation", "conv-12345",
+		}
+		if len(args) != len(expected) {
+			t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+		}
+		for i, arg := range expected {
+			if args[i] != arg {
+				t.Errorf("arg %d mismatch: want %q, got %q", i, arg, args[i])
+			}
+		}
+	})
+
+	t.Run("New session does not pass --conversation or --session-id", func(t *testing.T) {
+		args := buildSubprocessArgs(cfg, "base", "extra", "conv-12345", false)
+		expected := []string{
+			"--input-format", "stream-json",
+			"--output-format", "stream-json",
+			"--dangerously-skip-permissions",
+		}
+		if len(args) != len(expected) {
+			t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+		}
+		for i, arg := range expected {
+			if args[i] != arg {
+				t.Errorf("arg %d mismatch: want %q, got %q", i, arg, args[i])
+			}
+		}
+	})
+
+	t.Run("Empty session ID passes base args only", func(t *testing.T) {
+		args := buildSubprocessArgs(cfg, "base", "extra", "", true)
+		expected := []string{
+			"--input-format", "stream-json",
+			"--output-format", "stream-json",
+			"--dangerously-skip-permissions",
+		}
+		if len(args) != len(expected) {
+			t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+		}
+	})
+}
+

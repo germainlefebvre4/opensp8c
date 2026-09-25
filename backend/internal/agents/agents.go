@@ -33,6 +33,13 @@ func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []strin
 			"--skip-trust",
 		}
 	}
+	if a.ID == "antigravity" {
+		return []string{
+			"--input-format", "stream-json",
+			"--output-format", "stream-json",
+			"--dangerously-skip-permissions",
+		}
+	}
 
 	args := []string{
 		"--print",

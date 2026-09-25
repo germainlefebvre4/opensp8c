@@ -21,6 +21,22 @@ func TestBuildSubprocessArgs_Gemini(t *testing.T) {
 	}
 }
 
+func TestBuildSubprocessArgs_Antigravity(t *testing.T) {
+	cfg := AgentConfig{
+		ID: "antigravity",
+	}
+	args := cfg.BuildSubprocessArgs("base prompt", "extra prompt")
+	expected := []string{
+		"--input-format", "stream-json",
+		"--output-format", "stream-json",
+		"--dangerously-skip-permissions",
+	}
+
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("expected antigravity args: %v, got: %v", expected, args)
+	}
+}
+
 func TestBuildSubprocessArgs_Other(t *testing.T) {
 	cfg := AgentConfig{
 		ID: "claude",

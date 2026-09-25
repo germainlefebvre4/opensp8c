@@ -1,0 +1,13 @@
+schema: spec-driven
+created: "2026-09-24"
+tags:
+    type: []
+    complexity: 3
+    components:
+        - kanban-ready-column
+        - kanban-board
+    agent_specialization:
+        - backend
+        - frontend
+    _auto: true
+    _tagged_at: "2026-09-25"
