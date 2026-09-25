@@ -82,7 +82,7 @@ Un séparateur visuel horizontal SHALL être rendu entre les colonnes **Done** e
 - **THEN** une ligne horizontale tenue sépare visuellement la section Done de la section Archived dans le même slot de colonne
 
 ### Requirement: Afficher la carte d'un changement
-Chaque changement SHALL être représenté par une carte épurée affichant : le nom du changement, la progression des tasks (barre de progression + compteur), et — lorsque les tags sont disponibles — un badge de type applicatif et un indicateur de complexité (points sur 5). Les cartes en colonne **Done** SHALL afficher une action rapide **"Sync & Archive"** au survol. Les cartes en colonne **Archived** n'affichent aucune action. Les cartes en colonnes **To Explore**, **Ready**, **To Do**, et **In Progress** SHALL être draggables selon les transitions autorisées. Les cartes en colonnes **Done** et **Archived** SHALL être non-draggables. Quand un subprocess ff est actif pour un changement, sa carte SHALL afficher un spinner à la place du contenu normal et le drag SHALL être désactivé pour cette carte. En cas d'erreur ff (`ff_failed`), la carte SHALL afficher un indicateur d'erreur et le drag est réactivé. Si un changement dans la colonne **Ready** ou **To Do** posséde une exploration fantôme active du même nom, il SHALL être affiché comme un change brouillon (draft) visuellement distinct, incluant un bouton d'action explicite "Figer". Lorsque `worker_active` vaut `true` pour un changement, sa carte SHALL afficher un badge indiquant qu'un worker du pool d'agents est actuellement assigné à ce changement, positionné sur la même ligne que le compteur de tâches, aux côtés du badge stale s'il est également présent.
+Chaque changement SHALL être représenté par une carte épurée affichant : le nom du changement, la progression des tasks (barre de progression + compteur), et — lorsque les tags sont disponibles — un badge de type applicatif et un indicateur de complexité (points sur 5). Les cartes en colonne **Done** SHALL afficher une action rapide **"Sync & Archive"** au survol. Les cartes en colonne **Archived** n'affichent aucune action. Les cartes en colonnes **To Explore**, **Ready**, **To Do**, et **In Progress** SHALL être draggables selon les transitions autorisées. Les cartes en colonnes **Done** et **Archived** SHALL être non-draggables. Quand un subprocess ff est actif pour un changement, sa carte SHALL afficher un spinner à la place du contenu normal et le drag SHALL être désactivé pour cette carte. En cas d'erreur ff (`ff_failed`), la carte SHALL afficher un indicateur d'erreur et le drag est réactivé. Si un changement dans la colonne **Ready** ou **To Do** posséde une exploration fantôme active du même nom, il SHALL être affiché comme un change brouillon (draft) visuellement distinct, incluant un bouton d'action explicite "Figer". Lorsque `worker_active` vaut `true` pour un changement, sa carte SHALL afficher un badge indiquant qu'un worker du pool d'agents est actuellement assigné à ce changement, positionné sur la même ligne que le compteur de tâches, aux côtés du badge stale s'il est également présent, ainsi qu'un bouton d'action d'arrêt rapide permettant d'interrompre le worker actif et de rétrograder la tâche vers la colonne Ready.
 
 #### Scenario: Carte sans tasks.md
 - **WHEN** le changement n'a pas encore de fichier `tasks.md`
@@ -135,6 +135,14 @@ Chaque changement SHALL être représenté par une carte épurée affichant : le
 #### Scenario: Carte sans worker actif
 - **WHEN** un changement a `worker_active = false` ou absent
 - **THEN** aucun badge de worker actif n'est affiché sur la carte
+
+#### Scenario: Bouton d'arrêt de worker sur la carte
+- **WHEN** un changement a `worker_active = true`
+- **THEN** sa carte affiche un bouton d'action permettant d'arrêter le worker assigné à ce changement
+
+#### Scenario: Clic sur le bouton d'arrêt de worker
+- **WHEN** l'utilisateur clique sur le bouton d'arrêt du worker sur la carte et confirme l'action
+- **THEN** l'application envoie une requête de rétrogradation forcée au backend, le worker est interrompu, son worktree est préservé, et la carte se déplace en colonne "Ready"
 
 ### Requirement: Ouvrir l'ExplorePanel au clic sur une carte To Explore
 L'utilisateur SHALL pouvoir cliquer sur une carte dans la colonne **To Explore** pour ouvrir le bottom panel de conversation. Le panel SHALL s'afficher sous les colonnes Kanban (layout flex-col), sans masquer ni comprimer les colonnes. La carte entière est la zone cliquable.

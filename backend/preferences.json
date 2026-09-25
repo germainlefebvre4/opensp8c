@@ -38,6 +38,14 @@
       "sessionId": "44e9ff388934fbf8c61bb02235c2196c",
       "createdAt": "2026-09-22T21:26:46Z",
       "lastActivityAt": "2026-09-22T21:26:46Z"
+    },
+    {
+      "id": "14de638f47a0d325a55007951eaf4909",
+      "workspaceId": "8b4a8cb8",
+      "name": "explore-14de63",
+      "sessionId": "14de638f47a0d325a55007951eaf4909",
+      "createdAt": "2026-09-25T06:24:43Z",
+      "lastActivityAt": "2026-09-25T06:54:22Z"
     }
   ],
   "env": {

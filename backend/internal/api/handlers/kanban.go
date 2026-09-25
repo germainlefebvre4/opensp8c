@@ -224,7 +224,8 @@ func (h *KanbanHandler) Launch(w http.ResponseWriter, r *http.Request) {
 }
 
 // Unlaunch marks a change "not launched", demoting it from To Do to Ready.
-// Refused while an Agent Pool worker is actively working on the change.
+// Refused while an Agent Pool worker is actively working on the change,
+// unless ?force=true is provided, in which case the active worker is canceled.
 func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	name := chi.URLParam(r, "name")
@@ -245,9 +246,16 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	force := r.URL.Query().Get("force") == "true"
+
 	if h.activeWorkerChanges(id)[name] {
-		http.Error(w, "a worker is active on this change", http.StatusConflict)
-		return
+		if !force {
+			http.Error(w, "a worker is active on this change", http.StatusConflict)
+			return
+		}
+		if h.poolReg != nil {
+			h.poolReg.For(id).CancelWorkerForChange(name)
+		}
 	}
 
 	if err := openspec.SetLaunched(changeDir, false); err != nil {

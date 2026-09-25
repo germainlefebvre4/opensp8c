@@ -195,3 +195,44 @@ func TestWorkerStatusTransition_BroadcastsAndAppendsActivity(t *testing.T) {
 		t.Errorf("expected status testing, got %v", entries[1].Meta["status"])
 	}
 }
+
+func TestCancelWorkerForChange(t *testing.T) {
+	m := NewManager(nil, nil, nil, nil)
+
+	var canceledA, canceledB bool
+	cancelA := func() { canceledA = true }
+	cancelB := func() { canceledB = true }
+
+	m.mu.Lock()
+	m.activeWorkers[1] = &Worker{
+		ID:           1,
+		ActiveChange: "change-a",
+		CancelFunc:   cancelA,
+	}
+	m.activeWorkers[2] = &Worker{
+		ID:           2,
+		ActiveChange: "change-b",
+		CancelFunc:   cancelB,
+	}
+	m.mu.Unlock()
+
+	// Cancel non-existent worker
+	if got := m.CancelWorkerForChange("non-existent"); got {
+		t.Errorf("expected CancelWorkerForChange to return false for non-existent change, got true")
+	}
+	if canceledA || canceledB {
+		t.Errorf("expected neither worker to be canceled")
+	}
+
+	// Cancel change-a
+	if got := m.CancelWorkerForChange("change-a"); !got {
+		t.Errorf("expected CancelWorkerForChange to return true for change-a, got false")
+	}
+	if !canceledA {
+		t.Errorf("expected worker for change-a to be canceled")
+	}
+	if canceledB {
+		t.Errorf("expected worker for change-b to remain active and un-canceled")
+	}
+}
+

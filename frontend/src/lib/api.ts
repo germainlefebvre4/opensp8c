@@ -75,8 +75,8 @@ export const resetTasks = (workspaceId: string, changeName: string) =>
 export const launchChange = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/launch`)
 
-export const unlaunchChange = (workspaceId: string, changeName: string) =>
-  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/unlaunch`)
+export const unlaunchChange = (workspaceId: string, changeName: string, force?: boolean) =>
+  api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/unlaunch${force ? '?force=true' : ''}`)
 
 export const reorderReady = (workspaceId: string, order: string[]) =>
   api.put(`/api/workspaces/${workspaceId}/ready-order`, { order })

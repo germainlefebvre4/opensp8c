@@ -24,8 +24,15 @@
     "body": "La conversation sera perdue. Cette action est irréversible.",
     "confirm": "Abandonner"
   },
+  "unlaunchWorkerDialog": {
+    "title": "Interrompre le worker et rétrograder ?",
+    "body": "Un worker du Pool d'Agents est en cours d'exécution sur le change {{name}}.",
+    "bodyDetail": "Le worker sera interrompu et la tâche sera replacée dans la colonne Ready. Les modifications et commits dans le worktree seront conservés.",
+    "confirm": "Interrompre et rétrograder"
+  },
   "errors": {
-    "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change."
+    "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change.",
+    "unlaunchFailed": "Échec de la rétrogradation du change."
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",
@@ -44,6 +51,7 @@
     "ffFailed": "ff échoué",
     "draftTasksBadge": "{{done}}/{{total}} dft",
     "workerActiveBadge": "worker",
-    "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change"
+    "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change",
+    "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready"
   }
 }

@@ -59,6 +59,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const [resetDialog, setResetDialog] = useState<Change | null>(null)
   const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
   const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
+  const [unlaunchWorkerDialog, setUnlaunchWorkerDialog] = useState<Change | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
 
@@ -226,11 +227,20 @@ export function KanbanPage({ workspaceId }: Props) {
         qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
       } catch { /* ignore */ }
     } else if (targetStatus === 'ready' && sourceStatus === 'todo') {
+      if (change.worker_active) {
+        setUnlaunchWorkerDialog(change)
+        return
+      }
       try {
         await unlaunchChange(workspaceId, changeName)
         qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
-      } catch (err) {
-        toast({ title: t('errors.unlaunchWorkerActive'), variant: 'error' })
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status === 409) {
+          toast({ title: t('errors.unlaunchWorkerActive'), variant: 'error' })
+        } else {
+          toast({ title: t('errors.unlaunchFailed'), variant: 'error' })
+        }
       }
     } else if (targetStatus === 'to-explore') {
       setResetDialog(change)
@@ -291,6 +301,23 @@ export function KanbanPage({ workspaceId }: Props) {
       await resetTasks(workspaceId, name)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     } catch { /* ignore */ }
+  }
+
+  const handleConfirmUnlaunchWorker = async () => {
+    if (!unlaunchWorkerDialog) return
+    const change = unlaunchWorkerDialog
+    setUnlaunchWorkerDialog(null)
+    try {
+      await unlaunchChange(workspaceId, change.name, true)
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
+    } catch {
+      toast({ title: t('errors.unlaunchFailed'), variant: 'error' })
+    }
+  }
+
+  const handleStopWorker = (change: Change) => {
+    setUnlaunchWorkerDialog(change)
   }
 
   const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
@@ -371,6 +398,7 @@ export function KanbanPage({ workspaceId }: Props) {
                       onOpen={name => handleOpen(name, col.status)}
                       onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
                       onDeleteGhost={handleDeleteGhostRequest}
+                      onStopWorker={handleStopWorker}
                       getFfStatus={getFfStatus}
                       dragSourceStatus={dragSourceStatus}
                       validDropSources={Object.entries(VALID_DROPS)
@@ -504,6 +532,36 @@ export function KanbanPage({ workspaceId }: Props) {
                   className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer font-medium"
                 >
                   {t('deleteGhostDialog.confirm')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {unlaunchWorkerDialog && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-sm font-semibold text-slate-800">{t('unlaunchWorkerDialog.title')}</h2>
+                <p className="text-xs text-slate-500">
+                  {t('unlaunchWorkerDialog.body', { name: unlaunchWorkerDialog.name })}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {t('unlaunchWorkerDialog.bodyDetail')}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setUnlaunchWorkerDialog(null)}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  {tCommon('cancel')}
+                </button>
+                <button
+                  onClick={handleConfirmUnlaunchWorker}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer font-medium"
+                >
+                  {t('unlaunchWorkerDialog.confirm')}
                 </button>
               </div>
             </div>

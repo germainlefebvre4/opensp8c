@@ -293,17 +293,22 @@ func readFileContent(path string) string {
 
 // SetLaunched marks a change's persistent "launched" state, promoting it
 // between the Ready and To Do kanban columns without touching tasks.md.
+// If .openspec.yaml does not exist, it initializes one with schema "spec-driven".
 func SetLaunched(changeRoot string, launched bool) error {
 	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
 
+	var meta openspecMeta
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
-		return err
-	}
-
-	var meta openspecMeta
-	if err := yaml.Unmarshal(data, &meta); err != nil {
-		return err
+		if os.IsNotExist(err) {
+			meta = openspecMeta{Schema: "spec-driven"}
+		} else {
+			return err
+		}
+	} else {
+		if err := yaml.Unmarshal(data, &meta); err != nil {
+			return err
+		}
 	}
 
 	meta.Launched = &launched

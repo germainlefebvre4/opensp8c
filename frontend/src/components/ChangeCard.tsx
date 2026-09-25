@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle, Trash2, Pin, Cpu } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2, Pin, Cpu, Square } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
@@ -17,11 +17,12 @@ interface Props {
   onDelete?: (ghostId: string) => void
   associatedGhostId?: string
   isOverlay?: boolean
+  onStopWorker?: (change: Change) => void
 }
 
 const DRAGGABLE_STATUSES = new Set(['to-explore', 'ready', 'todo', 'in-progress'])
 
-export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false }: Props) {
+export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false, onStopWorker }: Props) {
   const { t: tKanban } = useTranslation('kanban')
   const { t: tDialogs } = useTranslation('dialogs')
   const { toast } = useToast()
@@ -236,11 +237,27 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
             <span>{tKanban('card.tasksCount', { done: change.tasks_done, total: change.tasks_total })}</span>
             <span className="flex items-center gap-1.5">
               {change.worker_active && (
-                <span
-                  title={tKanban('card.workerActiveTooltip')}
-                  className="flex items-center gap-0.5 text-violet-500 font-medium"
-                >
-                  <Cpu size={10} className="animate-pulse" /> {tKanban('card.workerActiveBadge')}
+                <span className="flex items-center gap-1">
+                  <span
+                    title={tKanban('card.workerActiveTooltip')}
+                    className="flex items-center gap-0.5 text-violet-500 font-medium"
+                  >
+                    <Cpu size={10} className="animate-pulse" /> {tKanban('card.workerActiveBadge')}
+                  </span>
+                  {onStopWorker && (
+                    <button
+                      type="button"
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation()
+                        onStopWorker(change)
+                      }}
+                      title={tKanban('card.stopWorkerTooltip')}
+                      className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                    >
+                      <Square size={9} className="fill-current" />
+                    </button>
+                  )}
                 </span>
               )}
               {change.is_stale && (

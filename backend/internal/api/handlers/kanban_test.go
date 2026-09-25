@@ -209,6 +209,81 @@ func TestKanbanHandler_Unlaunch_WorkerActive(t *testing.T) {
 	}
 }
 
+func TestKanbanHandler_Unlaunch_WorkerActive_Force(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	changeName := fmt.Sprintf("worker-force-%d", time.Now().UnixNano())
+	writeChangeWithMeta(t, changesDir, changeName, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
+
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-q")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
+
+	poolReg := pool.NewRegistry(nil, nil, nil, nil)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
+	poolMgr := poolReg.For(workspaceID)
+
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	t.Cleanup(func() {
+		poolMgr.Stop()
+		home, _ := os.UserHomeDir()
+		os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
+	})
+
+	deadline := time.Now().Add(15 * time.Second)
+	active := false
+	for time.Now().Before(deadline) {
+		_, _, workers := poolMgr.Status(workspaceID)
+		for _, w := range workers {
+			if w.ActiveChange == changeName {
+				active = true
+			}
+		}
+		if active {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !active {
+		t.Skip("pool did not pick up the worker within the deadline (stub orchestration timing); skipping force assertion")
+	}
+
+	// First verify without force returns 409
+	rec, req := launchRequest("PATCH", workspaceID, changeName, "unlaunch", nil)
+	h.Unlaunch(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 while worker is active without force, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now with ?force=true
+	recForce, reqForce := launchRequest("PATCH", workspaceID, changeName, "unlaunch?force=true", nil)
+	h.Unlaunch(recForce, reqForce)
+	if recForce.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 with force=true, got %d: %s", recForce.Code, recForce.Body.String())
+	}
+
+	changes, err := openspec.ListChanges(tmpDir)
+	if err != nil {
+		t.Fatalf("ListChanges: %v", err)
+	}
+	if len(changes) != 1 || changes[0].KanbanStatus != "ready" {
+		t.Fatalf("expected change to be demoted to ready, got %+v", changes)
+	}
+}
+
 func TestKanbanHandler_ReorderReady(t *testing.T) {
 	tmpDir := t.TempDir()
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")

@@ -24,8 +24,15 @@
     "body": "The conversation will be lost. This action is irreversible.",
     "confirm": "Abandon"
   },
+  "unlaunchWorkerDialog": {
+    "title": "Interrupt worker and demote?",
+    "body": "An Agent Pool worker is currently running on change {{name}}.",
+    "bodyDetail": "The worker will be stopped and the task moved back to the Ready column. Changes and commits in the worktree will be preserved.",
+    "confirm": "Interrupt and demote"
+  },
   "errors": {
-    "unlaunchWorkerActive": "Cannot demote: an Agent Pool worker is active on this change."
+    "unlaunchWorkerActive": "Cannot demote: an Agent Pool worker is active on this change.",
+    "unlaunchFailed": "Failed to demote change."
   },
   "columnActions": {
     "newExploration": "New exploration",
@@ -44,6 +51,7 @@
     "ffFailed": "ff failed",
     "draftTasksBadge": "{{done}}/{{total}} dft",
     "workerActiveBadge": "worker",
-    "workerActiveTooltip": "An Agent Pool worker is currently assigned to this change"
+    "workerActiveTooltip": "An Agent Pool worker is currently assigned to this change",
+    "stopWorkerTooltip": "Interrupt worker and demote to Ready"
   }
 }

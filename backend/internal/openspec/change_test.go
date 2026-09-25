@@ -134,6 +134,57 @@ created: "2024-01-01"
 	}
 }
 
+func TestSetLaunched_CreatesFileIfMissing(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	changeRoot := filepath.Join(changesDir, "legacy-no-yaml")
+	if err := os.MkdirAll(changeRoot, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Verify .openspec.yaml does not exist
+	if _, err := os.Stat(filepath.Join(changeRoot, ".openspec.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("expected .openspec.yaml to not exist")
+	}
+
+	// Call SetLaunched(changeRoot, false)
+	if err := SetLaunched(changeRoot, false); err != nil {
+		t.Fatalf("SetLaunched failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(changeRoot, ".openspec.yaml"))
+	if err != nil {
+		t.Fatalf("expected .openspec.yaml to be created: %v", err)
+	}
+
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if meta.Schema != "spec-driven" {
+		t.Errorf("expected schema to default to 'spec-driven', got %q", meta.Schema)
+	}
+	if meta.Launched == nil || *meta.Launched {
+		t.Errorf("expected launched=false, got %+v", meta.Launched)
+	}
+
+	// Call SetLaunched(changeRoot, true) to ensure subsequent update works
+	if err := SetLaunched(changeRoot, true); err != nil {
+		t.Fatalf("SetLaunched failed: %v", err)
+	}
+	data, err = os.ReadFile(filepath.Join(changeRoot, ".openspec.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	meta = openspecMeta{}
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if meta.Launched == nil || !*meta.Launched {
+		t.Errorf("expected launched=true, got %+v", meta.Launched)
+	}
+}
+
 func TestClearKanbanState(t *testing.T) {
 	workspacePath := t.TempDir()
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")

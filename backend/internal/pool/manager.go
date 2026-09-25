@@ -112,6 +112,24 @@ func (m *Manager) Stop() {
 	m.workspaceName = ""
 }
 
+// CancelWorkerForChange cancels the active worker assigned to changeName, if any.
+// It returns true if an active worker was found and its cancel function invoked,
+// or false if no worker was active for that change.
+func (m *Manager) CancelWorkerForChange(changeName string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, w := range m.activeWorkers {
+		if w.ActiveChange == changeName {
+			if w.CancelFunc != nil {
+				w.CancelFunc()
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // Status returns the current status of the pool and its workers, as seen by
 // workspaceID. If the pool is running on behalf of a different workspace, it
 // is reported as not running rather than leaking that workspace's state.
