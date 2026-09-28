@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAddWorkspace } from '../hooks/useWorkspaces'
 
-export function WorkspaceSetup() {
+export function NoWorkspaceState() {
   const { t } = useTranslation('workspace')
 
   const [path, setPath] = useState('')
@@ -24,7 +24,7 @@ export function WorkspaceSetup() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
       <h2>{t('welcome')}</h2>
       <p>{t('welcomeSubtitle')}</p>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 400 }}>

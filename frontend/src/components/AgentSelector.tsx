@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown, Settings } from 'lucide-react'
+import { Bot, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAgents, usePatchPreferences, usePreferences } from '../hooks/useAgentPreferences'
-import { AgentSettingsModal } from './AgentSettingsModal'
 
 export function AgentSelector() {
   const { t } = useTranslation('workspace')
@@ -10,7 +9,6 @@ export function AgentSelector() {
   const { data: prefs } = usePreferences()
   const patch = usePatchPreferences()
   const [open, setOpen] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -67,19 +65,6 @@ export function AgentSelector() {
         )}
         <ChevronDown size={11} className="shrink-0 text-slate-400" />
       </button>
-
-      <button
-        type="button"
-        onClick={() => setShowSettings(true)}
-        className="p-1.5 rounded-md border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700 hover:bg-white transition-colors cursor-pointer shrink-0"
-        title={t('agentSelector.configureEnv')}
-      >
-        <Settings size={13} />
-      </button>
-
-      {showSettings && (
-        <AgentSettingsModal onClose={() => setShowSettings(false)} />
-      )}
 
       {open && dropdownPos && (
         <div

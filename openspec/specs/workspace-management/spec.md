@@ -30,7 +30,9 @@ L'application SHALL afficher la liste des workspaces configurés avec leurs comp
 
 #### Scenario: Aucun workspace configuré
 - **WHEN** aucun workspace n'est présent dans `config.yaml` au démarrage
-- **THEN** l'application affiche un écran d'accueil invitant l'utilisateur à ajouter son premier workspace
+- **THEN** la structure globale de l'application (barre de navigation, sidebar workspace) reste affichée
+- **THEN** la zone de contenu principale affiche une invitation à ajouter un premier projet, à la place du Kanban
+- **THEN** les pages non liées à un workspace (Agents, Réglages, Configuration) restent pleinement accessibles depuis la navigation
 
 ### Requirement: Supprimer un workspace
 L'utilisateur SHALL pouvoir supprimer un workspace de la liste. La suppression retire uniquement l'entrée dans `config.yaml` ; elle ne modifie pas le répertoire du projet.

@@ -6,20 +6,17 @@ import { SpecsPage } from './pages/SpecsPage'
 import { TimelinePage } from './pages/TimelinePage'
 import { AgentsPage } from './pages/AgentsPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { WorkspaceSetup } from './pages/WorkspaceSetup'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { NoWorkspaceState } from './pages/NoWorkspaceState'
 import { useWorkspaces } from './hooks/useWorkspaces'
 import { ToastProvider } from './components/ui/Toast'
 
 const queryClient = new QueryClient()
 
 function AppRoutes() {
-  const { data: workspaces = [], isLoading } = useWorkspaces()
+  const { isLoading } = useWorkspaces()
 
   if (isLoading) return null
-
-  if (workspaces.length === 0) {
-    return <WorkspaceSetup />
-  }
 
   return (
     <Layout>
@@ -27,18 +24,19 @@ function AppRoutes() {
         <Routes>
           <Route
             path="/"
-            element={workspaceId ? <KanbanPage workspaceId={workspaceId} /> : null}
+            element={workspaceId ? <KanbanPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
           <Route
             path="/specs"
-            element={workspaceId ? <SpecsPage workspaceId={workspaceId} /> : null}
+            element={workspaceId ? <SpecsPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
           <Route
             path="/timeline"
-            element={workspaceId ? <TimelinePage workspaceId={workspaceId} /> : null}
+            element={workspaceId ? <TimelinePage workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/configuration" element={<ConfigurationPage />} />
         </Routes>
       )}
     </Layout>

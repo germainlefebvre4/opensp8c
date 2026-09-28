@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
-import { NavLink, useSearchParams } from 'react-router-dom'
+import { NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 import { LanguageSwitcher } from './LanguageSwitcher'
@@ -12,6 +12,7 @@ interface Props {
 export function Layout({ children }: Props) {
   const { t } = useTranslation('navigation')
   const { data: workspaces = [] } = useWorkspaces()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
@@ -21,11 +22,14 @@ export function Layout({ children }: Props) {
       ? paramId
       : workspaces[0]?.id ?? null
 
+  const isConfigurationRoute = location.pathname === '/configuration'
+
   useEffect(() => {
+    if (isConfigurationRoute) return
     if (effectiveId && searchParams.get('workspace') !== effectiveId) {
       setSearchParams({ workspace: effectiveId }, { replace: true })
     }
-  }, [effectiveId, searchParams, setSearchParams])
+  }, [effectiveId, isConfigurationRoute, searchParams, setSearchParams])
 
   const handleSelect = (id: string) => {
     setSearchParams(prev => { prev.set('workspace', id); return prev })
@@ -68,6 +72,19 @@ export function Layout({ children }: Props) {
               {label}
             </NavLink>
           ))}
+          <NavLink
+            to="/configuration"
+            end
+            className={({ isActive }) =>
+              `ml-3 px-3 h-7 flex items-center text-xs font-medium rounded-full border transition-colors no-underline ${
+                isActive
+                  ? 'text-blue-600 border-blue-600 bg-blue-50'
+                  : 'text-slate-500 border-slate-200 hover:text-slate-700 hover:border-slate-300'
+              }`
+            }
+          >
+            {t('configuration')}
+          </NavLink>
           <LanguageSwitcher />
         </nav>
 

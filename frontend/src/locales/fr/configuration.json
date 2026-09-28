@@ -1,0 +1,17 @@
+{
+  "title": "Configuration",
+  "tabs": {
+    "agents": "Agents",
+    "cli": "CLI"
+  },
+  "agentsTab": {
+    "description": "Registre des agents supportés par la plateforme, en lecture seule.",
+    "table": {
+      "agent": "Agent",
+      "status": "Statut",
+      "version": "Version"
+    },
+    "installed": "Installé",
+    "notInstalled": "Non installé"
+  }
+}
