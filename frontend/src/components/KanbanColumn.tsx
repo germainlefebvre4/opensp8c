@@ -92,6 +92,14 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
 
       {!collapsed && (
         <div className="flex flex-col gap-2 overflow-y-auto">
+          {status === 'to-explore' && onNew && (
+            <div
+              onClick={onNew}
+              className="border-2 border-dashed border-violet-300 bg-violet-50/40 rounded-lg px-3 py-2.5 flex items-center justify-center cursor-pointer hover:border-violet-400 hover:bg-violet-50 transition-all"
+            >
+              <span className="text-xs font-semibold text-violet-500">{t('columnActions.newExplorationCard')}</span>
+            </div>
+          )}
           <SortableContext
             items={status === 'ready' ? visible.map(ch => ch.name) : []}
             strategy={verticalListSortingStrategy}

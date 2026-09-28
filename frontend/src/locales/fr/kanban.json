@@ -36,6 +36,7 @@
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",
+    "newExplorationCard": "+ Nouvelle exploration",
     "showColumn": "Afficher la colonne",
     "hideColumn": "Réduire la colonne",
     "showMore": "Afficher plus ({{count}})"
