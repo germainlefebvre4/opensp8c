@@ -1,0 +1,13 @@
+schema: spec-driven
+created: "2026-09-28"
+tags:
+    type:
+        - frontend
+    complexity: 2
+    components:
+        - kanban-board
+    agent_specialization:
+        - frontend
+        - ux-design
+    _auto: true
+    _tagged_at: "2026-09-28"

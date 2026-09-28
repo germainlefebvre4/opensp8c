@@ -418,7 +418,9 @@ export function KanbanPage({ workspaceId }: Props) {
                       className="flex-1 min-h-0"
                       getFfStatus={getFfStatus}
                       dragSourceStatus={dragSourceStatus}
-                      validDropSources={[]}
+                      validDropSources={Object.entries(VALID_DROPS)
+                        .filter(([, targets]) => targets.includes('done'))
+                        .map(([src]) => src)}
                     />
                     <div className="h-px bg-slate-200 shrink-0" />
                     <KanbanColumn

@@ -53,10 +53,10 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
     <div
       ref={setNodeRef}
       className={`${className ?? 'flex-1'} min-w-[220px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
-        isOverColumn && isValidForDrag
+        isValidForDrag && isOverColumn
           ? 'bg-violet-50 border-violet-300'
-          : isOverColumn && dragSourceStatus && !isValidForDrag
-          ? 'bg-red-50 border-red-200'
+          : isValidForDrag
+          ? 'bg-violet-50/50 border-violet-200'
           : 'bg-slate-50 border-slate-100'
       }`}
     >

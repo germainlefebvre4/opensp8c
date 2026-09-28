@@ -1,3 +1,11 @@
+# Spec: workspace-management
+
+## Purpose
+
+Gestion des workspaces de l'application : ajout, sélection du workspace actif, et suppression, persistés dans `config.yaml`.
+
+## Requirements
+
 ### Requirement: Ajouter un workspace
 L'utilisateur SHALL pouvoir ajouter un workspace en fournissant le chemin absolu d'un répertoire contenant un sous-dossier `openspec/`. L'application SHALL proposer un explorateur de fichiers système pour sélectionner le répertoire. Le workspace est persisté dans `config.yaml` à la racine de l'application.
 
