@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye, Trash2, Maximize2, Minimize2, Sparkles, ArrowDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
-import { useAnonymousExploreSession } from '../hooks/useAnonymousExploreSession'
+import { useAnonymousExploreSession, type QuestionCardData } from '../hooks/useAnonymousExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { DraftSidePanel } from './DraftSidePanel'
 import { QuestionCard } from './QuestionCard'
+import { StagedAnswerCard } from './StagedAnswerCard'
 import { ToolCallRow } from './ToolCallRow'
 
 interface Props {
@@ -22,9 +23,11 @@ interface Props {
 
 export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized, onMaximizeToggle, onClose, onDelete, onGhostReady, onPromote }: Props) {
   const { t } = useTranslation('explore')
-  const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, answerQuestion, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
+  const { messages, connected, expired, waiting, ghostId, ghostName, agentInfo, send, stop } = useAnonymousExploreSession(workspaceId, resumeGhostId)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
+  const [stagedAnswers, setStagedAnswers] = useState<Record<string, string>>({})
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
   const [showSlowLabel, setShowSlowLabel] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -70,12 +73,14 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
   }, [input])
 
   const handleSend = useCallback(() => {
-    if (!input.trim()) return
-    send(input.trim())
+    if (!input.trim() && Object.keys(stagedAnswers).length === 0) return
+    send(input.trim(), stagedAnswers)
     setInput('')
+    setStagedAnswers({})
+    setEditingQuestionId(null)
     setIsAtBottom(true)
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [input, send])
+  }, [input, stagedAnswers, send])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -83,6 +88,19 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
       handleSend()
     }
   }, [handleSend])
+
+  const stageAnswer = useCallback((question: QuestionCardData, text: string) => {
+    setStagedAnswers(prev => ({ ...prev, [question.id]: text }))
+    setEditingQuestionId(null)
+  }, [])
+
+  const cancelStagedAnswer = useCallback((questionId: string) => {
+    setStagedAnswers(prev => {
+      const next = { ...prev }
+      delete next[questionId]
+      return next
+    })
+  }, [])
 
   const displayName = ghostName ?? resumeGhostId ?? null
 
@@ -172,8 +190,11 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
                   <QuestionCard
                     key={i}
                     question={msg.question}
-                    onAnswer={answerQuestion}
-                    onRequestOtherAnswer={() => textareaRef.current?.focus()}
+                    stagedAnswer={stagedAnswers[msg.question.id]}
+                    isEditing={editingQuestionId === msg.question.id}
+                    onStartEdit={() => setEditingQuestionId(msg.question!.id)}
+                    onStage={stageAnswer}
+                    onCancelStaged={() => cancelStagedAnswer(msg.question!.id)}
                   />
                 ) : (
                   <div key={i} className="w-full px-1 py-1 text-sm break-words">
@@ -203,6 +224,19 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
               {expired && (
                 <div className="text-center text-amber-600 text-xs">{t('sessionExpired')}</div>
               )}
+              {Object.entries(stagedAnswers).map(([questionId, answer]) => {
+                const question = messages.find(m => m.question?.id === questionId)?.question
+                if (!question) return null
+                return (
+                  <StagedAnswerCard
+                    key={questionId}
+                    questionText={question.text}
+                    answerText={answer}
+                    onEdit={() => setEditingQuestionId(questionId)}
+                    onDelete={() => cancelStagedAnswer(questionId)}
+                  />
+                )
+              })}
               <div ref={bottomRef} />
             </div>
 
@@ -232,7 +266,7 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
             />
             <button
               onClick={handleSend}
-              disabled={!connected || !input.trim()}
+              disabled={!connected || (!input.trim() && Object.keys(stagedAnswers).length === 0)}
               className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               {t('send')}

@@ -86,22 +86,13 @@ export function parseNativeQuestionEvent(data: Record<string, unknown>): Questio
 }
 
 /**
- * Appends a new question message, marking any previously active (unanswered,
- * not-yet-superseded) question as superseded so only one card is ever active
- * at a time — even if the agent chains several markers before a reply.
+ * Appends a new question message. Any previously active (unanswered) question
+ * is left untouched — several question cards can be active and eligible for
+ * an answer at the same time, e.g. when the agent chains multiple
+ * clarification markers before the user has replied to any of them.
  */
 export function appendQuestionMessage(messages: Message[], question: QuestionCardData): Message[] {
-  const withSuperseded = messages.map(m =>
-    m.question && !m.question.answer && !m.question.superseded
-      ? { ...m, question: { ...m.question, superseded: true } }
-      : m
-  )
-  return [...withSuperseded, { role: 'assistant', content: '', question }]
-}
-
-/** Returns the currently active (unanswered, not superseded) question message, if any. */
-export function findActiveQuestionMessage(messages: Message[]): Message | undefined {
-  return messages.find(m => m.question && !m.question.answer && !m.question.superseded)
+  return [...messages, { role: 'assistant', content: '', question }]
 }
 
 /** Marks the message carrying the given question id as answered with answerText. */
@@ -121,6 +112,46 @@ export function buildAnswerWSPayload(question: QuestionCardData, text: string): 
     return JSON.stringify({ type: 'native_question_response', toolUseId: question.toolUseId, content: text })
   }
   return JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
+}
+
+/** One question/answer pair staged locally by the user, ready for consolidated send. */
+export interface StagedAnswer {
+  questionId: string
+  questionText: string
+  answer: string
+}
+
+/**
+ * Builds the consolidated message sent to the subprocess when the user
+ * submits their staged answers (optionally alongside a free-form prompt):
+ *
+ *   Réponses aux questions :
+ *   • <question 1> : <réponse 1>
+ *   • <question 2> : <réponse 2>
+ *
+ *   <prompt libre>
+ *
+ * Returns the trimmed free text alone if there are no staged answers, and ""
+ * if there is neither.
+ */
+export function buildConsolidatedUserMessage(staged: StagedAnswer[], freeText: string): string {
+  const trimmedFree = freeText.trim()
+  if (staged.length === 0) return trimmedFree
+
+  const lines = ['Réponses aux questions :', ...staged.map(s => `• ${s.questionText} : ${s.answer}`)]
+  const consolidated = lines.join('\n')
+  return trimmedFree ? `${consolidated}\n\n${trimmedFree}` : consolidated
+}
+
+// residualGhostQuestionMarkerPattern matches a well-formed ghost_question
+// marker that may have slipped through the backend's own stripping (e.g. a
+// fragment split unusually across streamed chunks), as a last line of
+// defense against raw JSON leaking into a rendered assistant bubble.
+const residualGhostQuestionMarkerPattern = /\{"event":\s*"ghost_question",\s*"question":\s*"(?:[^"\\]|\\.)*"\}\n?/g
+
+/** Strips any residual raw ghost_question marker JSON from assistant text. */
+export function stripResidualGhostQuestionMarkers(text: string): string {
+  return text.replace(residualGhostQuestionMarkerPattern, '')
 }
 
 export function extractText(data: Record<string, unknown>): string {
@@ -227,12 +258,15 @@ export function applyToolResult(messages: Message[], result: { toolUseId: string
 
 /**
  * Merges streamed assistant text into the message being built (preserving
- * its toolCalls), or starts a new assistant message.
+ * its toolCalls), or starts a new assistant message. Applies a defensive
+ * cleanup for any residual ghost_question marker JSON that might have slipped
+ * through the backend's own stripping, so it never renders as raw JSON.
  */
 export function mergeAssistantText(messages: Message[], text: string, isPartial: boolean): Message[] {
+  const cleaned = stripResidualGhostQuestionMarkers(text)
   const last = messages[messages.length - 1]
   if (last?.role === 'assistant' && last.partial) {
-    return [...messages.slice(0, -1), { ...last, content: last.content + text, partial: isPartial }]
+    return [...messages.slice(0, -1), { ...last, content: last.content + cleaned, partial: isPartial }]
   }
-  return [...messages, { role: 'assistant', content: text, partial: isPartial }]
+  return [...messages, { role: 'assistant', content: cleaned, partial: isPartial }]
 }

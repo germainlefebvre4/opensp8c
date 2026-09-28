@@ -60,6 +60,65 @@ func TestExtractGhostQuestion(t *testing.T) {
 	}
 }
 
+func TestExtractAllGhostQuestions(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "Single untranslated top-level JSON",
+			input:    `{"event":"ghost_question","question":"Quel est le périmètre exact ?"}`,
+			expected: []string{"Quel est le périmètre exact ?"},
+		},
+		{
+			name:     "No match",
+			input:    `{"type":"content_block_delta","delta":{"text":"hello world"}}`,
+			expected: nil,
+		},
+		{
+			name: "Two markers concatenated in the same delta text (multi-line consolidated turn)",
+			input: `{"type":"content_block_delta","delta":{"text":"` +
+				`{\"event\":\"ghost_question\",\"question\":\"Quelle stack utiliser ?\"}\n` +
+				`{\"event\":\"ghost_question\",\"question\":\"Quel est le budget ?\"}\n` +
+				`"}}`,
+			expected: []string{"Quelle stack utiliser ?", "Quel est le budget ?"},
+		},
+		{
+			name: "Two markers embedded loosely in surrounding conversational text",
+			input: `{"type":"content_block_delta","delta":{"text":"J'ai deux questions. ` +
+				`\"event\":\"ghost_question\" \"question\":\"Premiere question ?\" et ensuite ` +
+				`\"event\":\"ghost_question\" \"question\":\"Deuxieme question ?\""}}`,
+			expected: []string{"Premiere question ?", "Deuxieme question ?"},
+		},
+		{
+			name: "Two markers in a raw JSONL blob spanning multiple lines",
+			input: "{\"event\":\"ghost_question\",\"question\":\"Q1 ?\"}\n" +
+				"{\"event\":\"ghost_question\",\"question\":\"Q2 ?\"}",
+			expected: []string{"Q1 ?", "Q2 ?"},
+		},
+		{
+			name:     "Fallback with escaped quotes (malformed top-level JSON)",
+			input:    `{\"event\":\"ghost_question\",\"question\":\"escaped fallback question\"}`,
+			expected: []string{"escaped fallback question"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtractAllGhostQuestions([]byte(tc.input))
+			if len(got) != len(tc.expected) {
+				t.Fatalf("expected %v, got %v", tc.expected, got)
+			}
+			for i := range got {
+				if got[i] != tc.expected[i] {
+					t.Errorf("index %d: expected %q, got %q", i, tc.expected[i], got[i])
+				}
+			}
+		})
+	}
+}
+
 func TestReconstructPendingQuestion(t *testing.T) {
 	t.Run("marker question left unanswered at end of buffer", func(t *testing.T) {
 		lines := []LogLine{

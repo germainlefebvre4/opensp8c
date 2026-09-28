@@ -1,5 +1,5 @@
 {
-  "defaultAgent": "antigravity",
+  "defaultAgent": "claude",
   "sessions": {
     "8b4a8cb8/change-semantic-tags": {
       "agent": "claude",

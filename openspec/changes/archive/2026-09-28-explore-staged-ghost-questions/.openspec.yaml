@@ -1,0 +1,14 @@
+schema: spec-driven
+created: "2026-09-25"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 3
+    components:
+        - explore-session
+    agent_specialization:
+        - frontend
+        - backend
+    _auto: true
+    _tagged_at: "2026-09-28"

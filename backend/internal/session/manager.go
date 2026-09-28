@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -43,11 +44,12 @@ type Session struct {
 	lastUsed time.Time
 	mu       sync.Mutex
 
-	msgMu           sync.RWMutex
-	messages        [][]byte
-	notify          chan struct{} // buffered(1): signals new messages available
-	done            chan struct{} // closed when subprocess stdout ends
-	pendingQuestion string        // clarification question awaiting a user reply, if any
+	msgMu            sync.RWMutex
+	messages         [][]byte
+	notify           chan struct{}       // buffered(1): signals new messages available
+	done             chan struct{}       // closed when subprocess stdout ends
+	pendingQuestion  string              // clarification question awaiting a user reply, if any (most recently detected)
+	pendingQuestions map[string]struct{} // set of ghost_question texts already broadcast and awaiting a reply, for dedup
 
 	// nativeQuestionModeActive is fixed at session construction time (mirrors
 	// the system prompt choice for this subprocess): true only when the
@@ -71,7 +73,30 @@ func (s *Session) SetPendingQuestion(question string) {
 func (s *Session) ClearPendingQuestion() {
 	s.msgMu.Lock()
 	s.pendingQuestion = ""
+	s.pendingQuestions = nil
 	s.msgMu.Unlock()
+}
+
+// MarkQuestionPending records question as broadcast and awaiting a reply. It
+// returns true the first time a given question text is marked (the caller
+// should broadcast a ghost_question event for it), and false if that exact
+// question is already pending — e.g. the same marker resurfacing across a
+// streamed chunk and the turn's later consolidated message — so the caller
+// can suppress the duplicate broadcast. Multiple distinct questions detected
+// in the same or successive turns can be pending at once; ClearPendingQuestion
+// resets the whole set once the user replies.
+func (s *Session) MarkQuestionPending(question string) bool {
+	s.msgMu.Lock()
+	defer s.msgMu.Unlock()
+	if s.pendingQuestions == nil {
+		s.pendingQuestions = make(map[string]struct{})
+	}
+	if _, seen := s.pendingQuestions[question]; seen {
+		return false
+	}
+	s.pendingQuestions[question] = struct{}{}
+	s.pendingQuestion = question
+	return true
 }
 
 // PendingQuestion returns the clarification question currently awaiting a
@@ -902,6 +927,77 @@ func ExtractGhostQuestion(line []byte) string {
 		}
 	}
 	return ""
+}
+
+// ghostQuestionLoosePattern matches an "event":"ghost_question" marker paired
+// with its "question" value in unescaped JSON text (as found in a decoded
+// delta.text field or a consolidated message string), tolerating any amount
+// of text in between. That tolerance covers both the well-formed
+// {"event":"ghost_question","question":"..."} shape and cases where the
+// marker text is embedded loosely inside a larger conversational string
+// (e.g. a translated bridge line). Both the middle section and the captured
+// question value are matched non-greedily, so each event marker pairs with
+// the nearest following question value and stops at its first closing quote
+// — correctly separating multiple markers concatenated in the same text
+// instead of swallowing everything up to the last quote in the text.
+var ghostQuestionLoosePattern = regexp.MustCompile(`"event":\s*"ghost_question"[\s\S]*?"question":\s*"((?:[^"\\]|\\.)*?)"`)
+
+// ghostQuestionLooseEscapedPattern is the escaped-quote counterpart of
+// ghostQuestionLoosePattern, for raw lines where the marker sits inside a
+// JSON string value that itself failed to parse as JSON at the top level
+// (so its quotes are still backslash-escaped in the raw bytes).
+var ghostQuestionLooseEscapedPattern = regexp.MustCompile(`\\"event\\":\s*\\"ghost_question\\"[\s\S]*?\\"question\\":\s*\\"((?:[^"\\]|\\.)*?)\\"`)
+
+// ExtractAllGhostQuestions scans line — a single stdout/JSONL entry, which may
+// itself be a consolidated message whose text concatenates several
+// ghost_question marker lines — for every ghost_question marker it carries,
+// and returns each question's text in the order encountered. It returns nil
+// if none are found.
+//
+// Unlike ExtractGhostQuestion (which stops at the first marker found), this
+// is used where an agent turn surfaces more than one clarification question
+// at once and every one of them must be detected and broadcast.
+func ExtractAllGhostQuestions(line []byte) []string {
+	var data map[string]interface{}
+	if err := json.Unmarshal(line, &data); err == nil {
+		if event, ok := data["event"].(string); ok && event == "ghost_question" {
+			if question, ok := data["question"].(string); ok && question != "" {
+				return []string{question}
+			}
+		}
+		if delta, ok := data["delta"].(map[string]interface{}); ok {
+			if text, ok := delta["text"].(string); ok && text != "" {
+				if qs := extractAllGhostQuestionMatches(text, ghostQuestionLoosePattern); len(qs) > 0 {
+					return qs
+				}
+			}
+		}
+	}
+	// Either line failed to parse as JSON at the top level (e.g. it is itself a
+	// JSON string value nested inside a larger structure, so its quotes remain
+	// escaped in the raw bytes), or it parsed but the marker sits in some other
+	// nested field (e.g. message.content[].text of a consolidated turn) that
+	// isn't worth enumerating explicitly — scanning the raw bytes for either
+	// quoting style catches both.
+	s := string(line)
+	if qs := extractAllGhostQuestionMatches(s, ghostQuestionLoosePattern); len(qs) > 0 {
+		return qs
+	}
+	return extractAllGhostQuestionMatches(s, ghostQuestionLooseEscapedPattern)
+}
+
+func extractAllGhostQuestionMatches(s string, pattern *regexp.Regexp) []string {
+	matches := pattern.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	qs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if m[1] != "" {
+			qs = append(qs, m[1])
+		}
+	}
+	return qs
 }
 
 // extractChangeCreated parses a line for the change_created marker.

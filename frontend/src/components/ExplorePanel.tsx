@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye, Maximize2, Minimize2, ArrowDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
-import { useExploreSession } from '../hooks/useExploreSession'
+import { useExploreSession, type QuestionCardData } from '../hooks/useExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { QuestionCard } from './QuestionCard'
+import { StagedAnswerCard } from './StagedAnswerCard'
 import { ToolCallRow } from './ToolCallRow'
 
 interface Props {
@@ -18,9 +19,11 @@ interface Props {
 
 export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeToggle, onClose }: Props) {
   const { t } = useTranslation('explore')
-  const { messages, connected, expired, waiting, agentInfo, send, answerQuestion, reconnect } = useExploreSession(workspaceId, changeName)
+  const { messages, connected, expired, waiting, agentInfo, send, reconnect } = useExploreSession(workspaceId, changeName)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
+  const [stagedAnswers, setStagedAnswers] = useState<Record<string, string>>({})
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
   const [showSlowLabel, setShowSlowLabel] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -62,12 +65,14 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
   }, [input])
 
   const handleSend = useCallback(() => {
-    if (!input.trim()) return
-    send(input.trim())
+    if (!input.trim() && Object.keys(stagedAnswers).length === 0) return
+    send(input.trim(), stagedAnswers)
     setInput('')
+    setStagedAnswers({})
+    setEditingQuestionId(null)
     setIsAtBottom(true)
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [input, send])
+  }, [input, stagedAnswers, send])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -75,6 +80,19 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
       handleSend()
     }
   }, [handleSend])
+
+  const stageAnswer = useCallback((question: QuestionCardData, text: string) => {
+    setStagedAnswers(prev => ({ ...prev, [question.id]: text }))
+    setEditingQuestionId(null)
+  }, [])
+
+  const cancelStagedAnswer = useCallback((questionId: string) => {
+    setStagedAnswers(prev => {
+      const next = { ...prev }
+      delete next[questionId]
+      return next
+    })
+  }, [])
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -140,8 +158,11 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
               <QuestionCard
                 key={i}
                 question={msg.question}
-                onAnswer={answerQuestion}
-                onRequestOtherAnswer={() => textareaRef.current?.focus()}
+                stagedAnswer={stagedAnswers[msg.question.id]}
+                isEditing={editingQuestionId === msg.question.id}
+                onStartEdit={() => setEditingQuestionId(msg.question!.id)}
+                onStage={stageAnswer}
+                onCancelStaged={() => cancelStagedAnswer(msg.question!.id)}
               />
             ) : (
               <div key={i} className="w-full px-1 py-1 text-sm break-words">
@@ -179,6 +200,19 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
               </button>
             </div>
           )}
+          {Object.entries(stagedAnswers).map(([questionId, answer]) => {
+            const question = messages.find(m => m.question?.id === questionId)?.question
+            if (!question) return null
+            return (
+              <StagedAnswerCard
+                key={questionId}
+                questionText={question.text}
+                answerText={answer}
+                onEdit={() => setEditingQuestionId(questionId)}
+                onDelete={() => cancelStagedAnswer(questionId)}
+              />
+            )
+          })}
           <div ref={bottomRef} />
         </div>
 
@@ -208,7 +242,7 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
         />
         <button
           onClick={handleSend}
-          disabled={!connected || !input.trim()}
+          disabled={!connected || (!input.trim() && Object.keys(stagedAnswers).length === 0)}
           className="px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
           {t('send')}

@@ -32,7 +32,13 @@
   "typingBubble": "{{name}} is thinking...",
   "questionCard": {
     "answered": "-> Your answer: {{answer}}",
-    "otherAnswer": "Other answer..."
+    "otherAnswer": "Other answer...",
+    "placeholder": "Your answer...",
+    "validate": "Validate",
+    "staged": "Answer pending send",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "delete": "Delete"
   },
   "toolCall": {
     "pending": "In progress...",

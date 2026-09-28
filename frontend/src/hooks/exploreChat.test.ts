@@ -4,13 +4,14 @@ import {
   applyToolCalls,
   applyToolResult,
   buildAnswerWSPayload,
+  buildConsolidatedUserMessage,
   extractToolCalls,
   extractToolResult,
-  findActiveQuestionMessage,
   markQuestionAnswered,
   mergeAssistantText,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
+  stripResidualGhostQuestionMarkers,
   type Message,
 } from './exploreChat'
 
@@ -58,19 +59,15 @@ describe('parseNativeQuestionEvent', () => {
   })
 })
 
-describe('appendQuestionMessage / findActiveQuestionMessage', () => {
-  it('marks a prior unanswered question as superseded when a new one arrives', () => {
+describe('appendQuestionMessage', () => {
+  it('leaves a prior unanswered question active (not superseded) when a new one arrives', () => {
     let messages: Message[] = []
     messages = appendQuestionMessage(messages, { id: 'q1', source: 'ghost', text: 'Question 1 ?' })
     messages = appendQuestionMessage(messages, { id: 'q2', source: 'ghost', text: 'Question 2 ?' })
 
     expect(messages).toHaveLength(2)
-    expect(messages[0].question?.superseded).toBe(true)
+    expect(messages[0].question?.superseded).toBeUndefined()
     expect(messages[1].question?.superseded).toBeUndefined()
-
-    // Only one active (non-superseded, unanswered) question at a time.
-    const active = findActiveQuestionMessage(messages)
-    expect(active?.question?.id).toBe('q2')
   })
 
   it('does not supersede an already-answered question', () => {
@@ -82,11 +79,6 @@ describe('appendQuestionMessage / findActiveQuestionMessage', () => {
     expect(messages[0].question?.superseded).toBeUndefined()
     expect(messages[0].question?.answer).toBe('Réponse 1')
   })
-
-  it('returns undefined when there is no active question', () => {
-    const messages: Message[] = [{ role: 'assistant', content: 'hello' }]
-    expect(findActiveQuestionMessage(messages)).toBeUndefined()
-  })
 })
 
 describe('markQuestionAnswered', () => {
@@ -96,6 +88,61 @@ describe('markQuestionAnswered', () => {
     ]
     const updated = markQuestionAnswered(messages, 'q1', 'Ma réponse')
     expect(updated[0].question?.answer).toBe('Ma réponse')
+  })
+})
+
+describe('buildConsolidatedUserMessage', () => {
+  it('formats staged answers with a bullet list, and appends the free prompt', () => {
+    const msg = buildConsolidatedUserMessage(
+      [
+        { questionId: 'q1', questionText: 'Quelle stack ?', answer: 'React' },
+        { questionId: 'q2', questionText: 'Quel budget ?', answer: '10k€' },
+      ],
+      'Et voici un prompt libre.'
+    )
+    expect(msg).toBe(
+      'Réponses aux questions :\n' +
+        '• Quelle stack ? : React\n' +
+        '• Quel budget ? : 10k€\n' +
+        '\n' +
+        'Et voici un prompt libre.'
+    )
+  })
+
+  it('omits the free-text section when the prompt is empty', () => {
+    const msg = buildConsolidatedUserMessage([{ questionId: 'q1', questionText: 'Q ?', answer: 'A' }], '')
+    expect(msg).toBe('Réponses aux questions :\n• Q ? : A')
+  })
+
+  it('returns the trimmed free text alone when there are no staged answers', () => {
+    expect(buildConsolidatedUserMessage([], '  Juste un prompt.  ')).toBe('Juste un prompt.')
+  })
+
+  it('returns an empty string when there is neither staged answers nor free text', () => {
+    expect(buildConsolidatedUserMessage([], '   ')).toBe('')
+  })
+})
+
+describe('stripResidualGhostQuestionMarkers', () => {
+  it('removes a residual well-formed marker while keeping surrounding text', () => {
+    const text = 'Voici mon analyse.\n{"event":"ghost_question","question":"Quel périmètre ?"}\nSuite du texte.'
+    expect(stripResidualGhostQuestionMarkers(text)).toBe('Voici mon analyse.\nSuite du texte.')
+  })
+
+  it('removes multiple residual markers', () => {
+    const text = '{"event":"ghost_question","question":"Q1 ?"}{"event":"ghost_question","question":"Q2 ?"}reste'
+    expect(stripResidualGhostQuestionMarkers(text)).toBe('reste')
+  })
+
+  it('leaves ordinary text untouched', () => {
+    expect(stripResidualGhostQuestionMarkers('Rien à nettoyer ici.')).toBe('Rien à nettoyer ici.')
+  })
+})
+
+describe('mergeAssistantText defensive cleanup', () => {
+  it('strips a residual ghost_question marker from merged assistant text', () => {
+    const messages = mergeAssistantText([], 'Bonjour\n{"event":"ghost_question","question":"Q ?"}\nFin', false)
+    expect(messages[0].content).toBe('Bonjour\nFin')
   })
 })
 

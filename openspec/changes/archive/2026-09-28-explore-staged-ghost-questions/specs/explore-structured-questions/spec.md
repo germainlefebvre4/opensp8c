@@ -1,10 +1,6 @@
-# Spec: Explore Structured Questions
+# Spec Delta
 
-## Purpose
-
-Rend visibles et distinctes, dans le fil de chat d'exploration, les questions de clarification posées par l'agent — via un marqueur texte universel, une carte dédiée, et un état "en attente" que la reprise de session sait exploiter.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Détection du marqueur de question
 
@@ -18,14 +14,6 @@ Le backend SHALL détecter, dans le texte produit par le subprocess agent (tout 
 - **WHEN** l'utilisateur envoie son message contenant les réponses aux questions
 - **THEN** l'état "question en attente" de la session est effacé
 
-### Requirement: Affichage d'une question sous forme de carte détachée
-
-Le frontend SHALL afficher toute question détectée dans une carte visuellement distincte du reste du fil de conversation : fond blanc, bordure et ombre légère, séparée des tours de texte ordinaires du flux plein-largeur (`explore-message-layout`) qui n'ont ni fond ni bordure.
-
-#### Scenario: Rendu d'une question
-- **WHEN** un événement de question est reçu par le frontend
-- **THEN** une carte dédiée s'affiche dans le fil de chat, à la place d'un tour de texte ordinaire, contenant le texte de la question
-
 ### Requirement: Une question affichée à la fois
 
 Le frontend SHALL afficher chaque question reçue sous forme de carte interactive distincte dans le fil de conversation. Contrairement au comportement antérieur où une nouvelle question rendait obsolète la précédente, le frontend SHALL permettre à plusieurs cartes de questions de coexister et de demeurer actives simultanément tant que l'utilisateur n'y a pas répondu.
@@ -34,14 +22,6 @@ Le frontend SHALL afficher chaque question reçue sous forme de carte interactiv
 - **WHEN** l'agent émet une nouvelle question alors qu'une question précédente est encore sans réponse
 - **THEN** la nouvelle question est affichée à la suite dans le fil, et les deux questions demeurent actives, éligibles à une réponse, sans qu'aucune ne soit marquée obsolète
 
-### Requirement: Réduction en résumé après réponse
-
-Une fois qu'une réponse a été envoyée par l'utilisateur suite à une question affichée, la carte correspondante SHALL se réduire en une ligne de résumé compacte au sein de la même carte, remplaçant les éléments de réponse interactifs par le texte de la réponse donnée.
-
-#### Scenario: Carte réduite après réponse
-- **WHEN** l'utilisateur répond à une question affichée (via une option proposée ou via le champ de saisie principal)
-- **THEN** la carte affiche une ligne "-> Votre réponse : <texte de la réponse>" à la place des éléments de réponse interactifs, et reste visible sous cette forme réduite dans l'historique du fil
-
 ### Requirement: Redirection de "Autre réponse" vers le champ principal
 
 Lorsqu'une carte de question propose des options de réponse rapide, l'utilisateur SHALL pouvoir choisir une option prédéfinie ou opter pour une réponse personnalisée. Si l'utilisateur choisit une réponse personnalisée, la saisie textuelle s'effectue directement sur la carte de question pour préparer sa réponse sans envoi prématuré.
@@ -49,6 +29,8 @@ Lorsqu'une carte de question propose des options de réponse rapide, l'utilisate
 #### Scenario: Clic sur "Autre réponse..."
 - **WHEN** l'utilisateur clique sur "Autre réponse..." dans une carte de question
 - **THEN** un champ de saisie textuel s'active directement dans la carte de question pour lui permettre de renseigner sa réponse personnalisée localement
+
+## ADDED Requirements
 
 ### Requirement: Saisie et staging des réponses sur chaque question
 

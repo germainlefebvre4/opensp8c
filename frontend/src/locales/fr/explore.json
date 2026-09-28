@@ -32,7 +32,13 @@
   "typingBubble": "{{name}} réfléchit...",
   "questionCard": {
     "answered": "-> Votre réponse : {{answer}}",
-    "otherAnswer": "Autre réponse..."
+    "otherAnswer": "Autre réponse...",
+    "placeholder": "Votre réponse...",
+    "validate": "Valider",
+    "staged": "Réponse en attente d'envoi",
+    "edit": "Modifier",
+    "cancel": "Annuler",
+    "delete": "Supprimer"
   },
   "toolCall": {
     "pending": "En cours...",

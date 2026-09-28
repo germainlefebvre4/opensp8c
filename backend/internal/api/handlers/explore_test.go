@@ -347,6 +347,71 @@ func TestServeWSDeduplicatesRepeatedGhostQuestionMarker(t *testing.T) {
 	}
 }
 
+// TestServeWSBroadcastsMultipleGhostQuestionsFromSameTurn verifies that when a
+// single agent turn surfaces more than one ghost_question marker at once
+// (e.g. two markers concatenated in the same consolidated message), serveWS
+// emits a dedicated ghost_question event for each one and strips every
+// marker substring from the forwarded text, leaving no raw JSON behind.
+func TestServeWSBroadcastsMultipleGhostQuestionsFromSameTurn(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"bootstrap"}`))
+
+	conn, ctx := dialExploreWS(t, sess)
+
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (bootstrap) failed: %v", err)
+	}
+
+	// Two distinct questions concatenated in the same consolidated turn text,
+	// as observed when an agent asks several clarification questions at once.
+	consolidated := []byte(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Deux questions pour cadrer :\n\n{\"event\":\"ghost_question\",\"question\":\"Quelle stack utiliser ?\"}\n{\"event\":\"ghost_question\",\"question\":\"Quel est le budget ?\"}"}]}}`)
+	sess.InjectMessage(consolidated)
+	sess.InjectMessage([]byte(`{"type":"sentinel"}`))
+
+	var gotQuestions []string
+	var gotForwardedText string
+	sawSentinel := false
+	for i := 0; i < 8 && !sawSentinel; i++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		var evt map[string]interface{}
+		if err := json.Unmarshal(data, &evt); err != nil {
+			continue
+		}
+		if evt["type"] == "ghost_question" {
+			if q, ok := evt["question"].(string); ok {
+				gotQuestions = append(gotQuestions, q)
+			}
+			continue
+		}
+		if strings.Contains(string(data), "Deux questions") {
+			gotForwardedText = string(data)
+			continue
+		}
+		if evt["type"] == "sentinel" {
+			sawSentinel = true
+		}
+	}
+
+	if !sawSentinel {
+		t.Fatal("expected to reach the sentinel message")
+	}
+	if len(gotQuestions) != 2 {
+		t.Fatalf("expected 2 ghost_question events, got %d: %v", len(gotQuestions), gotQuestions)
+	}
+	if gotQuestions[0] != "Quelle stack utiliser ?" || gotQuestions[1] != "Quel est le budget ?" {
+		t.Errorf("unexpected question texts: %v", gotQuestions)
+	}
+	if gotForwardedText == "" {
+		t.Fatal("expected the surrounding response text to still be forwarded")
+	}
+	if strings.Contains(gotForwardedText, "ghost_question") {
+		t.Errorf("expected no raw ghost_question JSON to leak into the forwarded text, got: %s", gotForwardedText)
+	}
+}
+
 // captureWriteCloser is an io.WriteCloser that buffers writes for inspection.
 type captureWriteCloser struct {
 	bytes.Buffer

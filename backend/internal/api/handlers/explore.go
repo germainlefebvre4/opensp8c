@@ -62,14 +62,15 @@ func extractGhostNamed(line []byte) string {
 	return session.ExtractGhostNamed(line)
 }
 
-// extractGhostQuestion parses a buffered session message for the ghost_question marker.
-// See extractGhostNamed for why the prefilter checks the bare word.
-func extractGhostQuestion(line []byte) string {
+// extractAllGhostQuestions parses a buffered session message for every
+// ghost_question marker it may carry. See extractGhostNamed for why the
+// prefilter checks the bare word.
+func extractAllGhostQuestions(line []byte) []string {
 	s := string(line)
 	if !strings.Contains(s, `ghost_question`) {
-		return ""
+		return nil
 	}
-	return session.ExtractGhostQuestion(line)
+	return session.ExtractAllGhostQuestions(line)
 }
 
 // ghostQuestionMarkerPattern matches the marker as it appears once JSON has
@@ -291,28 +292,33 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 		}
 	}
 
-	// detectGhostQuestion checks a buffered message for the ghost_question marker,
-	// regardless of session kind (named or anonymous). When found, it broadcasts
-	// a dedicated event and marks the session as having a pending question, and
-	// returns msg with the marker substring stripped out of it — the marker can
-	// be mixed in with ordinary response text in the same event rather than
-	// alone on its own line, and that surrounding text must still reach the
-	// frontend normally instead of being discarded along with the marker.
+	// detectGhostQuestion checks a buffered message for every ghost_question
+	// marker it carries, regardless of session kind (named or anonymous). A
+	// single agent turn can surface more than one clarification question at
+	// once (e.g. several markers concatenated across a streamed chunk or a
+	// consolidated end-of-turn message); each one is broadcast as its own
+	// dedicated event and marks the session as having that question pending.
+	// It returns msg with every marker substring stripped out of it — markers
+	// can be mixed in with ordinary response text rather than alone on their
+	// own line, and that surrounding text must still reach the frontend
+	// normally instead of being discarded along with the markers.
 	//
 	// A real agent turn is observed to surface the same marker text more than
 	// once (e.g. an incremental streaming chunk that happens to carry the full
 	// marker substring, followed by the turn's final consolidated message) —
 	// broadcasting a second identical card for what is one logical question
-	// would just clutter the thread, so a repeat of the already-pending
+	// would just clutter the thread, so a repeat of an already-pending
 	// question is deduplicated: still stripped from the text, but no second
 	// event.
 	detectGhostQuestion := func(msg []byte) []byte {
-		question := extractGhostQuestion(msg)
-		if question == "" {
-			return msg
-		}
-		if sess.PendingQuestion() != question {
-			sess.SetPendingQuestion(question)
+		questions := extractAllGhostQuestions(msg)
+		for _, question := range questions {
+			if question == "" {
+				continue
+			}
+			if !sess.MarkQuestionPending(question) {
+				continue
+			}
 			evtMsg, _ := json.Marshal(map[string]string{
 				"type":     "ghost_question",
 				"question": question,

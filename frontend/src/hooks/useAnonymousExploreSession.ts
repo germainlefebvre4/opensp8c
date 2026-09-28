@@ -7,10 +7,10 @@ import {
   applyToolCalls,
   applyToolResult,
   buildAnswerWSPayload,
+  buildConsolidatedUserMessage,
   extractText,
   extractToolCalls,
   extractToolResult,
-  findActiveQuestionMessage,
   markQuestionAnswered,
   mergeAssistantText,
   parseGhostQuestionEvent,
@@ -18,6 +18,7 @@ import {
   type AgentInfo,
   type Message,
   type QuestionCardData,
+  type StagedAnswer,
 } from './exploreChat'
 
 export type { AgentInfo, Message, QuestionCardData }
@@ -228,36 +229,54 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     }
   }, [workspaceId, connectWS, resumeGhostId])
 
-  const send = useCallback((text: string) => {
+  /**
+   * Sends a consolidated message: every staged answer (keyed by question id,
+   * as prepared locally via QuestionCard) plus an optional free-form prompt.
+   * A native question (AskUserQuestion tool_use) still requires its own
+   * tool_result round trip and is sent as such; ghost_question answers are
+   * folded into one consolidated chat message together with the free prompt.
+   * Questions with no staged answer are left untouched and remain open.
+   */
+  const send = useCallback((text: string, stagedAnswers: Record<string, string> = {}) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
     const trimmed = text.trim()
-    if (!trimmed) return
+    const stagedIds = Object.keys(stagedAnswers)
+    if (!trimmed && stagedIds.length === 0) return
 
     setWaiting(true)
-    const active = findActiveQuestionMessage(messagesRef.current)
+
+    const resolved = stagedIds
+      .map(id => {
+        const question = messagesRef.current.find(m => m.question?.id === id)?.question
+        return question ? { question, text: stagedAnswers[id] } : null
+      })
+      .filter((r): r is { question: QuestionCardData; text: string } => r !== null)
+
+    const ghostAnswers: StagedAnswer[] = resolved
+      .filter(r => r.question.source === 'ghost')
+      .map(r => ({ questionId: r.question.id, questionText: r.question.text, answer: r.text }))
+    const nativeAnswers = resolved.filter(r => r.question.source === 'native')
+
+    const consolidated = buildConsolidatedUserMessage(ghostAnswers, trimmed)
+
     setMessages(prev => {
-      const withAnswer = active ? markQuestionAnswered(prev, active.question!.id, trimmed) : prev
-      const updated = [...withAnswer, { role: 'user' as const, content: trimmed }]
-      if (sessionId) saveMessages(sessionId, updated.filter(m => !m.partial))
-      return updated
+      let next = prev
+      for (const r of resolved) {
+        next = markQuestionAnswered(next, r.question.id, r.text)
+      }
+      if (consolidated) {
+        next = [...next, { role: 'user', content: consolidated }]
+      }
+      if (sessionId) saveMessages(sessionId, next.filter(m => !m.partial))
+      return next
     })
 
-    if (active?.question) {
-      wsRef.current.send(buildAnswerWSPayload(active.question, trimmed))
-    } else {
-      wsRef.current.send(JSON.stringify({ type: 'user', message: { role: 'user', content: trimmed } }))
+    for (const r of nativeAnswers) {
+      wsRef.current.send(buildAnswerWSPayload(r.question, r.text))
     }
-  }, [sessionId])
-
-  const answerQuestion = useCallback((question: QuestionCardData, text: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    setWaiting(true)
-    setMessages(prev => {
-      const updated = markQuestionAnswered(prev, question.id, text)
-      if (sessionId) saveMessages(sessionId, updated.filter(m => !m.partial))
-      return updated
-    })
-    wsRef.current.send(buildAnswerWSPayload(question, text))
+    if (consolidated) {
+      wsRef.current.send(JSON.stringify({ type: 'user', message: { role: 'user', content: consolidated } }))
+    }
   }, [sessionId])
 
   const stop = useCallback(() => {
@@ -267,5 +286,5 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     }
   }, [workspaceId, sessionId])
 
-  return { messages, connected, expired, waiting, sessionId, ghostId, ghostName, agentInfo, send, answerQuestion, stop }
+  return { messages, connected, expired, waiting, sessionId, ghostId, ghostName, agentInfo, send, stop }
 }
