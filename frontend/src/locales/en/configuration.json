@@ -12,7 +12,8 @@
       "version": "Version"
     },
     "installed": "Installed",
-    "notInstalled": "Not installed"
+    "notInstalled": "Not installed",
+    "rowTooltip": "Configure {{agent}}"
   },
   "agentPoolTab": {
     "activeWorkers": "{{active}}/{{size}} active workers",
@@ -25,5 +26,11 @@
     },
     "rowTooltip": "Go to {{workspace}}'s Kanban",
     "emptyState": "No agent is currently active."
+  },
+  "agentView": {
+    "back": "Back to registry",
+    "title": "{{agent}} configuration",
+    "docs": "Official documentation",
+    "description": "Environment variables injected only into this agent's processes (they take precedence over global variables)."
   }
 }

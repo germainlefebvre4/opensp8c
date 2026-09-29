@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/go-chi/chi/v5"
 )
 
 // poolRequest builds an *http.Request carrying workspaceID as the chi "id"

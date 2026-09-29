@@ -161,3 +161,43 @@ func TestNativeQuestionModeDefaultAndPatch(t *testing.T) {
 		t.Errorf("expected nativeQuestionMode to persist as true after PATCH, got %v", resp2.NativeQuestionMode)
 	}
 }
+
+func TestAgentEnvGetAndPatch(t *testing.T) {
+	prefSvc := preferences.NewService(filepath.Join(t.TempDir(), "preferences.json"))
+	handler := NewPreferencesHandler(prefSvc)
+
+	get := func() map[string]map[string]string {
+		rec := httptest.NewRecorder()
+		handler.GetPreferences(rec, httptest.NewRequest("GET", "/api/preferences", nil))
+		var resp struct {
+			AgentEnv map[string]map[string]string `json:"agentEnv"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return resp.AgentEnv
+	}
+
+	initial := get()
+	for _, id := range []string{"claude", "codex", "gemini", "antigravity", "copilot"} {
+		if e, ok := initial[id]; !ok || e == nil || len(e) != 0 {
+			t.Errorf("expected empty agentEnv entry for %s, got %v", id, e)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	handler.PatchPreferences(rec, httptest.NewRequest("PATCH", "/api/preferences", bytes.NewBufferString(`{"agentEnv":{"gemini":{"K":"V"}}}`)))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	got := get()
+	if got["gemini"]["K"] != "V" || len(got["claude"]) != 0 {
+		t.Errorf("unexpected agentEnv after patch: %v", got)
+	}
+
+	rec = httptest.NewRecorder()
+	handler.PatchPreferences(rec, httptest.NewRequest("PATCH", "/api/preferences", bytes.NewBufferString(`{"agentEnv":{"nope":{"K":"V"}}}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown agent, got %d", rec.Code)
+	}
+}

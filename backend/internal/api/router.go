@@ -9,18 +9,18 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/api/handlers"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/glefebvre/opensp8c/internal/workspace"
-	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/ui"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // PreferencesPath returns the resolved preferences.json path for a given config

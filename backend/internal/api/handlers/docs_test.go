@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/go-chi/chi/v5"
 )
 
 // docsRequest builds an *http.Request carrying workspaceID (and optionally a

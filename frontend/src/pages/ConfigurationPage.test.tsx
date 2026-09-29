@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab } from './ConfigurationPage'
+import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage } from './ConfigurationPage'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AllPoolsStatus } from '../hooks/useAllPools'
@@ -52,7 +52,7 @@ describe('AgentsRegistryTab', () => {
       { id: 'copilot', label: 'Copilot', installed: false },
     ])
 
-    const html = renderToStaticMarkup(<AgentsRegistryTab />)
+    const html = renderToStaticMarkup(<MemoryRouter><AgentsRegistryTab /></MemoryRouter>)
 
     expect(html).toContain('Claude')
     expect(html).toContain('2.1.283')
@@ -63,45 +63,15 @@ describe('AgentsRegistryTab', () => {
 })
 
 describe('CliSettingsTab', () => {
-  it('shows the system value as placeholder with an "inherited" status when there is no user override', () => {
-    mockPreferences({
-      defaultAgent: 'claude',
-      env: {},
-      systemEnv: { GOOGLE_CLOUD_PROJECT: 'sys-project' },
-      nativeQuestionMode: false,
-    })
-
-    const html = renderToStaticMarkup(<CliSettingsTab />)
-
-    expect(html).toContain('Système : sys-project')
-    expect(html).toContain('Sera héritée de l&#x27;environnement système')
-    expect(html).not.toContain('Surcharge la valeur système')
-  })
-
-  it('shows the "overridden" status when the user env value differs from the system value', () => {
-    mockPreferences({
-      defaultAgent: 'claude',
-      env: { GOOGLE_CLOUD_PROJECT: 'my-override' },
-      systemEnv: { GOOGLE_CLOUD_PROJECT: 'sys-project' },
-      nativeQuestionMode: false,
-    })
-
-    const html = renderToStaticMarkup(<CliSettingsTab />)
-
-    expect(html).toContain('value="my-override"')
-    expect(html).toContain('Surcharge la valeur système')
-    expect(html).not.toContain('Sera héritée de l&#x27;environnement système')
-  })
-
   it('renders existing custom env vars as pre-filled rows', () => {
     mockPreferences({
       defaultAgent: 'claude',
-      env: { GOOGLE_CLOUD_PROJECT: 'sys-project', TEST_VAR: 'hello' },
+      env: { TEST_VAR: 'hello' },
       systemEnv: {},
       nativeQuestionMode: false,
     })
 
-    const html = renderToStaticMarkup(<CliSettingsTab />)
+    const html = renderToStaticMarkup(<MemoryRouter><CliSettingsTab /></MemoryRouter>)
 
     expect(html).toContain('value="TEST_VAR"')
     expect(html).toContain('value="hello"')
@@ -116,7 +86,7 @@ describe('CliSettingsTab', () => {
       nativeQuestionMode: false,
     })
 
-    const html = renderToStaticMarkup(<CliSettingsTab />)
+    const html = renderToStaticMarkup(<MemoryRouter><CliSettingsTab /></MemoryRouter>)
 
     expect(html).toContain('Aucune variable personnalisée définie.')
   })
@@ -129,7 +99,7 @@ describe('CliSettingsTab', () => {
       nativeQuestionMode: true,
     })
 
-    const html = renderToStaticMarkup(<CliSettingsTab />)
+    const html = renderToStaticMarkup(<MemoryRouter><CliSettingsTab /></MemoryRouter>)
 
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/)
   })
@@ -142,9 +112,85 @@ describe('CliSettingsTab', () => {
       nativeQuestionMode: false,
     })
 
-    const html = renderToStaticMarkup(<CliSettingsTab />)
+    const html = renderToStaticMarkup(<MemoryRouter><CliSettingsTab /></MemoryRouter>)
 
     expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/)
+  })
+})
+
+const AGENTS: AgentStatus[] = [
+  { id: 'claude', label: 'Claude', installed: true, version: '1', docsUrl: 'https://docs.example/claude' },
+  { id: 'codex', label: 'Codex', installed: false, docsUrl: 'https://docs.example/codex' },
+  { id: 'gemini', label: 'Gemini', installed: true, version: '2', docsUrl: 'https://docs.example/gemini' },
+]
+
+function renderCliPage(agent: string | null, prefs: Preferences) {
+  mockAgents(AGENTS)
+  mockPreferences(prefs)
+  const url = agent ? `/configuration?tab=cli&agent=${agent}` : '/configuration?tab=cli'
+  return renderToStaticMarkup(
+    <MemoryRouter initialEntries={[url]}>
+      <ConfigurationPage />
+    </MemoryRouter>
+  )
+}
+
+describe('AgentCliConfigView (via ConfigurationPage ?agent=)', () => {
+  const basePrefs: Preferences = {
+    defaultAgent: 'claude',
+    env: { GLOBAL_ONLY: 'g' },
+    agentEnv: {
+      claude: { CLAUDE_VAR: 'c' },
+      codex: {},
+      gemini: { GEMINI_MODEL: 'gemini-pro', GEMINI_VAR: 'gv' },
+    },
+    systemEnv: { GOOGLE_CLOUD_PROJECT: 'sys-project' },
+  }
+
+  it('shows the codex view with an empty free-form list and a docs link, even when not installed', () => {
+    const html = renderCliPage('codex', basePrefs)
+
+    expect(html).toContain('Configuration de Codex')
+    expect(html).toContain('href="https://docs.example/codex"')
+    expect(html).toContain('Aucune variable personnalisée définie.')
+    expect(html).not.toContain('GLOBAL_ONLY')
+  })
+
+  it("does not show another agent's variables in an agent view", () => {
+    const html = renderCliPage('gemini', basePrefs)
+
+    expect(html).toContain('value="GEMINI_VAR"')
+    expect(html).not.toContain('CLAUDE_VAR')
+    expect(html).not.toContain('GLOBAL_ONLY')
+  })
+
+  it('shows the recommended fields with system/override treatment for gemini only', () => {
+    const gemini = renderCliPage('gemini', basePrefs)
+    expect(gemini).toContain('Système : sys-project')
+    expect(gemini).toContain('Sera héritée de l&#x27;environnement système')
+    expect(gemini).toContain('value="gemini-pro"')
+
+    const claude = renderCliPage('claude', basePrefs)
+    expect(claude).not.toContain('GEMINI_MODEL')
+    expect(claude).not.toContain('Sera héritée')
+  })
+
+  it('shows the "overridden" status when a gemini recommended value overrides the system value', () => {
+    const html = renderCliPage('gemini', {
+      ...basePrefs,
+      agentEnv: { ...basePrefs.agentEnv, gemini: { GOOGLE_CLOUD_PROJECT: 'mine' } },
+    })
+
+    expect(html).toContain('value="mine"')
+    expect(html).toContain('Surcharge la valeur système')
+  })
+
+  it('shows the registry and the global form (without gemini fields) when no agent is selected', () => {
+    const html = renderCliPage(null, basePrefs)
+
+    expect(html).toContain('Registre des agents')
+    expect(html).toContain('value="GLOBAL_ONLY"')
+    expect(html).not.toContain('GOOGLE_CLOUD_PROJECT')
   })
 })
 

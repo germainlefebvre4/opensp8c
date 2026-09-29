@@ -80,16 +80,16 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	procCtx, procCancel := context.WithCancel(ctx)
 	defer procCancel()
 
-	var customEnv map[string]string
-	if m.prefs != nil {
-		if p, err := m.prefs.Load(); err == nil && p != nil {
-			customEnv = p.Env
-		}
-	}
-
 	var agentCfg agents.AgentConfig
 	if m.sessionMgr != nil {
 		agentCfg = m.sessionMgr.ResolveAgentConfig(w.WorkspaceID, w.ActiveChange)
+	}
+
+	var customEnv map[string]string
+	if m.prefs != nil {
+		if p, err := m.prefs.Load(); err == nil && p != nil {
+			customEnv = p.EnvFor(agentCfg.ID)
+		}
 	}
 
 	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false)
@@ -260,10 +260,10 @@ func extractActivity(line []byte) string {
 		Thinking string `json:"thinking"`
 	}
 	var data struct {
-		Type         string          `json:"type"`
-		Delta        delta           `json:"delta"`
-		Event        json.RawMessage `json:"event"`
-		StepUpdate   struct {
+		Type       string          `json:"type"`
+		Delta      delta           `json:"delta"`
+		Event      json.RawMessage `json:"event"`
+		StepUpdate struct {
 			StepType  string `json:"step_type"`
 			TextDelta string `json:"text_delta"`
 			ToolName  string `json:"tool_name"`

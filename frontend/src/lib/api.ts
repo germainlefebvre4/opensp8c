@@ -36,11 +36,13 @@ export interface AgentStatus {
   label: string
   installed: boolean
   version?: string
+  docsUrl?: string
 }
 
 export interface Preferences {
   defaultAgent: string
   env: Record<string, string>
+  agentEnv?: Record<string, Record<string, string>>
   systemEnv?: Record<string, string>
   nativeQuestionMode?: boolean
   customAgentSpecializations?: string[]

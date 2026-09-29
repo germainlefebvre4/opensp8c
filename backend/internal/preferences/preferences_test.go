@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
 )
 
 func newTestService(t *testing.T) *Service {
@@ -198,5 +200,118 @@ func TestFileCreatedWhenMissing(t *testing.T) {
 
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("file should have been created: %v", err)
+	}
+}
+
+func TestLoad_EnsuresAgentEnvEntryPerSupportedAgent(t *testing.T) {
+	// Fresh file
+	svc := newTestService(t)
+	p, err := svc.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, a := range agents.SupportedAgents {
+		if e, ok := p.AgentEnv[a.ID]; !ok || e == nil || len(e) != 0 {
+			t.Errorf("fresh: expected empty entry for %s, got %v (ok=%v)", a.ID, e, ok)
+		}
+	}
+
+	// Existing file without agentEnv
+	svc2 := newTestService(t)
+	if err := os.WriteFile(svc2.Path(), []byte(`{"defaultAgent":"claude"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := svc2.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, a := range agents.SupportedAgents {
+		if e, ok := p2.AgentEnv[a.ID]; !ok || len(e) != 0 {
+			t.Errorf("existing: expected empty entry for %s, got %v (ok=%v)", a.ID, e, ok)
+		}
+	}
+}
+
+func TestLoad_MigratesGeminiEnvOnce(t *testing.T) {
+	svc := newTestService(t)
+	legacy := `{"defaultAgent":"claude","env":{"GOOGLE_CLOUD_PROJECT":"proj","GEMINI_MODEL":"m","GEMINI_SANDBOX":"true","OTHER":"x"}}`
+	if err := os.WriteFile(svc.Path(), []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := svc.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	g := p.AgentEnv["gemini"]
+	if g["GOOGLE_CLOUD_PROJECT"] != "proj" || g["GEMINI_MODEL"] != "m" || g["GEMINI_SANDBOX"] != "true" {
+		t.Errorf("gemini keys not migrated: %v", g)
+	}
+	for _, k := range []string{"GOOGLE_CLOUD_PROJECT", "GEMINI_MODEL", "GEMINI_SANDBOX"} {
+		if _, ok := p.Env[k]; ok {
+			t.Errorf("%s still in global env", k)
+		}
+	}
+	if p.Env["OTHER"] != "x" {
+		t.Errorf("unrelated key lost: %v", p.Env)
+	}
+
+	before, _ := os.ReadFile(svc.Path())
+	p2, err := svc.Load()
+	if err != nil {
+		t.Fatalf("Load 2: %v", err)
+	}
+	after, _ := os.ReadFile(svc.Path())
+	if string(before) != string(after) {
+		t.Errorf("second Load modified the file")
+	}
+	if p2.AgentEnv["gemini"]["GEMINI_MODEL"] != "m" || len(p2.Env) != 1 {
+		t.Errorf("state changed on second load: env=%v agentEnv=%v", p2.Env, p2.AgentEnv["gemini"])
+	}
+}
+
+func TestEnvFor(t *testing.T) {
+	p := &Preferences{
+		Env: map[string]string{"FOO": "global", "BAR": "b"},
+		AgentEnv: map[string]map[string]string{
+			"gemini": {"FOO": "gemini", "G": "1"},
+			"codex":  {"C": "1"},
+		},
+	}
+	claude := p.EnvFor("claude")
+	if len(claude) != 2 || claude["FOO"] != "global" || claude["BAR"] != "b" {
+		t.Errorf("claude env should equal global env, got %v", claude)
+	}
+	g := p.EnvFor("gemini")
+	if g["FOO"] != "gemini" || g["BAR"] != "b" || g["G"] != "1" {
+		t.Errorf("unexpected gemini env: %v", g)
+	}
+	if _, ok := g["C"]; ok {
+		t.Errorf("codex key leaked into gemini: %v", g)
+	}
+	if p.Env["FOO"] != "global" {
+		t.Errorf("EnvFor mutated global env")
+	}
+}
+
+func TestSetAgentEnv_OnlyTouchesGivenAgent(t *testing.T) {
+	svc := newTestService(t)
+	if err := svc.SetEnv(map[string]string{"G": "global"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetAgentEnv(map[string]map[string]string{"claude": {"A": "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetAgentEnv(map[string]map[string]string{"gemini": {"B": "2"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := svc.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Env["G"] != "global" || len(p.Env) != 1 {
+		t.Errorf("global env modified: %v", p.Env)
+	}
+	if p.AgentEnv["claude"]["A"] != "1" || p.AgentEnv["gemini"]["B"] != "2" {
+		t.Errorf("unexpected agentEnv: %v", p.AgentEnv)
 	}
 }

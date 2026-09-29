@@ -339,4 +339,3 @@ func translateAntigravityLine(line []byte) []byte {
 
 	return line
 }
-

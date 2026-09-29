@@ -351,4 +351,3 @@ func TestCancelWorkerForChange(t *testing.T) {
 		t.Errorf("expected worker for change-b to remain active and un-canceled")
 	}
 }
-

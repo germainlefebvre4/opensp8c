@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/pool"
+	"github.com/go-chi/chi/v5"
 )
 
 type PoolHandler struct {

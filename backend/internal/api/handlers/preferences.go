@@ -38,6 +38,14 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		"GEMINI_MODEL":         os.Getenv("GEMINI_MODEL"),
 		"GEMINI_SANDBOX":       os.Getenv("GEMINI_SANDBOX"),
 	}
+	agentEnv := make(map[string]map[string]string, len(agents.SupportedAgents))
+	for _, a := range agents.SupportedAgents {
+		e := p.AgentEnv[a.ID]
+		if e == nil {
+			e = map[string]string{}
+		}
+		agentEnv[a.ID] = e
+	}
 	customAgentSpecializations := p.CustomAgentSpecializations
 	if customAgentSpecializations == nil {
 		customAgentSpecializations = []string{}
@@ -45,6 +53,7 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"defaultAgent":               p.DefaultAgent,
 		"env":                        env,
+		"agentEnv":                   agentEnv,
 		"systemEnv":                  systemEnv,
 		"nativeQuestionMode":         p.NativeQuestionMode,
 		"customAgentSpecializations": customAgentSpecializations,
@@ -53,14 +62,22 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 
 func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		DefaultAgent               string            `json:"defaultAgent"`
-		Env                        map[string]string `json:"env"`
-		NativeQuestionMode         *bool             `json:"nativeQuestionMode"`
-		CustomAgentSpecializations []string          `json:"customAgentSpecializations"`
+		DefaultAgent               string                       `json:"defaultAgent"`
+		Env                        map[string]string            `json:"env"`
+		AgentEnv                   map[string]map[string]string `json:"agentEnv"`
+		NativeQuestionMode         *bool                        `json:"nativeQuestionMode"`
+		CustomAgentSpecializations []string                     `json:"customAgentSpecializations"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
+	}
+
+	for id := range body.AgentEnv {
+		if _, ok := agents.ByID(id); !ok {
+			http.Error(w, "unknown agent id", http.StatusBadRequest)
+			return
+		}
 	}
 
 	if body.DefaultAgent != "" {
@@ -76,6 +93,13 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 
 	if body.Env != nil {
 		if err := h.prefs.SetEnv(body.Env); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.AgentEnv != nil {
+		if err := h.prefs.SetAgentEnv(body.AgentEnv); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
 			return
 		}

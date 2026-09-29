@@ -173,7 +173,7 @@ func (h *DocsHandler) TriggerGenerate(w http.ResponseWriter, r *http.Request) {
 	var customEnv map[string]string
 	if h.mgr != nil && h.mgr.Prefs() != nil {
 		if p, err := h.mgr.Prefs().Load(); err == nil && p != nil {
-			customEnv = p.Env
+			customEnv = p.EnvFor(cfg.ID)
 		}
 	}
 

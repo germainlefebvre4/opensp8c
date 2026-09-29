@@ -8,7 +8,7 @@ import (
 
 // Scheduler builds a DAG from changes and identifies which ones can be executed.
 type Scheduler struct {
-	changes []openspec.Change
+	changes   []openspec.Change
 	changeMap map[string]openspec.Change
 }
 

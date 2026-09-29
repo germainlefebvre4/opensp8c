@@ -15,6 +15,7 @@ import (
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 )
 
@@ -697,3 +698,40 @@ func TestRunTurn_RecognizesAntigravityCompletion(t *testing.T) {
 	})
 }
 
+// TestRunWorker_InjectsOnlyConfiguredAgentEnv verifies the subprocess env is
+// the global env overlaid with the resolved agent's own agentEnv only.
+func TestRunWorker_InjectsOnlyConfiguredAgentEnv(t *testing.T) {
+	repoDir := newGoFixtureRepo(t, "agent-env-change", "- [x] done\n")
+
+	prefs := preferences.NewService(filepath.Join(t.TempDir(), "preferences.json"))
+	if err := prefs.SetAgentEnv(map[string]map[string]string{
+		"claude": {"ONLY_CLAUDE": "1"},
+		"codex":  {"ONLY_CODEX": "1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Default agent is claude, and unavailable agents fall back to claude.
+	sessMgr := session.NewManager(prefs, nil)
+
+	var gotEnv map[string]string
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 3},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			gotEnv = customEnv
+			return fakeAutoRespondingSubprocess(), nil
+		})
+	m.sessionMgr = sessMgr
+	m.prefs = prefs
+
+	w := &Worker{ID: 1, ActiveChange: "agent-env-change"}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.runWorker(ctx, w)
+
+	if gotEnv["ONLY_CLAUDE"] != "1" {
+		t.Errorf("expected claude-specific var to be injected, got %v", gotEnv)
+	}
+	if _, ok := gotEnv["ONLY_CODEX"]; ok {
+		t.Errorf("codex-specific var leaked into claude worker: %v", gotEnv)
+	}
+}

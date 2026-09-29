@@ -252,4 +252,3 @@ func TestExtractGhostMarkers_AntigravityTranslation(t *testing.T) {
 		}
 	})
 }
-

@@ -69,7 +69,7 @@ func (wc *WorktreeController) Provision(changeName string) (string, error) {
 // Remove cleanly removes a worktree.
 func (wc *WorktreeController) Remove(changeName string) error {
 	worktreePath := filepath.Join(wc.worktreesDir(), "wt-"+changeName)
-	
+
 	// Force remove the worktree
 	_, err := wc.runGit("worktree", "remove", "--force", worktreePath)
 	if err != nil {

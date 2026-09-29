@@ -13,6 +13,7 @@ type AgentConfig struct {
 	Label       string
 	CLI         string
 	VersionArgs []string
+	DocsURL     string
 }
 
 type AgentStatus struct {
@@ -20,6 +21,7 @@ type AgentStatus struct {
 	Label     string `json:"label"`
 	Installed bool   `json:"installed"`
 	Version   string `json:"version,omitempty"`
+	DocsURL   string `json:"docsUrl"`
 }
 
 // BuildSubprocessArgs returns the CLI args to launch this agent as a subprocess.
@@ -61,24 +63,28 @@ var SupportedAgents = []AgentConfig{
 		Label:       "Claude",
 		CLI:         "claude",
 		VersionArgs: []string{"--version"},
+		DocsURL:     "https://docs.claude.com/en/docs/claude-code/overview",
 	},
 	{
 		ID:          "codex",
 		Label:       "Codex",
 		CLI:         "codex",
 		VersionArgs: []string{"--version"},
+		DocsURL:     "https://github.com/openai/codex",
 	},
 	{
 		ID:          "gemini",
 		Label:       "Gemini",
 		CLI:         "gemini",
 		VersionArgs: []string{"--version"},
+		DocsURL:     "https://github.com/google-gemini/gemini-cli",
 	},
 	{
 		ID:          "antigravity",
 		Label:       "Antigravity CLI",
 		CLI:         "agy",
 		VersionArgs: []string{"--version"},
+		DocsURL:     "https://antigravity.google/docs",
 	},
 	{
 		// Copilot is accessed via the gh CLI extension
@@ -86,6 +92,7 @@ var SupportedAgents = []AgentConfig{
 		Label:       "Copilot",
 		CLI:         "gh",
 		VersionArgs: []string{"copilot", "--version"},
+		DocsURL:     "https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
 	},
 }
 
@@ -99,7 +106,7 @@ func ByID(id string) (AgentConfig, bool) {
 }
 
 func Detect(a AgentConfig) AgentStatus {
-	status := AgentStatus{ID: a.ID, Label: a.Label}
+	status := AgentStatus{ID: a.ID, Label: a.Label, DocsURL: a.DocsURL}
 
 	_, err := exec.LookPath(a.CLI)
 	if err != nil {

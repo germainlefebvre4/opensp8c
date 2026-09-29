@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/watcher"
+	"github.com/go-chi/chi/v5"
 )
 
 type EventsHandler struct {

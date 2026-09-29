@@ -418,4 +418,3 @@ func TestAntigravityStdoutReader(t *testing.T) {
 		t.Errorf("line 5 expected message_complete, got: %v", line5["type"])
 	}
 }
-

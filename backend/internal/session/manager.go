@@ -358,7 +358,7 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 	var customEnv map[string]string
 	nativeQuestionMode := false
 	if p, err := m.prefs.Load(); err == nil && p != nil {
-		customEnv = p.Env
+		customEnv = p.EnvFor(resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
 	}
 
@@ -496,7 +496,7 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 	var customEnv map[string]string
 	nativeQuestionMode := false
 	if p, err := m.prefs.Load(); err == nil && p != nil {
-		customEnv = p.Env
+		customEnv = p.EnvFor(resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
 	}
 

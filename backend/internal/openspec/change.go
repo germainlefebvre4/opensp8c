@@ -417,4 +417,3 @@ func ToggleTask(workspacePath, changeName string, index int) (string, bool, erro
 	}
 	return taskText, done, nil
 }
-

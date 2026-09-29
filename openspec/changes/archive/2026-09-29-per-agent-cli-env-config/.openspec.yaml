@@ -1,0 +1,20 @@
+schema: spec-driven
+created: "2026-09-29"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 3
+    components:
+        - platform-configuration-menu
+        - agent-specialization
+        - agent-pool-real-execution
+        - explore-session
+        - spec-documentation-view
+        - api-router
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+    _auto: true
+    _tagged_at: "2026-09-29"

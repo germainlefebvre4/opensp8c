@@ -606,7 +606,7 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	var customEnv map[string]string
 	if h.prefs != nil {
 		if p, err := h.prefs.Load(); err == nil && p != nil {
-			customEnv = p.Env
+			customEnv = p.EnvFor(cfg.ID)
 		}
 	}
 

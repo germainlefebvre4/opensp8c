@@ -46,9 +46,23 @@
       "sessionId": "14de638f47a0d325a55007951eaf4909",
       "createdAt": "2026-09-25T06:24:43Z",
       "lastActivityAt": "2026-09-25T06:54:22Z"
+    },
+    {
+      "id": "f549513d3b6567ae370421d8e5dece6b",
+      "workspaceId": "8b4a8cb8",
+      "name": "echo-openspec-test-var",
+      "sessionId": "f549513d3b6567ae370421d8e5dece6b",
+      "createdAt": "2026-09-29T08:15:50Z",
+      "lastActivityAt": "2026-09-29T08:15:50Z"
     }
   ],
-  "env": {
-    "GOOGLE_CLOUD_PROJECT": "group-shared-dvf-dev"
+  "agentEnv": {
+    "antigravity": {},
+    "claude": {},
+    "codex": {},
+    "copilot": {},
+    "gemini": {
+      "GOOGLE_CLOUD_PROJECT": "group-shared-dvf-dev"
+    }
   }
 }

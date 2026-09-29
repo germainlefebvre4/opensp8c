@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/glefebvre/opensp8c/internal/config"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/workspace"
+	"github.com/go-chi/chi/v5"
 )
 
 func listChangesRequest(workspaceID string) (*httptest.ResponseRecorder, *http.Request) {

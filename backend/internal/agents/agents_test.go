@@ -71,3 +71,15 @@ func TestByID(t *testing.T) {
 		t.Fatal("expected nonexistent agent to not be found")
 	}
 }
+
+func TestDetectAll_ExposesDocsURL(t *testing.T) {
+	statuses := DetectAll()
+	if len(statuses) != len(SupportedAgents) {
+		t.Fatalf("expected %d statuses, got %d", len(SupportedAgents), len(statuses))
+	}
+	for i, s := range statuses {
+		if s.DocsURL == "" || s.DocsURL != SupportedAgents[i].DocsURL {
+			t.Errorf("agent %s: unexpected DocsURL %q", s.ID, s.DocsURL)
+		}
+	}
+}

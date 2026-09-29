@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/glefebvre/opensp8c/internal/agents"
 )
 
 type SessionEntry struct {
@@ -23,13 +25,14 @@ type ExplorationRecord struct {
 }
 
 type Preferences struct {
-	DefaultAgent               string                  `json:"defaultAgent"`
-	Sessions                   map[string]SessionEntry `json:"sessions,omitempty"`
-	SessionAgents              map[string]string       `json:"sessionAgents,omitempty"` // legacy: migration source only
-	Explorations               []ExplorationRecord     `json:"explorations,omitempty"`
-	Env                        map[string]string       `json:"env,omitempty"` // Custom hot-injected environment variables
-	NativeQuestionMode         bool                    `json:"nativeQuestionMode,omitempty"`
-	CustomAgentSpecializations []string                `json:"customAgentSpecializations,omitempty"`
+	DefaultAgent               string                       `json:"defaultAgent"`
+	Sessions                   map[string]SessionEntry      `json:"sessions,omitempty"`
+	SessionAgents              map[string]string            `json:"sessionAgents,omitempty"` // legacy: migration source only
+	Explorations               []ExplorationRecord          `json:"explorations,omitempty"`
+	Env                        map[string]string            `json:"env,omitempty"`      // Custom hot-injected environment variables
+	AgentEnv                   map[string]map[string]string `json:"agentEnv,omitempty"` // Per-agent environment variables, layered over Env
+	NativeQuestionMode         bool                         `json:"nativeQuestionMode,omitempty"`
+	CustomAgentSpecializations []string                     `json:"customAgentSpecializations,omitempty"`
 }
 
 type Service struct {
@@ -48,7 +51,9 @@ func (s *Service) Path() string {
 func (s *Service) load() (*Preferences, error) {
 	data, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
-		return &Preferences{DefaultAgent: "claude", Sessions: map[string]SessionEntry{}, Env: map[string]string{}}, nil
+		p := &Preferences{DefaultAgent: "claude", Sessions: map[string]SessionEntry{}, Env: map[string]string{}}
+		ensureAgentEnv(p)
+		return p, nil
 	}
 	if err != nil {
 		return nil, err
@@ -75,7 +80,49 @@ func (s *Service) load() (*Preferences, error) {
 	if p.Env == nil {
 		p.Env = map[string]string{}
 	}
+	ensureAgentEnv(&p)
+	if migrateGeminiEnv(&p) {
+		_ = s.save(&p) // best-effort: persist migrated data
+	}
 	return &p, nil
+}
+
+// ensureAgentEnv guarantees an (possibly empty) entry per supported agent.
+func ensureAgentEnv(p *Preferences) {
+	if p.AgentEnv == nil {
+		p.AgentEnv = map[string]map[string]string{}
+	}
+	for _, a := range agents.SupportedAgents {
+		if p.AgentEnv[a.ID] == nil {
+			p.AgentEnv[a.ID] = map[string]string{}
+		}
+	}
+}
+
+// migrateGeminiEnv moves the historical Gemini keys from the global env to
+// agentEnv["gemini"]. It is idempotent: once the keys left Env, nothing is found.
+func migrateGeminiEnv(p *Preferences) bool {
+	moved := false
+	for _, k := range []string{"GOOGLE_CLOUD_PROJECT", "GEMINI_MODEL", "GEMINI_SANDBOX"} {
+		if v, ok := p.Env[k]; ok {
+			p.AgentEnv["gemini"][k] = v
+			delete(p.Env, k)
+			moved = true
+		}
+	}
+	return moved
+}
+
+// EnvFor returns the global env overlaid with the agent-specific env.
+func (p *Preferences) EnvFor(agentID string) map[string]string {
+	out := make(map[string]string, len(p.Env))
+	for k, v := range p.Env {
+		out[k] = v
+	}
+	for k, v := range p.AgentEnv[agentID] {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Service) save(p *Preferences) error {
@@ -124,6 +171,23 @@ func (s *Service) SetEnv(env map[string]string) error {
 		return err
 	}
 	p.Env = env
+	return s.save(p)
+}
+
+// SetAgentEnv replaces the env dictionary of each agent present in updates.
+func (s *Service) SetAgentEnv(updates map[string]map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	for id, env := range updates {
+		if env == nil {
+			env = map[string]string{}
+		}
+		p.AgentEnv[id] = env
+	}
 	return s.save(p)
 }
 
