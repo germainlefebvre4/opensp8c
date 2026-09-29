@@ -104,10 +104,16 @@ func stripGhostQuestionMarker(msg []byte) []byte {
 	return out
 }
 
+// ghostNamedMarkerPattern matches the ghost_named marker in decoded string
+// values, along with the blank lines that follow it so the text left behind
+// does not start with an empty line.
+var ghostNamedMarkerPattern = regexp.MustCompile(`\{"event":\s*"ghost_named",\s*"name":\s*"(?:[^"\\]|\\.)*"\}\s*`)
+
 func stripGhostQuestionMarkerValue(v interface{}) interface{} {
 	switch val := v.(type) {
 	case string:
-		return ghostQuestionMarkerPattern.ReplaceAllString(val, "")
+		val = ghostQuestionMarkerPattern.ReplaceAllString(val, "")
+		return ghostNamedMarkerPattern.ReplaceAllString(val, "")
 	case map[string]interface{}:
 		for k, vv := range val {
 			val[k] = stripGhostQuestionMarkerValue(vv)
@@ -121,6 +127,108 @@ func stripGhostQuestionMarkerValue(v interface{}) interface{} {
 	default:
 		return v
 	}
+}
+
+// ghostNamedRelayFilter removes the ghost_named marker from streamed text
+// deltas of an anonymous session. Streaming fragments the marker across many
+// content_block_delta events, so a per-message regex can never see it whole;
+// one stateful MarkerFilter per content block reassembles it instead. The
+// consolidated assistant message is cleaned separately by
+// stripGhostQuestionMarker.
+type ghostNamedRelayFilter struct {
+	blocks map[int]*session.MarkerFilter
+}
+
+func newGhostNamedRelayFilter() *ghostNamedRelayFilter {
+	return &ghostNamedRelayFilter{blocks: map[int]*session.MarkerFilter{}}
+}
+
+func (f *ghostNamedRelayFilter) block(index int) *session.MarkerFilter {
+	bf, ok := f.blocks[index]
+	if !ok {
+		bf = session.NewMarkerFilter("ghost_named")
+		f.blocks[index] = bf
+	}
+	return bf
+}
+
+// deltaMessage builds a synthetic text_delta carrying text held back by a filter.
+func deltaMessage(index int, text string) []byte {
+	out, _ := json.Marshal(map[string]interface{}{
+		"type": "stream_event",
+		"event": map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": index,
+			"delta": map[string]interface{}{"type": "text_delta", "text": text},
+		},
+	})
+	return out
+}
+
+// Process returns the messages to relay in place of msg: msg itself with its
+// delta text filtered, nothing when the whole delta was held or removed, and
+// any text still held is released ahead of the message that ends its block.
+// Non-text messages pass through untouched. Handles both the Claude
+// stream_event envelope and the bare content_block_delta the Gemini bridge emits.
+func (f *ghostNamedRelayFilter) Process(msg []byte) [][]byte {
+	s := string(msg)
+	if !strings.Contains(s, `"content_block_`) && !strings.Contains(s, `"type":"assistant"`) && !strings.Contains(s, `"type":"result"`) {
+		return [][]byte{msg}
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal(msg, &data); err != nil {
+		return [][]byte{msg}
+	}
+	evt := data
+	if inner, ok := data["event"].(map[string]interface{}); ok && data["type"] == "stream_event" {
+		evt = inner
+	}
+	index := 0
+	if idx, ok := evt["index"].(float64); ok {
+		index = int(idx)
+	}
+	switch evt["type"] {
+	case "content_block_start":
+		delete(f.blocks, index)
+	case "content_block_stop":
+		var out [][]byte
+		if bf, ok := f.blocks[index]; ok {
+			if rest := bf.Flush(); rest != "" {
+				out = append(out, deltaMessage(index, rest))
+			}
+			delete(f.blocks, index)
+		}
+		return append(out, msg)
+	case "content_block_delta":
+		delta, ok := evt["delta"].(map[string]interface{})
+		if !ok {
+			break
+		}
+		text, ok := delta["text"].(string)
+		if !ok {
+			break
+		}
+		filtered := f.block(index).Feed(text)
+		if filtered == "" {
+			return nil
+		}
+		delta["text"] = filtered
+		if out, err := json.Marshal(data); err == nil {
+			return [][]byte{out}
+		}
+	}
+	// End of turn for agents that emit no block stop (Gemini bridge): release held text.
+	if data["type"] == "assistant" || data["type"] == "result" {
+		var out [][]byte
+		for index, bf := range f.blocks {
+			if rest := bf.Flush(); rest != "" {
+				out = append(out, deltaMessage(index, rest))
+			}
+		}
+		f.blocks = map[int]*session.MarkerFilter{}
+		return append(out, msg)
+	}
+	return [][]byte{msg}
 }
 
 // parseNativeQuestionResponse parses a client-sent WebSocket message as a
@@ -329,6 +437,16 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 		return stripGhostQuestionMarker(msg)
 	}
 
+	// relay applies the streaming marker filter for anonymous sessions; named
+	// sessions never carry a ghost_named marker, so they pass through as-is.
+	namedFilter := newGhostNamedRelayFilter()
+	relay := func(msg []byte) [][]byte {
+		if !anonymous {
+			return [][]byte{msg}
+		}
+		return namedFilter.Process(msg)
+	}
+
 	// Outgoing goroutine: consume notify channel, forward new messages to WS.
 	ghostNamed := false
 	go func() {
@@ -343,10 +461,10 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 						if !ghostNamed {
 							if name := extractGhostNamed(msg); name != "" {
 								ghostNamed = true
-								h.applyGhostName(workspaceID, sessionID, name)
+								finalName := h.applyGhostName(workspaceID, sessionID, name)
 								evtMsg, _ := json.Marshal(map[string]string{
 									"type": "ghost_named",
-									"name": name,
+									"name": finalName,
 								})
 								_ = conn.Write(wsCtx, websocket.MessageText, evtMsg)
 							}
@@ -356,7 +474,9 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 						}
 					}
 					msg = detectGhostQuestion(msg)
-					conn.Write(wsCtx, websocket.MessageText, msg)
+					for _, out := range relay(msg) {
+						conn.Write(wsCtx, websocket.MessageText, out)
+					}
 				}
 				conn.Write(wsCtx, websocket.MessageText, []byte(`{"type":"session_expired"}`))
 				onExpire()
@@ -370,10 +490,10 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 						if !ghostNamed {
 							if name := extractGhostNamed(msg); name != "" {
 								ghostNamed = true
-								h.applyGhostName(workspaceID, sessionID, name)
+								finalName := h.applyGhostName(workspaceID, sessionID, name)
 								evtMsg, _ := json.Marshal(map[string]string{
 									"type": "ghost_named",
-									"name": name,
+									"name": finalName,
 								})
 								_ = conn.Write(wsCtx, websocket.MessageText, evtMsg)
 							}
@@ -383,8 +503,10 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 						}
 					}
 					msg = detectGhostQuestion(msg)
-					if err := conn.Write(wsCtx, websocket.MessageText, msg); err != nil {
-						return
+					for _, out := range relay(msg) {
+						if err := conn.Write(wsCtx, websocket.MessageText, out); err != nil {
+							return
+						}
 					}
 				}
 			}
@@ -471,16 +593,19 @@ func (h *ExploreHandler) createGhostRecord(workspaceID, sessionID string, sess *
 	}
 }
 
-// applyGhostName updates the ghost record name and broadcasts ghost_named.
-func (h *ExploreHandler) applyGhostName(workspaceID, sessionID, name string) {
+// applyGhostName updates the ghost record name and broadcasts ghost_named. It
+// returns the name actually retained (collision suffix included), or the
+// proposed name when there is no preferences store to record it in.
+func (h *ExploreHandler) applyGhostName(workspaceID, sessionID, name string) string {
 	if h.prefs == nil {
-		return
+		return name
 	}
 	finalName := h.ensureUniqueName(workspaceID, sessionID, name)
 	_ = h.prefs.UpdateExplorationName(sessionID, finalName)
 	if h.watcher != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ghost_named", Name: finalName})
 	}
+	return finalName
 }
 
 // ensureUniqueName checks if name conflicts with an existing change or exploration, adds suffix if needed.

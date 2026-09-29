@@ -21,7 +21,7 @@ void i18n.use(initReactI18next).init({
 })
 
 function setDndState(isOver: boolean) {
-  vi.mocked(useDroppable).mockReturnValue({ setNodeRef: () => {}, isOver } as ReturnType<typeof useDroppable>)
+  vi.mocked(useDroppable).mockReturnValue({ setNodeRef: () => {}, isOver } as unknown as ReturnType<typeof useDroppable>)
   vi.mocked(useDndContext).mockReturnValue({ over: null } as unknown as ReturnType<typeof useDndContext>)
 }
 

@@ -4,13 +4,17 @@ tags:
     type:
         - frontend
         - backend
-    complexity: 2
+    complexity: 3
     components:
         - explore-session
+        - explore-ghost-card
+        - explore-message-layout
         - conversation-store
+        - api-router
     agent_specialization:
         - backend
         - frontend
         - testing
+        - documentation
     _auto: true
     _tagged_at: "2026-09-29"

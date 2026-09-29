@@ -62,6 +62,14 @@
       "sessionId": "c7ca065baa900ea9067c6954dc5e963c",
       "createdAt": "2026-09-29T15:12:59Z",
       "lastActivityAt": "2026-09-29T15:51:03Z"
+    },
+    {
+      "id": "5e9517518a78314e947b9bf0d6433b01",
+      "workspaceId": "8b4a8cb8",
+      "name": "improve-kanban-card-display",
+      "sessionId": "5e9517518a78314e947b9bf0d6433b01",
+      "createdAt": "2026-09-29T19:24:20Z",
+      "lastActivityAt": "2026-09-29T19:24:48Z"
     }
   ],
   "agentEnv": {
@@ -73,5 +81,9 @@
       "GOOGLE_CLOUD_PROJECT": "group-shared-dvf-dev"
     }
   },
-  "uiLocale": "en"
+  "agentLanguages": {
+    "chat": "fr",
+    "documentation": "en"
+  },
+  "uiLocale": "fr"
 }

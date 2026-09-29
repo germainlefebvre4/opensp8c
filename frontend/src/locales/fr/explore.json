@@ -13,6 +13,7 @@
   "minimize": "Réduire",
   "createChange": "Créer le change",
   "createChangeTooltip": "Créer un change à partir de cette exploration",
+  "namedNotice": "Exploration nommée :",
   "scrollToBottom": "Défiler vers le bas",
   "draftPanel": {
     "loading": "Chargement du brouillon...",

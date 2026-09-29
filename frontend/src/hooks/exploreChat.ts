@@ -31,9 +31,11 @@ export interface ToolCall {
 }
 
 export interface Message {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'notice'
   content: string
   partial?: boolean
+  /** Streamed tail withheld because it may still become a ghost marker; released if it does not. */
+  held?: string
   question?: QuestionCardData
   toolCalls?: ToolCall[]
 }
@@ -154,6 +156,34 @@ export function stripResidualGhostQuestionMarkers(text: string): string {
   return text.replace(residualGhostQuestionMarkerPattern, '')
 }
 
+// A complete ghost_named marker plus the blank lines that follow it.
+const ghostNamedMarkerPattern = /\{"event":\s*"ghost_named",\s*"name":\s*"(?:[^"\\]|\\.)*"\}\s*/g
+const ghostNamedPrefix = '{"event":"ghost_named"'
+
+/**
+ * Splits accumulated assistant text into what can be shown and a tail that may
+ * still turn into a ghost_named marker (a prefix of it, or a marker whose
+ * closing brace has not arrived yet). Complete markers, and residual
+ * ghost_question markers, are removed. Pure: the whole accumulated text is
+ * re-evaluated on every delta, so fragmentation needs no memory.
+ */
+export function splitGhostMarkers(text: string): { visible: string; held: string } {
+  const cleaned = stripResidualGhostQuestionMarkers(text).replace(ghostNamedMarkerPattern, '')
+  for (let i = cleaned.lastIndexOf('{'); i !== -1; i = cleaned.lastIndexOf('{', i - 1)) {
+    const tail = cleaned.slice(i)
+    if (ghostNamedPrefix.startsWith(tail) || tail.startsWith(ghostNamedPrefix)) {
+      return { visible: cleaned.slice(0, i), held: tail }
+    }
+    if (i === 0) break
+  }
+  return { visible: cleaned, held: '' }
+}
+
+/** Strips ghost_named markers (complete, or trailing partial) from assistant text. */
+export function stripGhostMarkers(text: string): string {
+  return splitGhostMarkers(text).visible
+}
+
 /** True for events that mark the end of an agent turn (with or without text). */
 export function isTurnEnd(data: Record<string, unknown>): boolean {
   return data.type === 'result' || data.type === 'message_complete'
@@ -264,14 +294,38 @@ export function applyToolResult(messages: Message[], result: { toolUseId: string
 /**
  * Merges streamed assistant text into the message being built (preserving
  * its toolCalls), or starts a new assistant message. Applies a defensive
- * cleanup for any residual ghost_question marker JSON that might have slipped
- * through the backend's own stripping, so it never renders as raw JSON.
+ * cleanup for any residual ghost marker JSON that might have slipped through
+ * the backend's own stripping, so it never renders as raw JSON.
  */
 export function mergeAssistantText(messages: Message[], text: string, isPartial: boolean): Message[] {
-  const cleaned = stripResidualGhostQuestionMarkers(text)
+  const last = messages[messages.length - 1]
+  const continuing = last?.role === 'assistant' && last.partial
+  const raw = (continuing ? last.content + (last.held ?? '') : '') + text
+  const { visible, held } = splitGhostMarkers(raw)
+  // A finished message has no more deltas coming: release any withheld tail.
+  const content = (isPartial ? visible : visible + held).replace(/^\s+/, '')
+  const next: Message = continuing
+    ? { ...last, content, held: isPartial && held ? held : undefined, partial: isPartial }
+    : { role: 'assistant', content, held: isPartial && held ? held : undefined, partial: isPartial }
+  return continuing ? [...messages.slice(0, -1), next] : [...messages, next]
+}
+
+/**
+ * Inserts (or updates) the single "exploration named" notice. A new name
+ * replaces the existing notice instead of adding another, so reloads and
+ * repeated events never duplicate it. The notice goes before a streaming
+ * assistant message so that message can keep receiving deltas.
+ */
+export function upsertNamedNotice(messages: Message[], name: string): Message[] {
+  const existing = messages.findIndex(m => m.role === 'notice')
+  if (existing !== -1) {
+    if (messages[existing].content === name) return messages
+    return messages.map((m, i) => (i === existing ? { ...m, content: name } : m))
+  }
+  const notice: Message = { role: 'notice', content: name }
   const last = messages[messages.length - 1]
   if (last?.role === 'assistant' && last.partial) {
-    return [...messages.slice(0, -1), { ...last, content: last.content + cleaned, partial: isPartial }]
+    return [...messages.slice(0, -1), notice, last]
   }
-  return [...messages, { role: 'assistant', content: cleaned, partial: isPartial }]
+  return [...messages, notice]
 }

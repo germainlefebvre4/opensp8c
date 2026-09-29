@@ -148,6 +148,11 @@ func TestGhostDraftCRUD(t *testing.T) {
 // bound to the test's lifetime.
 func dialExploreWS(t *testing.T, sess *session.Session) (*websocket.Conn, context.Context) {
 	t.Helper()
+	return dialExploreWSMode(t, sess, false)
+}
+
+func dialExploreWSMode(t *testing.T, sess *session.Session, anonymous bool) (*websocket.Conn, context.Context) {
+	t.Helper()
 	h := &ExploreHandler{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +161,7 @@ func dialExploreWS(t *testing.T, sess *session.Session) (*websocket.Conn, contex
 			return
 		}
 		defer conn.CloseNow()
-		h.serveWS(r, conn, sess, func() {}, false, "ws1", "")
+		h.serveWS(r, conn, sess, func() {}, anonymous, "ws1", "sid1")
 	}))
 	t.Cleanup(srv.Close)
 
@@ -527,5 +532,84 @@ func TestServeWSDeliversLiveMessagesPastBufferCapacity(t *testing.T) {
 	}
 	if next != total {
 		t.Fatalf("received %d events, want %d", next, total)
+	}
+}
+
+// TestAnonymousRelayNeverLeaksGhostNamedMarker replays a real anonymous
+// exploration stream (ghost_named fragmented token by token, then repeated in
+// the consolidated assistant message) through serveWS and checks that no
+// relayed text carries any part of the marker, while the ghost_named event and
+// the surrounding text still come through.
+func TestAnonymousRelayNeverLeaksGhostNamedMarker(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "ghost_named_stream.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"bootstrap"}`))
+	conn, ctx := dialExploreWSMode(t, sess, true)
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read (bootstrap) failed: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		sess.InjectMessage([]byte(line))
+	}
+	sess.InjectMessage([]byte(`{"type":"sentinel"}`))
+
+	var streamed strings.Builder
+	var consolidated string
+	var namedEvent string
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		var msg map[string]interface{}
+		if err := json.Unmarshal(data, &msg); err != nil {
+			t.Fatalf("invalid relayed JSON: %v", err)
+		}
+		switch msg["type"] {
+		case "sentinel":
+			goto done
+		case "ghost_named":
+			namedEvent, _ = msg["name"].(string)
+			continue
+		case "assistant":
+			consolidated = string(data)
+		}
+		if evt, ok := msg["event"].(map[string]interface{}); ok && evt["type"] == "content_block_delta" {
+			if delta, ok := evt["delta"].(map[string]interface{}); ok {
+				if text, ok := delta["text"].(string); ok {
+					streamed.WriteString(text)
+				}
+			}
+		}
+	}
+done:
+	if namedEvent != "rethink-application-ergonomics" {
+		t.Errorf("expected ghost_named event for rethink-application-ergonomics, got %q", namedEvent)
+	}
+	if got := streamed.String(); got != "Let me look at what the app is today before I ask anything." {
+		t.Errorf("unexpected streamed text: %q", got)
+	}
+	if strings.Contains(consolidated, "ghost_named") || strings.Contains(consolidated, "event") {
+		t.Errorf("consolidated message leaks the marker: %s", consolidated)
+	}
+	if !strings.Contains(consolidated, `"text":"Let me look at what the app is today before I ask anything."`) {
+		t.Errorf("consolidated text should start without a blank line: %s", consolidated)
+	}
+}
+
+func TestGhostNamedRelayFilterReleasesHeldTextOnBlockStop(t *testing.T) {
+	f := newGhostNamedRelayFilter()
+	mk := func(text string) []byte {
+		return deltaMessage(1, text)
+	}
+	if out := f.Process(mk("{\"eve")); len(out) != 0 {
+		t.Fatalf("partial prefix should be held, got %d messages", len(out))
+	}
+	out := f.Process([]byte(`{"type":"stream_event","event":{"type":"content_block_stop","index":1}}`))
+	if len(out) != 2 || !strings.Contains(string(out[0]), `{\"eve`) {
+		t.Fatalf("expected held text released before block stop, got %q", out)
 	}
 }

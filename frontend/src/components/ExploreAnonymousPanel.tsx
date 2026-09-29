@@ -6,6 +6,7 @@ import { useAnonymousExploreSession, type QuestionCardData } from '../hooks/useA
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { DraftSidePanel } from './DraftSidePanel'
+import { NamedNotice } from './NamedNotice'
 import { QuestionCard } from './QuestionCard'
 import { StagedAnswerCard } from './StagedAnswerCard'
 import { ToolCallRow } from './ToolCallRow'
@@ -186,7 +187,9 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
               className="h-full overflow-y-auto p-4 flex flex-col gap-3"
             >
               {messages.map((msg, i) => (
-                msg.question ? (
+                msg.role === 'notice' ? (
+                  <NamedNotice key={i} name={msg.content} />
+                ) : msg.question ? (
                   <QuestionCard
                     key={i}
                     question={msg.question}

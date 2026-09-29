@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useExploreSession, type QuestionCardData } from '../hooks/useExploreSession'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
+import { NamedNotice } from './NamedNotice'
 import { QuestionCard } from './QuestionCard'
 import { StagedAnswerCard } from './StagedAnswerCard'
 import { ToolCallRow } from './ToolCallRow'
@@ -154,7 +155,9 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
           className="h-full overflow-y-auto p-4 flex flex-col gap-3"
         >
           {messages.map((msg, i) => (
-            msg.question ? (
+            msg.role === 'notice' ? (
+              <NamedNotice key={i} name={msg.content} />
+            ) : msg.question ? (
               <QuestionCard
                 key={i}
                 question={msg.question}

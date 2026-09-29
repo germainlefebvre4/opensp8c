@@ -14,6 +14,7 @@ import {
   extractToolResult,
   markQuestionAnswered,
   mergeAssistantText,
+  upsertNamedNotice,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
   type AgentInfo,
@@ -54,7 +55,7 @@ export function clearStoredMessages(ghostId: string) {
 }
 
 export function getStoredContext(ghostId: string): string {
-  const msgs = loadStoredMessages(ghostId)
+  const msgs = loadStoredMessages(ghostId).filter(m => m.role !== 'notice')
   if (!msgs.length) return ''
   const lines = msgs.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
   const full = lines.join('\n\n')
@@ -150,6 +151,11 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
         if (data.type === 'ghost_named' && typeof data.name === 'string') {
           const newName = data.name as string
           setGhostName(newName)
+          setMessages(prev => {
+            const updated = upsertNamedNotice(prev, newName)
+            if (updated !== prev) saveMessages(sid, updated)
+            return updated
+          })
           queryClient.invalidateQueries({ queryKey: ['changes', workspaceId] })
           return
         }

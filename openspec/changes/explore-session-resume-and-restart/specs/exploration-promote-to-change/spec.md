@@ -1,11 +1,12 @@
 # Spec Delta
 
-## RENAMED Requirements
+## REMOVED Requirements
 
-- FROM: `### Requirement: Promotion via FF dans la session existante ou avec contexte injecté`
-- TO: `### Requirement: Promotion via FF dans une nouvelle session indépendante`
+### Requirement: Promotion via FF dans la session existante ou avec contexte injecté
+**Reason**: La spec décrit une promotion qui réutilise la session d'exploration vivante. Le comportement réel et voulu est de toujours démarrer un sous-processus neuf pour FF, indépendant de la session d'exploration, sans transmettre son identifiant de session Claude.
+**Migration**: Remplacée par l'exigence « Promotion via FF dans une nouvelle session indépendante » ajoutée ci-dessous ; les scénarios de contexte injecté, de `change_created` et d'échec y sont repris.
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Promotion via FF dans une nouvelle session indépendante
 L'endpoint `/promote` SHALL déclencher FF dans un nouveau subprocess, indépendant de la session d'exploration (qu'elle soit encore vivante ou expirée), en lui injectant le contexte conversationnel reçu dans le body. Le change créé SHALL démarrer avec sa propre session ; l'identifiant de session Claude de l'exploration ne SHALL PAS lui être transmis. Si un fichier de brouillon `drafts/<ghostId>.json` existe pour cette exploration, le backend SHALL lire son contenu et l'injecter au subprocess pour que le change créé contienne les tâches du brouillon. Le change créé SHALL avoir `launched: false` dans son `.openspec.yaml`, comme tout change produit par un Fast-Forward vers `Ready` (voir `kanban-ready-column`). Sur succès de la promotion, le fichier de brouillon de tâche et le ghost record SHALL être conservés pour permettre la coexistence et l'affinage ultérieur, et la session de l'exploration reste utilisable indépendamment.

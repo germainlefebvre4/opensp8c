@@ -1,38 +1,13 @@
 # Spec Delta
 
-## RENAMED Requirements
+## REMOVED Requirements
 
-- FROM: `### Requirement: Persistance de l'identifiant de session Claude pour les named sessions`
-- TO: `### Requirement: Persistance de l'identifiant de session Claude`
+### Requirement: Persistance de l'identifiant de session Claude pour les named sessions
+**Reason**: L'exigence est limitée aux sessions nommées et déclare les sessions anonymes « non persistées ». Les explorations anonymes portent désormais elles aussi un identifiant de session Claude.
+**Migration**: Remplacée par l'exigence « Persistance de l'identifiant de session Claude » (sessions nommées et explorations anonymes), ajoutée ci-dessous. Les scénarios des sessions nommées y sont repris à l'identique.
 
 ## MODIFIED Requirements
 
-### Requirement: Persistance de l'identifiant de session Claude
-Le backend SHALL générer un identifiant de session Claude (UUID) à la première ouverture d'une session nommée ou d'une exploration anonyme et le persister dans `preferences.json` : pour une session nommée sous la clé `workspaceID/changeName` au sein du champ `claudeSessionId`, pour une exploration anonyme dans le champ `claudeSessionId` de son enregistrement d'exploration (distinct de l'identifiant du ghost). Une exploration promue en change ne SHALL PAS transmettre son `claudeSessionId` au change créé.
-
-#### Scenario: Première ouverture d'une named session
-- **WHEN** `Manager.Start` est appelé pour un changeName sans `claudeSessionId` existant dans preferences
-- **THEN** un UUID est généré, le subprocess est lancé avec `--session-id <uuid>`, et l'UUID est immédiatement stocké dans preferences.json avant que le subprocess ne réponde
-
-#### Scenario: Réouverture d'une named session existante
-- **WHEN** `Manager.Start` est appelé pour un changeName ayant déjà un `claudeSessionId` dans preferences
-- **THEN** le subprocess est lancé avec `--resume <claudeSessionId>` (pas de nouvel UUID généré)
-
-#### Scenario: Première ouverture d'une exploration anonyme
-- **WHEN** `Manager.StartAnonymous` démarre une nouvelle session (sans `resumeGhostId` valide) avec un agent Claude ou Gemini
-- **THEN** un UUID de session Claude distinct de l'identifiant du ghost est généré, le subprocess est lancé avec `--session-id <uuid>`, et l'UUID est enregistré dans l'enregistrement d'exploration dès que celui-ci est créé (à l'envoi du premier message utilisateur)
-
-#### Scenario: Réouverture d'une exploration anonyme après expiration
-- **WHEN** `Manager.StartAnonymous` est appelé avec un `resumeGhostId` valide dont l'enregistrement porte un `claudeSessionId` et qu'aucune session vivante n'existe pour ce ghost
-- **THEN** le subprocess est lancé avec `--resume <claudeSessionId>` sous le même identifiant de ghost, sans nouveau `claudeSessionId`
-
-#### Scenario: Exploration existante sans claudeSessionId
-- **WHEN** `Manager.StartAnonymous` redémarre un ghost dont l'enregistrement n'a pas de `claudeSessionId` (créé avant cette évolution)
-- **THEN** un nouvel UUID est généré, le subprocess est lancé avec `--session-id <uuid>`, l'UUID est persisté dans l'enregistrement, et la session est signalée comme démarrée sans continuité de contexte
-
-#### Scenario: Promotion — nouvelle session pour le change
-- **WHEN** une exploration est promue en change
-- **THEN** le `claudeSessionId` de l'exploration n'est pas copié vers l'entrée de session du change, qui démarre avec sa propre session
 
 ### Requirement: Reprise du contexte Claude après expiration du subprocess
 Quand un subprocess est relancé pour une session nommée ou une exploration anonyme dont le `claudeSessionId` est connu, Claude SHALL reprendre le contexte conversationnel complet de la session précédente.
@@ -66,6 +41,33 @@ Quand une session reprend (reconnexion WebSocket avec `--resume`, pour une sessi
 - **THEN** aucun message de suivi n'est injecté ; la reprise se comporte comme actuellement
 
 ## ADDED Requirements
+
+### Requirement: Persistance de l'identifiant de session Claude
+Le backend SHALL générer un identifiant de session Claude (UUID) à la première ouverture d'une session nommée ou d'une exploration anonyme et le persister dans `preferences.json` : pour une session nommée sous la clé `workspaceID/changeName` au sein du champ `claudeSessionId`, pour une exploration anonyme dans le champ `claudeSessionId` de son enregistrement d'exploration (distinct de l'identifiant du ghost). Une exploration promue en change ne SHALL PAS transmettre son `claudeSessionId` au change créé.
+
+#### Scenario: Première ouverture d'une named session
+- **WHEN** `Manager.Start` est appelé pour un changeName sans `claudeSessionId` existant dans preferences
+- **THEN** un UUID est généré, le subprocess est lancé avec `--session-id <uuid>`, et l'UUID est immédiatement stocké dans preferences.json avant que le subprocess ne réponde
+
+#### Scenario: Réouverture d'une named session existante
+- **WHEN** `Manager.Start` est appelé pour un changeName ayant déjà un `claudeSessionId` dans preferences
+- **THEN** le subprocess est lancé avec `--resume <claudeSessionId>` (pas de nouvel UUID généré)
+
+#### Scenario: Première ouverture d'une exploration anonyme
+- **WHEN** `Manager.StartAnonymous` démarre une nouvelle session (sans `resumeGhostId` valide) avec un agent Claude ou Gemini
+- **THEN** un UUID de session Claude distinct de l'identifiant du ghost est généré, le subprocess est lancé avec `--session-id <uuid>`, et l'UUID est enregistré dans l'enregistrement d'exploration dès que celui-ci est créé (à l'envoi du premier message utilisateur)
+
+#### Scenario: Réouverture d'une exploration anonyme après expiration
+- **WHEN** `Manager.StartAnonymous` est appelé avec un `resumeGhostId` valide dont l'enregistrement porte un `claudeSessionId` et qu'aucune session vivante n'existe pour ce ghost
+- **THEN** le subprocess est lancé avec `--resume <claudeSessionId>` sous le même identifiant de ghost, sans nouveau `claudeSessionId`
+
+#### Scenario: Exploration existante sans claudeSessionId
+- **WHEN** `Manager.StartAnonymous` redémarre un ghost dont l'enregistrement n'a pas de `claudeSessionId` (créé avant cette évolution)
+- **THEN** un nouvel UUID est généré, le subprocess est lancé avec `--session-id <uuid>`, l'UUID est persisté dans l'enregistrement, et la session est signalée comme démarrée sans continuité de contexte
+
+#### Scenario: Promotion — nouvelle session pour le change
+- **WHEN** une exploration est promue en change
+- **THEN** le `claudeSessionId` de l'exploration n'est pas copié vers l'entrée de session du change, qui démarre avec sa propre session
 
 ### Requirement: Signalement d'un démarrage sans continuité de contexte
 Lorsqu'une exploration anonyme existante est redémarrée sans que l'agent puisse retrouver le contexte de la conversation précédente, le backend SHALL envoyer au client WebSocket un événement `{"type":"session_restarted"}`. Cela couvre : l'échec de `--resume` au démarrage, un ghost sans `claudeSessionId` antérieur, et les agents sans support de reprise de session (Antigravity, Codex, Copilot). Le backend NE SHALL PAS envoyer cet événement lorsque le client se rattache à un sous-processus encore vivant, lors de la première ouverture d'une exploration, ni lorsqu'une reprise via `--resume` réussit.

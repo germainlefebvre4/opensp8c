@@ -1,2 +1,19 @@
 schema: spec-driven
-created: 2026-09-29
+created: "2026-09-29"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 4
+    components:
+        - explore-session
+        - explore-session-restart
+        - conversation-store
+        - workspace-events
+        - agent-pool-real-execution
+        - session-log-retention
+    agent_specialization:
+        - backend
+        - frontend
+    _auto: true
+    _tagged_at: "2026-09-29"

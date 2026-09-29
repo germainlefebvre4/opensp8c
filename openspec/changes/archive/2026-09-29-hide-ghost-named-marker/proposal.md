@@ -18,11 +18,11 @@ Dans un chat d'exploration anonyme, le marker de nommage `{"event":"ghost_named"
 
 ### Modified Capabilities
 - `explore-ghost-card`: le marker `ghost_named` ne doit jamais fuiter dans le texte affiché, même fragmenté ; une notice de nommage est affichée.
-- `explore-message-layout`: nouveau type de ligne « notice système » dans le flux plein-largeur, rendu identiquement dans les panels et la relecture.
+- `explore-message-layout`: nouveau type de ligne « notice système » dans le flux plein-largeur, rendu identiquement dans les deux panels d'exploration.
 
 ## Impact
 
 - Backend : `backend/internal/api/handlers/explore.go` (relais des messages, `detectGhostQuestion`/stripping), `backend/internal/session/manager.go` (extraction `ghost_named`).
-- Frontend : `frontend/src/hooks/exploreChat.ts` (type `Message`, `mergeAssistantText`, nettoyage résiduel), `useAnonymousExploreSession.ts`, `ExploreAnonymousPanel.tsx`, `ExplorePanel.tsx`, relecture `DetailPanel`, fichiers i18n `fr`/`en`.
+- Frontend : `frontend/src/hooks/exploreChat.ts` (type `Message`, `mergeAssistantText`, nettoyage résiduel), `useAnonymousExploreSession.ts`, `ExploreAnonymousPanel.tsx`, `ExplorePanel.tsx`, fichiers i18n `fr`/`en`.
 - Docs : `docs/opensp8c/architecture.md` (section markers).
 - Aucun changement d'API externe ; le protocole WS `ghost_named` est inchangé.

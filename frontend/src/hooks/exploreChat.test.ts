@@ -12,6 +12,9 @@ import {
   mergeAssistantText,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
+  splitGhostMarkers,
+  stripGhostMarkers,
+  upsertNamedNotice,
   stripResidualGhostQuestionMarkers,
   type Message,
 } from './exploreChat'
@@ -147,6 +150,50 @@ describe('mergeAssistantText defensive cleanup', () => {
   })
 })
 
+describe('ghost_named marker cleanup', () => {
+  const marker = '{"event":"ghost_named","name":"rethink-application-ergonomics"}'
+
+  it('removes a complete marker and the blank lines after it', () => {
+    expect(stripGhostMarkers(`${marker}\n\nLet me look`)).toBe('Let me look')
+  })
+
+  it('holds back a partial marker suffix', () => {
+    expect(splitGhostMarkers('Intro {"eve')).toEqual({ visible: 'Intro ', held: '{"eve' })
+    expect(splitGhostMarkers('{"event":"ghost_named","na')).toEqual({ visible: '', held: '{"event":"ghost_named","na' })
+  })
+
+  it('keeps a legitimate brace', () => {
+    expect(splitGhostMarkers('{"foo": 1}')).toEqual({ visible: '{"foo": 1}', held: '' })
+  })
+
+  it('never shows fragments when the marker streams token by token', () => {
+    const deltas = ['{"', 'event":"ghost_named', '","name":"rethink-', 'application-ergonomics"', '}\n\nLet me look', ' at what']
+    let messages: Message[] = []
+    for (const d of deltas) {
+      messages = mergeAssistantText(messages, d, true)
+      expect(messages[0].content).not.toMatch(/[{"]|event/)
+    }
+    expect(messages[0].content).toBe('Let me look at what')
+  })
+
+  it('restores a withheld tail when it turns out not to be a marker', () => {
+    let messages = mergeAssistantText([], '{"', true)
+    expect(messages[0].content).toBe('')
+    messages = mergeAssistantText(messages, 'a": 1}', true)
+    expect(messages[0].content).toBe('{"a": 1}')
+  })
+
+  it('releases a withheld tail when the message completes', () => {
+    let messages = mergeAssistantText([], 'Texte {"eve', true)
+    messages = mergeAssistantText(messages, '', false)
+    expect(messages[0].content).toBe('Texte {"eve')
+  })
+
+  it('still cleans ghost_question markers', () => {
+    expect(stripGhostMarkers('A\n{"event":"ghost_question","question":"Q ?"}\nB')).toBe('A\nB')
+  })
+})
+
 describe('extractToolCalls / applyToolCalls', () => {
   it('captures a tool_use block and derives its target by tool name', () => {
     const calls = extractToolCalls({
@@ -279,5 +326,30 @@ describe('isTurnEnd', () => {
     expect(isTurnEnd({ type: 'assistant' })).toBe(false)
     expect(isTurnEnd({ type: 'content_block_delta' })).toBe(false)
     expect(isTurnEnd({})).toBe(false)
+  })
+})
+
+describe('upsertNamedNotice', () => {
+  it('adds one notice with the initial name', () => {
+    const out = upsertNamedNotice([{ role: 'user', content: 'Salut' }], 'my-name')
+    expect(out.filter(m => m.role === 'notice')).toEqual([{ role: 'notice', content: 'my-name' }])
+  })
+
+  it('replaces the existing notice on collision rename, without duplicating', () => {
+    const first = upsertNamedNotice([], 'my-name')
+    const second = upsertNamedNotice(first, 'my-name-2')
+    expect(second).toEqual([{ role: 'notice', content: 'my-name-2' }])
+  })
+
+  it('is a no-op for a reloaded history that already has the same notice', () => {
+    const stored: Message[] = [{ role: 'user', content: 'a' }, { role: 'notice', content: 'my-name' }]
+    expect(upsertNamedNotice(stored, 'my-name')).toBe(stored)
+  })
+
+  it('inserts before a streaming assistant message so deltas keep merging', () => {
+    const out = upsertNamedNotice([{ role: 'user', content: 'a' }, { role: 'assistant', content: 'x', partial: true }], 'n')
+    expect(out.map(m => m.role)).toEqual(['user', 'notice', 'assistant'])
+    const merged = mergeAssistantText(out, ' suite', true)
+    expect(merged[2].content).toBe('x suite')
   })
 })

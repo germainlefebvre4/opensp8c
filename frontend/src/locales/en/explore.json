@@ -13,6 +13,7 @@
   "minimize": "Minimize",
   "createChange": "Create change",
   "createChangeTooltip": "Create a change from this exploration",
+  "namedNotice": "Exploration named:",
   "scrollToBottom": "Scroll to bottom",
   "draftPanel": {
     "loading": "Loading draft...",
