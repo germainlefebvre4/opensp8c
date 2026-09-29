@@ -2,7 +2,8 @@
   "title": "Configuration",
   "tabs": {
     "agentPool": "Agent Pool",
-    "cli": "CLI"
+    "cli": "CLI",
+    "language": "Language"
   },
   "agentsTab": {
     "description": "Registry of agents supported by the platform, read-only.",

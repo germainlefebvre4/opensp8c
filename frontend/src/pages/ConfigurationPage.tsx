@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { deriveCliFormState, deriveAgentFormState, GEMINI_RECOMMENDED_KEYS } from '../lib/cliSettings'
 import type { EnvVar } from '../lib/cliSettings'
+import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
 import type { WorkerStatus } from '../hooks/usePoolStatus'
@@ -427,11 +428,13 @@ export function CliSettingsTab() {
 export function ConfigurationPage() {
   const { t } = useTranslation('configuration')
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab: 'agent-pool' | 'cli' = searchParams.get('tab') === 'cli' ? 'cli' : 'agent-pool'
+  const tabParam = searchParams.get('tab')
+  const tab: 'agent-pool' | 'cli' | 'language' =
+    tabParam === 'cli' ? 'cli' : tabParam === 'language' ? 'language' : 'agent-pool'
   const agentId = searchParams.get('agent')
 
-  const setTab = (next: 'agent-pool' | 'cli') => {
-    setSearchParams(next === 'cli' ? { tab: 'cli' } : {})
+  const setTab = (next: 'agent-pool' | 'cli' | 'language') => {
+    setSearchParams(next === 'agent-pool' ? {} : { tab: next })
   }
 
   return (
@@ -445,6 +448,7 @@ export function ConfigurationPage() {
         {([
           { id: 'agent-pool', label: t('tabs.agentPool') },
           { id: 'cli', label: t('tabs.cli') },
+          { id: 'language', label: t('tabs.language') },
         ] as const).map(({ id, label }) => (
           <button
             key={id}
@@ -464,6 +468,8 @@ export function ConfigurationPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'agent-pool' ? (
           <AgentPoolTab />
+        ) : tab === 'language' ? (
+          <LanguageSwitcher />
         ) : agentId ? (
           <AgentCliConfigView agentId={agentId} />
         ) : (

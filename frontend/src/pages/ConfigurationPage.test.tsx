@@ -281,3 +281,21 @@ describe('AgentPoolTab', () => {
     expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
   })
 })
+
+describe('ConfigurationPage language tab', () => {
+  it('shows the Langue tab and renders the language switcher when selected', () => {
+    mockAgents(AGENTS)
+    mockPreferences({ defaultAgent: 'claude', env: {}, agentEnv: {}, systemEnv: {} })
+    mockAllPools({ pools: [] } as unknown as AllPoolsStatus)
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/configuration?tab=language']}>
+        <ConfigurationPage />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('Langue')
+    expect(html).toContain('>en<')
+    expect(html).toContain('>fr<')
+  })
+})

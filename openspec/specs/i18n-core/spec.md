@@ -20,11 +20,15 @@ The system SHALL support English (EN) and French (FR) as UI languages. English S
 - **THEN** it SHALL be an actual French translation, not the English string duplicated verbatim (except for terms intentionally kept identical, such as proper nouns or technical labels)
 
 ### Requirement: User can switch the UI language
-The system SHALL provide a visible language switcher allowing the user to toggle between EN and FR.
+The system SHALL provide a visible language switcher, located in Configuration > Langue, allowing the user to toggle between EN and FR.
 
 #### Scenario: Language switcher is present in the nav bar
 - **WHEN** the user views any page
-- **THEN** a language switcher (EN | FR) SHALL be visible in the top navigation bar
+- **THEN** no language switcher SHALL be visible in the top navigation bar - it has moved to Configuration > Langue (see "Language switcher is present in Configuration")
+
+#### Scenario: Language switcher is present in Configuration
+- **WHEN** the user opens Configuration > Langue
+- **THEN** a language switcher (EN | FR) SHALL be visible
 
 #### Scenario: Switching to French
 - **WHEN** the user selects FR in the language switcher
