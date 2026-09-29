@@ -48,5 +48,10 @@
   "role": {
     "user": "You",
     "assistant": "Assistant"
+  },
+  "restartAgent": "Restart agent",
+  "system": {
+    "agent_restarted": "Agent restarted",
+    "restart_failed": "Restarting the agent failed. You can try again."
   }
 }

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
@@ -60,8 +61,25 @@ type Session struct {
 	// read without synchronization.
 	nativeQuestionModeActive bool
 
+	// claudeSessionID is the agent conversation id this subprocess runs
+	// under (empty for agents without session support). Fixed at start.
+	claudeSessionID string
+	// contextLost is set when this subprocess started without the previous
+	// conversation context; the first WebSocket client takes (consumes) it.
+	contextLost atomic.Bool
+
 	log *conversation.SessionLog
 }
+
+// ClaudeSessionID returns the agent conversation id of this session.
+func (s *Session) ClaudeSessionID() string { return s.claudeSessionID }
+
+// MarkContextLost flags the session as started without context continuity.
+func (s *Session) MarkContextLost() { s.contextLost.Store(true) }
+
+// TakeContextLost returns true once if the session started without context
+// continuity, so the signal reaches a single connection.
+func (s *Session) TakeContextLost() bool { return s.contextLost.CompareAndSwap(true, false) }
 
 // SetPendingQuestion records a clarification question as awaiting a user reply.
 func (s *Session) SetPendingQuestion(question string) {
@@ -379,11 +397,15 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, isResume, sessLog, customEnv, nativeQuestionMode, langDirective)
-	if err != nil && isResume {
-		// Fallback: --resume failed at process start, try without resume
-		log.Printf("[session] --resume failed for %s/%s, starting fresh: %v", workspaceID, changeName, err)
-		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, false, sessLog, customEnv, nativeQuestionMode, langDirective)
+	startProc := func(id string, resume bool) (*Subprocess, error) {
+		return StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, id, resume, sessLog, customEnv, nativeQuestionMode, langDirective)
+	}
+	var proc *Subprocess
+	var err error
+	if isResume {
+		proc, claudeSessionID, _, err = startWithResumeFallback(startProc, claudeSessionID, resolved.config.ID == "claude")
+	} else {
+		proc, err = startProc(claudeSessionID, false)
 	}
 	if err != nil {
 		cancel()
@@ -408,6 +430,7 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 		done:                     make(chan struct{}),
 		log:                      sessLog,
 		nativeQuestionModeActive: resolved.config.ID == "claude" && nativeQuestionMode,
+		claudeSessionID:          claudeSessionID,
 	}
 
 	injectAgentInfo(s, resolved)
@@ -518,9 +541,41 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 		langDirective = p.LanguageDirective(language.Chat)
 	}
 
+	// Session continuity: resume the conversation recorded for this ghost,
+	// otherwise open a new one. Agents without --session-id/--resume support
+	// always start empty, which is a loss of context for an existing ghost.
+	var rec *preferences.ExplorationRecord
+	if isRestart {
+		rec = m.prefs.GetExploration(sessionID, workspaceID)
+	}
+	claudeSessionID := ""
+	isResume := false
+	contextLost := false
+	if resolved.config.ID == "claude" || resolved.config.ID == "gemini" {
+		if rec != nil && rec.ClaudeSessionId != "" {
+			claudeSessionID = rec.ClaudeSessionId
+			isResume = true
+		} else {
+			claudeSessionID = newClaudeSessionID()
+			contextLost = isRestart
+		}
+	} else {
+		contextLost = isRestart
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	// Anonymous sessions use no session flags (no persistence, no resume)
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog, customEnv, nativeQuestionMode, langDirective)
+	startProc := func(id string, resume bool) (*Subprocess, error) {
+		return StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, id, resume, sessLog, customEnv, nativeQuestionMode, langDirective)
+	}
+	var proc *Subprocess
+	var err error
+	if isResume {
+		var fellBack bool
+		proc, claudeSessionID, fellBack, err = startWithResumeFallback(startProc, claudeSessionID, resolved.config.ID == "claude")
+		contextLost = contextLost || fellBack
+	} else {
+		proc, err = startProc(claudeSessionID, false)
+	}
 	if err != nil {
 		cancel()
 		sessLog.Close()
@@ -535,6 +590,16 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 		done:                     make(chan struct{}),
 		log:                      sessLog,
 		nativeQuestionModeActive: resolved.config.ID == "claude" && nativeQuestionMode,
+		claudeSessionID:          claudeSessionID,
+	}
+	s.contextLost.Store(contextLost)
+
+	// Keep the record in step with the id actually in use (new id after a
+	// failed resume, or first id for a ghost created before this field).
+	if rec != nil && claudeSessionID != "" && rec.ClaudeSessionId != claudeSessionID {
+		if err := m.prefs.SetExplorationClaudeSession(sessionID, claudeSessionID); err != nil {
+			log.Printf("[session] failed to persist exploration session id: %v", err)
+		}
 	}
 
 	injectAgentInfo(s, resolved)
@@ -1042,6 +1107,32 @@ func (m *Manager) Stop(workspaceID, changeName string) {
 
 func (m *Manager) StopAnonymous(workspaceID, sessionID string) {
 	m.stopByKey(anonKey(workspaceID, sessionID))
+}
+
+// StopIfCurrent stops sess only if it is still the session registered for the
+// change; a stale caller (e.g. the expiry watcher of a replaced session)
+// must not stop its successor.
+func (m *Manager) StopIfCurrent(workspaceID, changeName string, sess *Session) {
+	m.stopIfCurrent(sessionKey(workspaceID, changeName), sess)
+}
+
+// StopAnonymousIfCurrent is StopIfCurrent for anonymous sessions.
+func (m *Manager) StopAnonymousIfCurrent(workspaceID, sessionID string, sess *Session) {
+	m.stopIfCurrent(anonKey(workspaceID, sessionID), sess)
+}
+
+func (m *Manager) stopIfCurrent(key string, sess *Session) {
+	m.mu.Lock()
+	s, ok := m.sessions[key]
+	if ok && s == sess {
+		delete(m.sessions, key)
+	} else {
+		ok = false
+	}
+	m.mu.Unlock()
+	if ok {
+		s.Stop()
+	}
 }
 
 func (m *Manager) stopByKey(key string) {

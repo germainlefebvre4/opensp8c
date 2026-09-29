@@ -31,7 +31,11 @@ export interface ToolCall {
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'notice'
+  /**
+   * `system` lines are local UI notes (e.g. agent restarted): `content` is a
+   * SystemMessageKind, never sent to the agent, stored, or part of any context.
+   */
+  role: 'user' | 'assistant' | 'notice' | 'system'
   content: string
   partial?: boolean
   /** Streamed tail withheld because it may still become a ghost marker; released if it does not. */
@@ -39,6 +43,8 @@ export interface Message {
   question?: QuestionCardData
   toolCalls?: ToolCall[]
 }
+
+export type SystemMessageKind = 'agent_restarted' | 'restart_failed'
 
 export interface AgentInfo {
   id: string
@@ -328,4 +334,147 @@ export function upsertNamedNotice(messages: Message[], name: string): Message[] 
     return [...messages.slice(0, -1), notice, last]
   }
   return [...messages, notice]
+}
+
+/** Messages worth persisting or feeding back as context: no partials, no local system lines. */
+export function isPersistableMessage(m: Message): boolean {
+  return !m.partial && m.role !== 'system'
+}
+
+const CONTEXT_MAX_CHARS = 60000
+
+function contextLine(m: Message): string {
+  return `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+}
+
+/**
+ * Builds the transcript text used to re-seed an agent (or a promotion) from
+ * displayed messages: notices and system lines are left out; above 60 000
+ * characters the first 5 exchanges and the last 30 messages are kept.
+ */
+export function buildTranscriptContext(messages: Message[]): string {
+  const msgs = messages.filter(m => m.role === 'user' || m.role === 'assistant')
+  if (!msgs.length) return ''
+  const full = msgs.map(contextLine).join('\n\n')
+  if (full.length <= CONTEXT_MAX_CHARS) return full
+  const first = msgs.slice(0, 10).map(contextLine).join('\n\n')
+  const last = msgs.slice(-30).map(contextLine).join('\n\n')
+  return first + '\n\n[contexte intermédiaire tronqué]\n\n' + last
+}
+
+/**
+ * The single message re-injecting the transcript after the backend reported a
+ * start without context continuity (`session_restarted`). Null when there is
+ * nothing to inject.
+ */
+export function buildSessionRestartedPayload(context: string): string | null {
+  if (!context) return null
+  return JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: `[Reprise de session]\n\nContexte de la conversation précédente :\n\n${context}\n\nContinue l'exploration à partir de là où on s'était arrêtés, sans résumer les échanges précédents.`,
+    },
+  })
+}
+
+function normalizedContent(m: Message): string {
+  return stripResidualGhostQuestionMarkers(m.content).trim()
+}
+
+/**
+ * Merges the backend's replayed buffer into the messages already displayed,
+ * so each assistant reply shows once. The replay carries agent output only:
+ *  - no assistant reply displayed yet: the whole replay is added;
+ *  - otherwise the last displayed assistant reply is looked up in the replay
+ *    and only what follows it is added (turns finished while the panel was
+ *    closed); if it is not found (replay window exceeded) nothing is added.
+ * A trailing partial message already displayed is superseded by the replay.
+ */
+export function mergeReplay(displayed: Message[], replayed: Message[]): Message[] {
+  const base = displayed.length && displayed[displayed.length - 1].partial ? displayed.slice(0, -1) : displayed
+  if (!replayed.length) return base
+  let anchor = -1
+  for (let i = base.length - 1; i >= 0; i--) {
+    if (base[i].role === 'assistant' && !base[i].question && normalizedContent(base[i])) {
+      anchor = i
+      break
+    }
+  }
+  if (anchor === -1) return [...base, ...replayed]
+  const target = normalizedContent(base[anchor])
+  for (let j = replayed.length - 1; j >= 0; j--) {
+    const r = replayed[j]
+    if (r.role === 'assistant' && !r.partial && !r.question && normalizedContent(r) === target) {
+      return [...base, ...replayed.slice(j + 1)]
+    }
+  }
+  return base
+}
+
+/** True when an unfinished tool call sits in the current turn (after the last user message). */
+export function hasPendingToolCall(messages: Message[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role === 'user') return false
+    if (m.toolCalls?.some(tc => tc.status === 'pending')) return true
+  }
+  return false
+}
+
+export const STALL_MS = 60_000
+export const STALL_WITH_TOOL_MS = 180_000
+
+/** Whether a session waiting for the agent has been silent long enough to look stuck. */
+export function isStalled(waiting: boolean, silentMs: number, toolPending: boolean): boolean {
+  if (!waiting) return false
+  return silentMs >= (toolPending ? STALL_WITH_TOOL_MS : STALL_MS)
+}
+
+/**
+ * Tracks agent silence while a reply is awaited. A 1 s interval runs only
+ * while waiting; touch() (any inbound agent message) restarts the silence.
+ * onChange is called only when the stalled state flips.
+ */
+export function createStallMonitor(getToolPending: () => boolean, onChange: (stalled: boolean) => void) {
+  let waiting = false
+  let stalled = false
+  let lastInboundAt = Date.now()
+  let timer: ReturnType<typeof setInterval> | null = null
+
+  const update = (next: boolean) => {
+    if (next !== stalled) {
+      stalled = next
+      onChange(next)
+    }
+  }
+  const check = () => update(isStalled(waiting, Date.now() - lastInboundAt, getToolPending()))
+
+  return {
+    setWaiting(next: boolean) {
+      if (next === waiting) return
+      waiting = next
+      if (next) {
+        lastInboundAt = Date.now()
+        timer = setInterval(check, 1000)
+      } else {
+        if (timer) clearInterval(timer)
+        timer = null
+        update(false)
+      }
+    },
+    touch() {
+      lastInboundAt = Date.now()
+      update(false)
+    },
+    dispose() {
+      if (timer) clearInterval(timer)
+      timer = null
+    },
+  }
+}
+
+/** The restart button is offered for a stalled (or failed-restart) Claude session only. */
+export function canOfferRestart(stalled: boolean, agent: AgentInfo | null): boolean {
+  return stalled && agent?.id === 'claude'
 }

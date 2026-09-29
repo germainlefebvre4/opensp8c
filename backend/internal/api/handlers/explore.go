@@ -294,7 +294,7 @@ func (h *ExploreHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.serveWS(r, conn, sess, func() { h.mgr.Stop(workspaceID, changeName) }, false, workspaceID, "")
+	h.serveWS(r, conn, sess, func() { h.mgr.StopIfCurrent(workspaceID, changeName, sess) }, false, workspaceID, "")
 }
 
 func (h *ExploreHandler) StopSession(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +362,7 @@ func (h *ExploreHandler) HandleAnonymousWS(w http.ResponseWriter, r *http.Reques
 	}
 	defer conn.CloseNow()
 
-	h.serveWS(r, conn, sess, func() { h.mgr.StopAnonymous(workspaceID, sessionID) }, true, workspaceID, sessionID)
+	h.serveWS(r, conn, sess, func() { h.mgr.StopAnonymousIfCurrent(workspaceID, sessionID, sess) }, true, workspaceID, sessionID)
 }
 
 // StopAnonymousSession stops an anonymous explore session.
@@ -379,6 +379,15 @@ func (h *ExploreHandler) StopAnonymousSession(w http.ResponseWriter, r *http.Req
 func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *session.Session, onExpire func(), anonymous bool, workspaceID, sessionID string) {
 	wsCtx, wsCancel := context.WithCancel(r.Context())
 	defer wsCancel()
+
+	// The subprocess started without the previous conversation context: tell
+	// the client (once) so it can re-inject its own transcript. Never sent
+	// when attaching to a live session or after a successful --resume.
+	if sess.TakeContextLost() {
+		if err := conn.Write(wsCtx, websocket.MessageText, []byte(`{"type":"session_restarted"}`)); err != nil {
+			return
+		}
+	}
 
 	// Replay history: send buffered messages before going live.
 	snapshot, cursor := sess.Snapshot()
@@ -399,6 +408,9 @@ func (h *ExploreHandler) serveWS(r *http.Request, conn *websocket.Conn, sess *se
 		if err := conn.Write(wsCtx, websocket.MessageText, evtMsg); err != nil {
 			return
 		}
+	}
+	if err := conn.Write(wsCtx, websocket.MessageText, []byte(`{"type":"replay_done"}`)); err != nil {
+		return
 	}
 
 	// detectGhostQuestion checks a buffered message for every ghost_question
@@ -579,6 +591,9 @@ func (h *ExploreHandler) createGhostRecord(workspaceID, sessionID string, sess *
 		Name:        tempName,
 		SessionID:   sessionID,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	if sess != nil {
+		record.ClaudeSessionId = sess.ClaudeSessionID()
 	}
 	_ = h.prefs.AddExploration(record)
 	if h.watcher != nil {

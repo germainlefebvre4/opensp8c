@@ -1,10 +1,10 @@
-# Spec Delta
+# explore-session-restart Specification
 
 ## Purpose
 
 Permettre à l'utilisateur de débloquer une conversation d'exploration dont le tour d'agent semble figé, en redémarrant le sous-processus de l'agent sans perdre l'historique ni le contexte de la conversation.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Détection d'une session d'exploration bloquée
 Le frontend SHALL considérer une session d'exploration comme potentiellement bloquée lorsqu'elle est en attente d'une réponse de l'agent (`waiting` à `true`) et qu'aucun message n'a été reçu de sa part depuis un délai de silence. Ce délai SHALL être de 60 secondes, porté à 180 secondes tant qu'un appel d'outil de l'agent est en cours (appel sans résultat associé). Toute réception d'un message de l'agent SHALL remettre le délai à zéro.
@@ -57,7 +57,7 @@ Le clic sur « Relancer l'agent » SHALL arrêter le sous-processus de la sessio
 
 #### Scenario: Échec du redémarrage
 - **WHEN** le nouveau sous-processus ne peut pas être démarré
-- **THEN** un message d'avertissement est affiché dans le fil, `waiting` est `false`, et le bouton « Relancer l'agent » peut être réutilisé
+- **THEN** un message d'avertissement est affiché dans le fil, `waiting` est `false`, et le bouton « Relancer l'agent » reste affiché (pour un agent Claude) jusqu'à la prochaine tentative ou le prochain message de l'utilisateur, afin de pouvoir réessayer
 
 ### Requirement: Message système de relance dans le fil
 Après un redémarrage demandé par l'utilisateur, le fil de messages SHALL afficher un message système discret « Agent relancé », distinct des messages de l'utilisateur et de l'assistant, et ne SHALL PAS être envoyé à l'agent.

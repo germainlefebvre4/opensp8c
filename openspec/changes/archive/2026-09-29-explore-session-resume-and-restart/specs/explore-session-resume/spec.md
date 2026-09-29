@@ -22,7 +22,7 @@ Quand un subprocess est relancé pour une session nommée ou une exploration ano
 
 #### Scenario: Fallback si --resume échoue
 - **WHEN** le subprocess lancé avec `--resume <claudeSessionId>` produit une erreur au démarrage
-- **THEN** le backend log un warning et relance un nouveau subprocess sans `--resume` ; le `claudeSessionId` dans preferences n'est pas supprimé, et pour une exploration anonyme la session est signalée comme démarrée sans continuité de contexte
+- **THEN** le backend log un warning et relance un nouveau subprocess sans `--resume` ; le nouveau `claudeSessionId` généré pour ce redémarrage remplace l'ancien dans preferences, et pour une exploration anonyme la session est signalée comme démarrée sans continuité de contexte
 
 ### Requirement: Re-déclenchement d'une question restée en attente à la reprise
 

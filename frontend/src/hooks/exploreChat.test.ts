@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   appendQuestionMessage,
   applyToolCalls,
   applyToolResult,
   buildAnswerWSPayload,
   buildConsolidatedUserMessage,
+  buildSessionRestartedPayload,
+  buildTranscriptContext,
+  createStallMonitor,
+  hasPendingToolCall,
+  isPersistableMessage,
+  isStalled,
+  mergeReplay,
+  STALL_MS,
+  STALL_WITH_TOOL_MS,
   extractToolCalls,
   isTurnEnd,
   extractToolResult,
@@ -351,5 +360,164 @@ describe('upsertNamedNotice', () => {
     expect(out.map(m => m.role)).toEqual(['user', 'notice', 'assistant'])
     const merged = mergeAssistantText(out, ' suite', true)
     expect(merged[2].content).toBe('x suite')
+  })
+})
+
+const asst = (content: string, extra: Partial<Message> = {}): Message => ({ role: 'assistant', content, ...extra })
+const usr = (content: string): Message => ({ role: 'user', content })
+
+describe('system messages', () => {
+  it('are neither persisted nor part of the transcript context', () => {
+    const sys: Message = { role: 'system', content: 'agent_restarted' }
+    expect(isPersistableMessage(sys)).toBe(false)
+    expect(isPersistableMessage(asst('x', { partial: true }))).toBe(false)
+    expect(isPersistableMessage(asst('x'))).toBe(true)
+    expect(buildTranscriptContext([usr('hi'), sys, asst('hello'), { role: 'notice', content: 'n' }])).toBe(
+      'User: hi\n\nAssistant: hello',
+    )
+  })
+})
+
+describe('buildTranscriptContext', () => {
+  it('returns empty text without messages', () => {
+    expect(buildTranscriptContext([])).toBe('')
+  })
+
+  it('truncates long transcripts to the first 5 exchanges and the last 30 messages', () => {
+    const msgs: Message[] = []
+    for (let i = 0; i < 100; i++) msgs.push(i % 2 ? asst(`a${i} ` + 'x'.repeat(1000)) : usr(`u${i} ` + 'x'.repeat(1000)))
+    const ctx = buildTranscriptContext(msgs)
+    expect(ctx).toContain('[contexte intermédiaire tronqué]')
+    expect(ctx).toContain('u0 ')
+    expect(ctx).toContain('a9 ')
+    expect(ctx).not.toContain('u10 ')
+    expect(ctx).toContain('a99 ')
+  })
+})
+
+describe('buildSessionRestartedPayload', () => {
+  it('is null without history', () => {
+    expect(buildSessionRestartedPayload('')).toBeNull()
+  })
+
+  it('asks the agent to continue without summarizing', () => {
+    const payload = JSON.parse(buildSessionRestartedPayload('User: hi')!)
+    expect(payload.type).toBe('user')
+    expect(payload.message.content).toContain('User: hi')
+    expect(payload.message.content).toContain('sans résumer')
+  })
+})
+
+describe('mergeReplay', () => {
+  it('adds the whole replay when nothing from the assistant is displayed yet', () => {
+    expect(mergeReplay([], [asst('a'), asst('b')])).toEqual([asst('a'), asst('b')])
+    expect(mergeReplay([usr('q')], [asst('a')])).toEqual([usr('q'), asst('a')])
+  })
+
+  it('shows each reply once when the last displayed reply is found in the replay', () => {
+    const displayed = [usr('q1'), asst('a1'), usr('q2'), asst('a2')]
+    expect(mergeReplay(displayed, [asst('a1'), asst('a2')])).toEqual(displayed)
+  })
+
+  it('adds only the turns that finished while the panel was closed', () => {
+    const displayed = [usr('q1'), asst('a1')]
+    expect(mergeReplay(displayed, [asst('a1'), asst('a2')])).toEqual([usr('q1'), asst('a1'), asst('a2')])
+  })
+
+  it('adds nothing when the last displayed reply is outside the replay window', () => {
+    const displayed = [usr('q1'), asst('a1')]
+    expect(mergeReplay(displayed, [asst('zzz')])).toEqual(displayed)
+  })
+
+  it('keeps displayed history untouched with an empty replay (restarted subprocess)', () => {
+    const displayed = [usr('q1'), asst('a1')]
+    expect(mergeReplay(displayed, [])).toEqual(displayed)
+  })
+
+  it('ignores trailing whitespace differences and drops a stale partial tail', () => {
+    const displayed = [usr('q'), asst('a1 '), asst('par', { partial: true })]
+    expect(mergeReplay(displayed, [asst('a1'), asst('par tial')])).toEqual([usr('q'), asst('a1 '), asst('par tial')])
+  })
+})
+
+describe('stall detection', () => {
+  it('needs waiting, and 60 s of silence (180 s with a tool call in flight)', () => {
+    expect(isStalled(false, STALL_MS * 10, false)).toBe(false)
+    expect(isStalled(true, STALL_MS - 1, false)).toBe(false)
+    expect(isStalled(true, STALL_MS, false)).toBe(true)
+    expect(isStalled(true, STALL_MS, true)).toBe(false)
+    expect(isStalled(true, STALL_WITH_TOOL_MS, true)).toBe(true)
+  })
+
+  it('sees pending tool calls of the current turn only', () => {
+    const pending = asst('', { toolCalls: [{ id: 't', name: 'Bash', target: '', status: 'pending' }] })
+    const done = asst('', { toolCalls: [{ id: 't', name: 'Bash', target: '', status: 'done' }] })
+    expect(hasPendingToolCall([usr('q'), pending])).toBe(true)
+    expect(hasPendingToolCall([usr('q'), done])).toBe(false)
+    expect(hasPendingToolCall([pending, usr('next')])).toBe(false)
+  })
+
+  describe('monitor', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('flags a silent wait after 60 s', () => {
+      const changes: boolean[] = []
+      const m = createStallMonitor(() => false, v => changes.push(v))
+      m.setWaiting(true)
+      vi.advanceTimersByTime(59_000)
+      expect(changes).toEqual([])
+      vi.advanceTimersByTime(2_000)
+      expect(changes).toEqual([true])
+      m.dispose()
+    })
+
+    it('waits 180 s while a tool call is in flight', () => {
+      const changes: boolean[] = []
+      const m = createStallMonitor(() => true, v => changes.push(v))
+      m.setWaiting(true)
+      vi.advanceTimersByTime(120_000)
+      expect(changes).toEqual([])
+      vi.advanceTimersByTime(61_000)
+      expect(changes).toEqual([true])
+      m.dispose()
+    })
+
+    it('resets on inbound activity and hides the button', () => {
+      const changes: boolean[] = []
+      const m = createStallMonitor(() => false, v => changes.push(v))
+      m.setWaiting(true)
+      vi.advanceTimersByTime(61_000)
+      m.touch()
+      expect(changes).toEqual([true, false])
+      vi.advanceTimersByTime(59_000)
+      expect(changes).toEqual([true, false])
+      vi.advanceTimersByTime(2_000)
+      expect(changes).toEqual([true, false, true])
+      m.dispose()
+    })
+
+    it('never flags when not waiting, however long the silence', () => {
+      const changes: boolean[] = []
+      const m = createStallMonitor(() => false, v => changes.push(v))
+      vi.advanceTimersByTime(600_000)
+      expect(changes).toEqual([])
+      m.setWaiting(true)
+      vi.advanceTimersByTime(61_000)
+      m.setWaiting(false)
+      expect(changes).toEqual([true, false])
+      m.dispose()
+    })
+
+    it('measures silence from the start of the wait, not from an old message', () => {
+      const changes: boolean[] = []
+      const m = createStallMonitor(() => false, v => changes.push(v))
+      m.touch()
+      vi.advanceTimersByTime(600_000) // idle for a long time
+      m.setWaiting(true)
+      vi.advanceTimersByTime(5_000)
+      expect(changes).toEqual([])
+      m.dispose()
+    })
   })
 })

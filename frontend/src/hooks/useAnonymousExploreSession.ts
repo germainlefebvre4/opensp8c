@@ -2,9 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, wsURL } from '../lib/api'
 import { useChanges } from './useChanges'
+import { useStallDetection } from './useStallDetection'
 import {
   appendQuestionMessage,
   applyToolCalls,
+  buildSessionRestartedPayload,
+  buildTranscriptContext,
+  isPersistableMessage,
+  mergeReplay,
   applyToolResult,
   buildAnswerWSPayload,
   buildConsolidatedUserMessage,
@@ -29,7 +34,7 @@ const STORAGE_PREFIX = 'explore:'
 
 function saveMessages(ghostId: string, messages: Message[]) {
   try {
-    const serializable = messages.filter(m => !m.partial)
+    const serializable = messages.filter(isPersistableMessage)
     localStorage.setItem(STORAGE_PREFIX + ghostId, JSON.stringify(serializable))
   } catch {
     // localStorage full or unavailable — silently skip
@@ -40,7 +45,7 @@ export function loadStoredMessages(ghostId: string): Message[] {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + ghostId)
     if (!raw) return []
-    return JSON.parse(raw) as Message[]
+    return (JSON.parse(raw) as Message[]).filter(m => m.role !== 'system')
   } catch {
     return []
   }
@@ -55,15 +60,7 @@ export function clearStoredMessages(ghostId: string) {
 }
 
 export function getStoredContext(ghostId: string): string {
-  const msgs = loadStoredMessages(ghostId).filter(m => m.role !== 'notice')
-  if (!msgs.length) return ''
-  const lines = msgs.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-  const full = lines.join('\n\n')
-  if (full.length <= 60000) return full
-  // Truncate: keep first 5 exchanges + last 30 messages
-  const firstExchanges = msgs.slice(0, 10).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n')
-  const lastMsgs = msgs.slice(-30).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n')
-  return firstExchanges + '\n\n[contexte intermédiaire tronqué]\n\n' + lastMsgs
+  return buildTranscriptContext(loadStoredMessages(ghostId))
 }
 
 export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: string) {
@@ -93,32 +90,79 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
   // Track last completed assistant message content for localStorage saves
   const pendingAssistantRef = useRef<string>('')
   const messagesRef = useRef<Message[]>(messages)
+  const { stalled, touch } = useStallDetection(waiting, messages)
+  const touchRef = useRef(touch)
+  touchRef.current = touch
+  const ghostIdRef = useRef<string | null>(resumeGhostId ?? null)
+  // Set by restart(): the next successful connection shows "agent restarted".
+  const restartNoticeRef = useRef(false)
+  const [restartFailed, setRestartFailed] = useState(false)
 
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
 
-  const connectWS = useCallback((sid: string, injectContext?: string) => {
+  useEffect(() => {
+    ghostIdRef.current = ghostId
+  }, [ghostId])
+
+  const connectWS = useCallback((sid: string) => {
     setExpired(false)
     const url = wsURL(`/api/workspaces/${workspaceId}/explore/sessions/${sid}`)
     const ws = new WebSocket(url)
     wsRef.current = ws
 
+    // Replayed agent output is collected here and merged once at replay_done,
+    // so answers already displayed (from localStorage or a previous
+    // connection) are not shown twice. Control events are handled at once.
+    let replaying = true
+    let replayBuffer: Message[] = []
+    let contextInjected = false
+    const applyMessages = (fn: (prev: Message[]) => Message[]) => {
+      if (replaying) replayBuffer = fn(replayBuffer)
+      else setMessages(fn)
+    }
+
     ws.onopen = () => {
       setConnected(true)
-      // If resuming with context, inject it as the first hidden message so the LLM has full context.
-      if (injectContext) {
-        const contextMsg = JSON.stringify({
-          type: 'user',
-          message: { role: 'user', content: `[Reprise de session]\n\nContexte de la conversation précédente :\n\n${injectContext}\n\nContinue l'exploration à partir de là où on s'était arrêtés.` }
-        })
-        ws.send(contextMsg)
+      if (restartNoticeRef.current) {
+        restartNoticeRef.current = false
+        setRestartFailed(false)
+        setMessages(prev => [...prev, { role: 'system', content: 'agent_restarted' }])
       }
     }
 
     ws.onmessage = (ev) => {
+      if (wsRef.current !== ws) return
       try {
         const data = JSON.parse(ev.data as string)
+
+        if (data.type === 'session_restarted') {
+          // The backend started an agent without the previous context: re-seed it once.
+          if (contextInjected) return
+          contextInjected = true
+          const payload = buildSessionRestartedPayload(getStoredContext(sid))
+          if (payload && ws.readyState === WebSocket.OPEN) {
+            ws.send(payload)
+            setWaiting(true)
+          }
+          return
+        }
+
+        if (data.type === 'replay_done') {
+          replaying = false
+          const replayed = replayBuffer
+          replayBuffer = []
+          setMessages(prev => {
+            const merged = mergeReplay(prev, replayed)
+            if (merged !== prev) saveMessages(sid, merged)
+            return merged
+          })
+          touchRef.current()
+          return
+        }
+
+        touchRef.current()
 
         if (data.type === 'session_expired') {
           setExpired(true)
@@ -133,7 +177,7 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
         }
 
         if (data.type === 'session_warning' && typeof data.text === 'string') {
-          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
+          applyMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
           if (data.fatal !== false) {
             setWaiting(false)
           }
@@ -175,14 +219,14 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
 
         const toolCalls = extractToolCalls(data)
         if (toolCalls.length) {
-          setMessages(prev => applyToolCalls(prev, toolCalls))
+          applyMessages(prev => applyToolCalls(prev, toolCalls))
         }
 
         const toolResult = extractToolResult(data)
         if (toolResult) {
-          setMessages(prev => {
+          applyMessages(prev => {
             const updated = applyToolResult(prev, toolResult)
-            if (sid) saveMessages(sid, updated.filter(m => !m.partial))
+            if (!replaying) saveMessages(sid, updated)
             return updated
           })
         }
@@ -195,30 +239,42 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
         setWaiting(false)
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
-        setMessages(prev => {
+        applyMessages(prev => {
           const updated = mergeAssistantText(prev, text, isPartial)
           if (!isPartial) {
             // Message complete: save to localStorage
             pendingAssistantRef.current = updated[updated.length - 1]?.content ?? ''
-            if (sid) saveMessages(sid, updated.filter(m => !m.partial))
+            if (!replaying) saveMessages(sid, updated)
           }
           return updated
         })
       } catch {
         if (ev.data) {
           setWaiting(false)
-          setMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
+          applyMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
         }
       }
     }
 
-    ws.onclose = () => { setConnected(false); setWaiting(false) }
-    ws.onerror = () => { setConnected(false); setWaiting(false) }
+    ws.onclose = () => {
+      if (wsRef.current !== ws) return
+      setConnected(false)
+      setWaiting(false)
+    }
+    ws.onerror = () => {
+      if (wsRef.current !== ws) return
+      setConnected(false)
+      setWaiting(false)
+      if (restartNoticeRef.current) {
+        restartNoticeRef.current = false
+        setRestartFailed(true)
+        setMessages(prev => [...prev, { role: 'system', content: 'restart_failed' }])
+      }
+    }
   }, [workspaceId, queryClient])
 
   useEffect(() => {
     let cancelled = false
-    const ctx = resumeGhostId ? getStoredContext(resumeGhostId) : undefined
 
     api.post<{ sessionId: string }>(
       `/api/workspaces/${workspaceId}/explore/sessions`,
@@ -228,7 +284,7 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
         if (cancelled) return
         const sid = res.data.sessionId
         setSessionId(sid)
-        connectWS(sid, ctx || undefined)
+        connectWS(sid)
       })
       .catch(() => {})
 
@@ -253,6 +309,7 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     if (!trimmed && stagedIds.length === 0) return
 
     setWaiting(true)
+    setRestartFailed(false)
 
     const resolved = stagedIds
       .map(id => {
@@ -276,7 +333,7 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
       if (consolidated) {
         next = [...next, { role: 'user', content: consolidated }]
       }
-      if (sessionId) saveMessages(sessionId, next.filter(m => !m.partial))
+      if (sessionId) saveMessages(sessionId, next)
       return next
     })
 
@@ -295,5 +352,32 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
     }
   }, [workspaceId, sessionId])
 
-  return { messages, connected, expired, waiting, sessionId, ghostId, ghostName, agentInfo, send, stop }
+  /**
+   * Restarts the agent subprocess of this exploration, keeping the displayed
+   * history: drop the session, then reopen it under the same ghost id (the
+   * backend resumes the same conversation). No message is re-sent.
+   */
+  const restart = useCallback(async () => {
+    wsRef.current?.close()
+    setWaiting(false)
+    setConnected(false)
+    setRestartFailed(false)
+    if (sessionId) {
+      await api.delete(`/api/workspaces/${workspaceId}/explore/sessions/${sessionId}`).catch(() => {})
+    }
+    try {
+      const res = await api.post<{ sessionId: string }>(
+        `/api/workspaces/${workspaceId}/explore/sessions`,
+        ghostIdRef.current ? { resumeGhostId: ghostIdRef.current } : undefined
+      )
+      setSessionId(res.data.sessionId)
+      restartNoticeRef.current = true
+      connectWS(res.data.sessionId)
+    } catch {
+      setRestartFailed(true)
+      setMessages(prev => [...prev, { role: 'system', content: 'restart_failed' }])
+    }
+  }, [workspaceId, sessionId, connectWS])
+
+  return { messages, connected, expired, waiting, stalled: stalled || restartFailed, sessionId, ghostId, ghostName, agentInfo, send, stop, restart }
 }

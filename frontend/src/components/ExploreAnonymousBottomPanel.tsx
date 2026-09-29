@@ -65,6 +65,7 @@ export function ExploreAnonymousBottomPanel({ workspaceId, resumeGhostId, height
 
       <div className="flex-1 min-h-0 overflow-hidden">
         <ExploreAnonymousPanel
+          key={resumeGhostId ?? 'new'}
           workspaceId={workspaceId}
           resumeGhostId={resumeGhostId}
           isMaximized={isMaximized}

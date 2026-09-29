@@ -525,6 +525,9 @@ func TestServeWSDeliversLiveMessagesPastBufferCapacity(t *testing.T) {
 		if evt.Type == "result" {
 			break
 		}
+		if evt.Type == "replay_done" {
+			continue
+		}
 		if evt.N != next {
 			t.Fatalf("out of order or lost: got n=%d, want %d", evt.N, next)
 		}
@@ -611,5 +614,68 @@ func TestGhostNamedRelayFilterReleasesHeldTextOnBlockStop(t *testing.T) {
 	out := f.Process([]byte(`{"type":"stream_event","event":{"type":"content_block_stop","index":1}}`))
 	if len(out) != 2 || !strings.Contains(string(out[0]), `{\"eve`) {
 		t.Fatalf("expected held text released before block stop, got %q", out)
+	}
+}
+
+// readEventTypes reads WS events until replay_done (inclusive) and returns
+// the "type" of each, in order.
+func readEventTypes(t *testing.T, conn *websocket.Conn, ctx context.Context) []string {
+	t.Helper()
+	var types []string
+	for i := 0; i < 20; i++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read failed after %v: %v", types, err)
+		}
+		var evt struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(data, &evt)
+		types = append(types, evt.Type)
+		if evt.Type == "replay_done" {
+			return types
+		}
+	}
+	t.Fatalf("no replay_done within 20 events: %v", types)
+	return nil
+}
+
+func TestServeWSSessionRestartedBeforeReplayThenReplayDone(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"assistant","n":0}`))
+	sess.MarkContextLost()
+
+	conn, ctx := dialExploreWS(t, sess)
+	got := readEventTypes(t, conn, ctx)
+	want := []string{"session_restarted", "assistant", "replay_done"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("events = %v, want %v", got, want)
+	}
+}
+
+func TestServeWSNoSessionRestartedWhenContextKept(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.InjectMessage([]byte(`{"type":"assistant","n":0}`))
+
+	conn, ctx := dialExploreWS(t, sess)
+	got := readEventTypes(t, conn, ctx)
+	want := []string{"assistant", "replay_done"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("events = %v, want %v", got, want)
+	}
+}
+
+// A second connection to the same (now live) session must not re-signal.
+func TestServeWSSessionRestartedSentOnlyOnce(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	sess.MarkContextLost()
+
+	conn1, ctx1 := dialExploreWS(t, sess)
+	if got := readEventTypes(t, conn1, ctx1); got[0] != "session_restarted" {
+		t.Fatalf("first connection events = %v", got)
+	}
+	conn2, ctx2 := dialExploreWS(t, sess)
+	if got := readEventTypes(t, conn2, ctx2); len(got) != 1 || got[0] != "replay_done" {
+		t.Errorf("second connection events = %v, want only replay_done", got)
 	}
 }

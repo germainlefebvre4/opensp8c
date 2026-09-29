@@ -48,5 +48,10 @@
   "role": {
     "user": "Vous",
     "assistant": "Assistant"
+  },
+  "restartAgent": "Relancer l'agent",
+  "system": {
+    "agent_restarted": "Agent relancé",
+    "restart_failed": "Le redémarrage de l'agent a échoué. Vous pouvez réessayer."
   }
 }

@@ -23,6 +23,9 @@ type ExplorationRecord struct {
 	SessionID      string `json:"sessionId"`
 	CreatedAt      string `json:"createdAt"`
 	LastActivityAt string `json:"lastActivityAt"`
+	// ClaudeSessionId is the agent conversation id used for --session-id /
+	// --resume; distinct from ID, which is not a valid UUID.
+	ClaudeSessionId string `json:"claudeSessionId,omitempty"`
 }
 
 // AgentLanguages holds the raw language settings per level ("auto" or a code).
@@ -366,6 +369,24 @@ func (s *Service) UpdateExplorationName(id, name string) error {
 	for i, e := range p.Explorations {
 		if e.ID == id {
 			p.Explorations[i].Name = name
+			return s.save(p)
+		}
+	}
+	return nil
+}
+
+// SetExplorationClaudeSession stores the agent conversation id of an
+// exploration; a no-op if the id is unknown.
+func (s *Service) SetExplorationClaudeSession(id, claudeSessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	for i, e := range p.Explorations {
+		if e.ID == id {
+			p.Explorations[i].ClaudeSessionId = claudeSessionID
 			return s.save(p)
 		}
 	}

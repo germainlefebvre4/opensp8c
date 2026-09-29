@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { wsURL } from '../lib/api'
+import { api, wsURL } from '../lib/api'
+import { useStallDetection } from './useStallDetection'
 import {
   appendQuestionMessage,
   applyToolCalls,
@@ -12,6 +13,7 @@ import {
   extractToolResult,
   markQuestionAnswered,
   mergeAssistantText,
+  mergeReplay,
   parseGhostQuestionEvent,
   parseNativeQuestionEvent,
   type AgentInfo,
@@ -30,6 +32,12 @@ export function useExploreSession(workspaceId: string, changeName: string) {
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const messagesRef = useRef<Message[]>(messages)
+  const { stalled, touch } = useStallDetection(waiting, messages)
+  const touchRef = useRef(touch)
+  touchRef.current = touch
+  // Set by restart(): the next successful connection shows "agent restarted".
+  const restartNoticeRef = useRef(false)
+  const [restartFailed, setRestartFailed] = useState(false)
 
   useEffect(() => {
     messagesRef.current = messages
@@ -41,11 +49,39 @@ export function useExploreSession(workspaceId: string, changeName: string) {
     const ws = new WebSocket(url)
     wsRef.current = ws
 
-    ws.onopen = () => setConnected(true)
+    // The backend replays its buffer on connect; it is collected and added
+    // once replay_done arrives (merged so a reconnect shows each reply once). Control events are handled at once.
+    let replaying = true
+    let replayBuffer: Message[] = []
+    const applyMessages = (fn: (prev: Message[]) => Message[]) => {
+      if (replaying) replayBuffer = fn(replayBuffer)
+      else setMessages(fn)
+    }
+
+    ws.onopen = () => {
+      setConnected(true)
+      if (restartNoticeRef.current) {
+        restartNoticeRef.current = false
+        setRestartFailed(false)
+        setMessages(prev => [...prev, { role: 'system', content: 'agent_restarted' }])
+      }
+    }
 
     ws.onmessage = (ev) => {
+      if (wsRef.current !== ws) return
       try {
         const data = JSON.parse(ev.data as string)
+
+        if (data.type === 'replay_done') {
+          replaying = false
+          const replayed = replayBuffer
+          replayBuffer = []
+          setMessages(prev => mergeReplay(prev, replayed))
+          touchRef.current()
+          return
+        }
+
+        touchRef.current()
 
         if (data.type === 'session_expired') {
           setExpired(true)
@@ -60,7 +96,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         }
 
         if (data.type === 'session_warning' && typeof data.text === 'string') {
-          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
+          applyMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.text}`, partial: false }])
           if (data.fatal !== false) {
             setWaiting(false)
           }
@@ -78,12 +114,12 @@ export function useExploreSession(workspaceId: string, changeName: string) {
 
         const toolCalls = extractToolCalls(data)
         if (toolCalls.length) {
-          setMessages(prev => applyToolCalls(prev, toolCalls))
+          applyMessages(prev => applyToolCalls(prev, toolCalls))
         }
 
         const toolResult = extractToolResult(data)
         if (toolResult) {
-          setMessages(prev => applyToolResult(prev, toolResult))
+          applyMessages(prev => applyToolResult(prev, toolResult))
         }
 
         // Claude stream-json format: extract text content
@@ -95,18 +131,31 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         setWaiting(false)
         const isPartial = data.type === 'content_block_delta' || data.type === 'message_delta'
 
-        setMessages(prev => mergeAssistantText(prev, text, isPartial))
+        applyMessages(prev => mergeAssistantText(prev, text, isPartial))
       } catch {
         // non-JSON line, treat as plain text
         if (ev.data) {
           setWaiting(false)
-          setMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
+          applyMessages(prev => [...prev, { role: 'assistant', content: ev.data as string }])
         }
       }
     }
 
-    ws.onclose = () => { setConnected(false); setWaiting(false) }
-    ws.onerror = () => { setConnected(false); setWaiting(false) }
+    ws.onclose = () => {
+      if (wsRef.current !== ws) return
+      setConnected(false)
+      setWaiting(false)
+    }
+    ws.onerror = () => {
+      if (wsRef.current !== ws) return
+      setConnected(false)
+      setWaiting(false)
+      if (restartNoticeRef.current) {
+        restartNoticeRef.current = false
+        setRestartFailed(true)
+        setMessages(prev => [...prev, { role: 'system', content: 'restart_failed' }])
+      }
+    }
   }, [workspaceId, changeName])
 
   useEffect(() => {
@@ -131,6 +180,7 @@ export function useExploreSession(workspaceId: string, changeName: string) {
     if (!trimmed && stagedIds.length === 0) return
 
     setWaiting(true)
+    setRestartFailed(false)
 
     const resolved = stagedIds
       .map(id => {
@@ -172,5 +222,20 @@ export function useExploreSession(workspaceId: string, changeName: string) {
     connect()
   }, [connect])
 
-  return { messages, connected, expired, waiting, agentInfo, send, reconnect }
+  /**
+   * Restarts the agent subprocess, keeping the displayed history: drop the
+   * backend session, then reconnect (the backend resumes the same
+   * conversation). No message is re-sent.
+   */
+  const restart = useCallback(async () => {
+    wsRef.current?.close()
+    setWaiting(false)
+    setConnected(false)
+    setRestartFailed(false)
+    await api.delete(`/api/workspaces/${workspaceId}/changes/${changeName}/explore`).catch(() => {})
+    restartNoticeRef.current = true
+    connect()
+  }, [workspaceId, changeName, connect])
+
+  return { messages, connected, expired, waiting, stalled: stalled || restartFailed, agentInfo, send, reconnect, restart }
 }

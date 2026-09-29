@@ -34,7 +34,7 @@ Allowed drag-and-drop transitions are exactly: `to-explore → ready` (FF, or pr
 6. `POST …/promote` runs `/opsx:ff` in the live session, or in a new subprocess with replayed context and the draft if the session expired. `ff_started` → spinner; on success logs are copied to the change, the change appears in *Ready* as a dashed "draft", and `ff_done` fires. On failure `ff_failed` and the ghost/draft stay for retry.
 7. "Freeze" (or editing a task, or dragging to *In Progress*) **solidifies** the change by deleting the ghost and draft.
 
-Session resume: 30 min of inactivity ends the subprocess; named sessions restart with `--resume`, anonymous ones with the same ghost id plus localStorage context (≤ 60 000 chars in full, otherwise first 5 exchanges + last 30 messages). A question left pending is re-asked automatically.
+Session resume: 30 min of inactivity ends the subprocess; named sessions and explorations both restart with `--resume <claudeSessionId>` (an exploration keeps its own id, stored with its record). If the resume fails, or the agent has no resume support (Antigravity, Codex, Copilot), the backend sends `session_restarted` and only then does the browser re-inject its localStorage transcript (≤ 60 000 chars in full, otherwise first 5 exchanges + last 30 messages); reopening a panel whose context is kept sends nothing to the agent. A question left pending is re-asked automatically. If a Claude turn looks stuck (no agent message for 60 s while waiting, 180 s during a tool call), a **Restart agent** button restarts the subprocess with `--resume` without losing the history.
 
 ## 3. Fast-forward run (background)
 

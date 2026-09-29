@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
@@ -38,6 +39,80 @@ type Subprocess struct {
 	stdin   io.WriteCloser
 	stdout  io.ReadCloser
 	agentID string
+
+	// exited is closed once cmd.Wait has returned (nil when there is no real
+	// process); waitErr is valid after that. A single goroutine calls
+	// cmd.Wait, so Wait may be called any number of times.
+	exited  chan struct{}
+	waitErr error
+	// stdoutFile is the read end of the pipe owned by the subprocess (not by
+	// exec), closed by Wait: exec's own Wait would close a StdoutPipe as
+	// soon as the process exits and drop output not read yet.
+	stdoutFile *os.File
+}
+
+// watchExit starts the single goroutine reaping cmd.
+func (s *Subprocess) watchExit() {
+	s.exited = make(chan struct{})
+	go func() {
+		s.waitErr = s.cmd.Wait()
+		close(s.exited)
+	}()
+}
+
+// resumeProbeWindow is how long a --resume start is watched for an early exit.
+// Measured with the installed CLI (claude --resume <unknown id>, stdin left
+// open): it prints "No conversation found", then exits with code 1 after
+// ~0.85 s, without StartSubprocess ever returning an error. 3 s leaves margin
+// for slow machines; it only delays a resume, never a first start.
+// Override with OPENSP8C_RESUME_PROBE (a Go duration, e.g. "5s") on slow hosts.
+var resumeProbeWindow = resumeProbeFromEnv(3 * time.Second)
+
+func resumeProbeFromEnv(def time.Duration) time.Duration {
+	if v := os.Getenv("OPENSP8C_RESUME_PROBE"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+		log.Printf("[session] ignoring invalid OPENSP8C_RESUME_PROBE %q", v)
+	}
+	return def
+}
+
+// exitedWithin reports whether the process exits within window. Only
+// meaningful for a real process started by StartSubprocess.
+func (s *Subprocess) exitedWithin(window time.Duration) bool {
+	if s.exited == nil {
+		return false
+	}
+	timer := time.NewTimer(window)
+	defer timer.Stop()
+	select {
+	case <-s.exited:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// startWithResumeFallback starts an agent subprocess via start, resuming
+// claudeSessionID. When the resume fails — start returns an error, or (with
+// probe) the process exits within resumeProbeWindow, as an unknown session
+// makes the CLI do — it starts again without resume under a fresh session id
+// and reports contextLost. usedID is the session id actually in use.
+func startWithResumeFallback(start func(claudeSessionID string, resume bool) (*Subprocess, error), claudeSessionID string, probe bool) (proc *Subprocess, usedID string, contextLost bool, err error) {
+	proc, err = start(claudeSessionID, true)
+	if err == nil && probe && proc.exitedWithin(resumeProbeWindow) {
+		_ = proc.CloseStdin()
+		_ = proc.Wait()
+		err = io.ErrUnexpectedEOF
+	}
+	if err == nil {
+		return proc, claudeSessionID, false, nil
+	}
+	log.Printf("[session] --resume %s failed, starting fresh: %v", claudeSessionID, err)
+	usedID = newClaudeSessionID()
+	proc, err = start(usedID, false)
+	return proc, usedID, true, err
 }
 
 // NewTestSubprocess constructs a Subprocess wrapping the given stdin/stdout
@@ -346,12 +421,14 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 			}
 		}()
 
-		return &Subprocess{
+		dummy := &Subprocess{
 			cmd:     dummyCmd,
 			stdin:   virtualStdinWriter,
 			stdout:  virtualStdoutReader,
 			agentID: "gemini",
-		}, nil
+		}
+		dummy.watchExit()
+		return dummy, nil
 	}
 
 	args := buildSubprocessArgs(agentCfg, basePrompt, joinPrompts(extraSystemPrompt, languageDirective), claudeSessionID, resume)
@@ -361,22 +438,29 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	cmd.Stdout = stdoutW
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		stdoutR.Close()
+		stdoutW.Close()
 		return nil, err
 	}
+	var stdout io.ReadCloser = stdoutR
 
 	// Propagate environment variables, combining standard global environment variables and custom user settings.
 	cmd.Dir = workspacePath
 	cmd.Env = buildEnv(customEnv)
 
 	if err := cmd.Start(); err != nil {
+		stdoutR.Close()
+		stdoutW.Close()
 		return nil, err
 	}
+	stdoutW.Close() // the child holds its own copy
 
 	go func() {
 		scanner := bufio.NewScanner(stderr)
@@ -402,7 +486,9 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		adaptedStdin = newAntigravityWriter(stdin, antigravityFraming(extraSystemPrompt, languageDirective, resume))
 	}
 
-	return &Subprocess{cmd: cmd, stdin: adaptedStdin, stdout: adaptedStdout, agentID: agentCfg.ID}, nil
+	proc := &Subprocess{cmd: cmd, stdin: adaptedStdin, stdout: adaptedStdout, agentID: agentCfg.ID, stdoutFile: stdoutR}
+	proc.watchExit()
+	return proc, nil
 }
 
 // joinPrompts concatenates non-empty prompt parts with a blank line.
@@ -506,6 +592,13 @@ func (s *Subprocess) CloseStdin() error {
 func (s *Subprocess) Wait() error {
 	if s.cmd == nil {
 		return nil
+	}
+	if s.exited != nil {
+		<-s.exited
+		if s.stdoutFile != nil {
+			_ = s.stdoutFile.Close()
+		}
+		return s.waitErr
 	}
 	return s.cmd.Wait()
 }

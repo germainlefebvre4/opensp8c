@@ -50,7 +50,7 @@ Le front, sur cet événement, envoie le message de contexte existant (mêmes r�
 
 ### D3. Détection d'un `--resume` qui échoue après le démarrage
 
-`StartSubprocess` ne détecte pas une sortie immédiate du processus. Le design ajoute à `Subprocess` un canal `exited` fermé par un unique goroutine qui appelle `Wait`, puis une aide `startWithResumeFallback` : après le démarrage en `--resume`, une courte attente (1 s) surveille une sortie précoce, sans aucune entrée écrite. Si le processus est sorti, le backend relance sans `--resume` avec un nouvel UUID, met à jour l'id persisté, et positionne `contextLost`. Le helper remplace les deux appels de fallback actuels (`Start`, `StartAnonymous`) pour un seul comportement.
+`StartSubprocess` ne détecte pas une sortie immédiate du processus. Le design ajoute à `Subprocess` un canal `exited` fermé par un unique goroutine qui appelle `Wait`, puis une aide `startWithResumeFallback` : après le démarrage en `--resume`, une courte attente (3 s par défaut, surchargeable par la variable d'environnement `OPENSP8C_RESUME_PROBE`, `resumeProbeWindow`) surveille une sortie précoce, sans aucune entrée écrite. Si le processus est sorti, le backend relance sans `--resume` avec un nouvel UUID, met à jour l'id persisté, et positionne `contextLost`. Le helper remplace les deux appels de fallback actuels (`Start`, `StartAnonymous`) pour un seul comportement.
 
 *Alternative écartée* : vérifier l'existence du fichier de session Claude sur le disque. Cela couple le backend au format de stockage interne du CLI.
 
@@ -65,7 +65,7 @@ Le backend envoie `{"type":"replay_done"}` après avoir vidé le snapshot. Penda
 - sinon, le dernier message d'assistant stocké est recherché dans la liste rejouée (comparaison de contenu) : seuls les messages rejoués qui le suivent sont ajoutés, ce qui récupère les tours terminés panneau fermé ;
 - si le dernier message stocké est introuvable (fenêtre de 500 entrées dépassée) : rien n'est ajouté.
 
-Les événements de contrôle (`agent_info`, `ghost_card_created`, `ghost_named`, questions) restent traités immédiatement. Le panneau nommé, qui n'a pas de localStorage, ajoute la liste rejouée telle quelle (comportement inchangé).
+Les événements de contrôle (`agent_info`, `ghost_card_created`, `ghost_named`, questions) restent traités immédiatement. Le panneau nommé applique la même fusion : sans historique affiché elle ajoute la liste rejouée telle quelle, et elle évite les doublons lors d'une reconnexion dans le même panneau.
 
 *Alternative écartée* : ignorer totalement le rejeu quand un historique local existe. Cela perdrait toute réponse terminée pendant que le panneau était fermé.
 
@@ -95,8 +95,8 @@ Claude : `--session-id` / `--resume` fiabilisés, bouton actif. Gemini : les fla
 
 ## Risks / Trade-offs
 
-- **`--resume` échoue sans erreur de démarrage** → D3 ajoute la détection de sortie précoce. Le comportement réel de `claude --resume <id inconnu>` (code de sortie, délai) doit être vérifié sur la version installée avant de figer le délai d'attente de 1 s.
-- **La sonde de 1 s ajoute un délai à chaque reprise** → acceptable pour une reprise (ouverture d'un panneau, redémarrage manuel). La sonde ne s'applique qu'aux démarrages en `--resume`.
+- **`--resume` échoue sans erreur de démarrage** → D3 ajoute la détection de sortie précoce. Vérifié (tâche 1.1) : `claude --resume <id inconnu>`, stdin ouvert, écrit « No conversation found » puis sort avec le code 1 après ~0,85 s, sans erreur au démarrage. Le délai est donc fixé à 3 s. Le `stdout` est un `os.Pipe` détenu par `Subprocess` (et non `StdoutPipe`) pour que le goroutine unique de `Wait` ne ferme pas le tube avant la lecture de la sortie restante.
+- **La sonde de 3 s ajoute un délai à chaque reprise** → acceptable pour une reprise (ouverture d'un panneau, redémarrage manuel). La sonde ne s'applique qu'aux démarrages en `--resume`.
 - **Rejeu et détection de correspondance de contenu (D4)** → si le contenu du dernier message stocké diffère de sa version rejouée (nettoyage des marqueurs `ghost_question`), la correspondance échoue et rien n'est ajouté. Comparer après application de la même normalisation que celle utilisée à la sauvegarde (`stripResidualGhostQuestionMarkers`).
 - **Ghosts existants sans `claudeSessionId`** → un UUID est généré au premier redémarrage post-évolution et `session_restarted` est émis : une seule réinjection, puis le mécanisme normal.
 - **Buffer de rejeu de 500 entrées** → la limite existe déjà ; elle ne peut plus provoquer de doublon, seulement une lacune récupérable depuis le localStorage.

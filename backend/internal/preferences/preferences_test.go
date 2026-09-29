@@ -3,6 +3,7 @@ package preferences
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
@@ -313,5 +314,40 @@ func TestSetAgentEnv_OnlyTouchesGivenAgent(t *testing.T) {
 	}
 	if p.AgentEnv["claude"]["A"] != "1" || p.AgentEnv["gemini"]["B"] != "2" {
 		t.Errorf("unexpected agentEnv: %v", p.AgentEnv)
+	}
+}
+
+func TestExplorationClaudeSessionRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	svc := NewService(path)
+
+	if err := svc.AddExploration(ExplorationRecord{ID: "a1", WorkspaceID: "ws1", Name: "one"}); err != nil {
+		t.Fatalf("AddExploration: %v", err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "claudeSessionId") {
+		t.Errorf("claudeSessionId should be omitted when empty, got: %s", raw)
+	}
+
+	if err := svc.SetExplorationClaudeSession("a1", "uuid-1"); err != nil {
+		t.Fatalf("SetExplorationClaudeSession: %v", err)
+	}
+	if got := svc.GetExploration("a1", "ws1"); got == nil || got.ClaudeSessionId != "uuid-1" {
+		t.Errorf("expected claudeSessionId uuid-1, got %+v", got)
+	}
+	if err := svc.SetExplorationClaudeSession("unknown", "x"); err != nil {
+		t.Errorf("unknown id should be a no-op, got %v", err)
+	}
+}
+
+func TestExplorationWithoutClaudeSessionStillLoads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	legacy := `{"explorations":[{"id":"g1","workspaceId":"ws1","name":"old","sessionId":"s","createdAt":"c","lastActivityAt":"c"}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := NewService(path).GetExploration("g1", "ws1")
+	if got == nil || got.Name != "old" || got.ClaudeSessionId != "" {
+		t.Errorf("legacy record not loaded as expected: %+v", got)
 	}
 }

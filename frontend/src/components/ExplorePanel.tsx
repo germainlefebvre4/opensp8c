@@ -3,10 +3,13 @@ import { X, Code, Eye, Maximize2, Minimize2, ArrowDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useTranslation } from 'react-i18next'
 import { useExploreSession, type QuestionCardData } from '../hooks/useExploreSession'
+import { canOfferRestart, type SystemMessageKind } from '../hooks/exploreChat'
 import { useExploreViewMode } from '../hooks/useExploreViewMode'
 import { TypingBubble } from './TypingBubble'
 import { NamedNotice } from './NamedNotice'
 import { QuestionCard } from './QuestionCard'
+import { RestartAgentButton } from './RestartAgentButton'
+import { SystemLine } from './SystemLine'
 import { StagedAnswerCard } from './StagedAnswerCard'
 import { ToolCallRow } from './ToolCallRow'
 
@@ -20,7 +23,7 @@ interface Props {
 
 export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeToggle, onClose }: Props) {
   const { t } = useTranslation('explore')
-  const { messages, connected, expired, waiting, agentInfo, send, reconnect } = useExploreSession(workspaceId, changeName)
+  const { messages, connected, expired, waiting, stalled, agentInfo, send, reconnect, restart } = useExploreSession(workspaceId, changeName)
   const { mode, setMode } = useExploreViewMode()
   const [input, setInput] = useState('')
   const [stagedAnswers, setStagedAnswers] = useState<Record<string, string>>({})
@@ -157,6 +160,8 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
           {messages.map((msg, i) => (
             msg.role === 'notice' ? (
               <NamedNotice key={i} name={msg.content} />
+            ) : msg.role === 'system' ? (
+              <SystemLine key={i} kind={msg.content as SystemMessageKind} />
             ) : msg.question ? (
               <QuestionCard
                 key={i}
@@ -229,6 +234,8 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
           </button>
         )}
       </div>
+
+      {canOfferRestart(stalled, agentInfo) && <RestartAgentButton onRestart={restart} />}
 
       {/* Input */}
       <div className="p-3 border-t border-slate-200 flex gap-2 shrink-0 items-end">
