@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { computeDropdownPos } from './agentSelectorPosition'
 import { useAgents, usePatchPreferences, usePreferences } from '../hooks/useAgentPreferences'
 
 export function AgentSelector() {
@@ -36,7 +37,7 @@ export function AgentSelector() {
   const handleOpen = () => {
     if (!open && buttonRef.current) {
       const r = buttonRef.current.getBoundingClientRect()
-      setDropdownPos({ top: r.bottom + 4, left: r.left, width: r.width })
+      setDropdownPos(computeDropdownPos(r, window.innerWidth))
     }
     setOpen(o => !o)
   }
@@ -47,11 +48,11 @@ export function AgentSelector() {
   }
 
   return (
-    <div ref={ref} className="px-2 pb-2 flex gap-1.5 items-center">
+    <div ref={ref} className="flex items-center">
       <button
         ref={buttonRef}
         onClick={handleOpen}
-        className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-800 transition-colors border border-slate-200 bg-slate-50 min-w-0"
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-800 transition-colors border border-slate-200 bg-slate-50 min-w-0"
         title={t('agentSelector.chooseAgent')}
       >
         <Bot size={12} className="shrink-0 text-slate-400" />

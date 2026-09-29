@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
-import frNavigation from '../locales/fr/navigation.json'
 import frWorkspace from '../locales/fr/workspace.json'
 import frCommon from '../locales/fr/common.json'
 
@@ -13,52 +12,44 @@ vi.mock('../hooks/useWorkspaces', () => ({
   useRemoveWorkspace: () => ({ mutate: vi.fn() }),
 }))
 
-vi.mock('./AgentSelector', () => ({
-  AgentSelector: () => <div data-testid="agent-selector" />,
-}))
-
 void i18n.use(initReactI18next).init({
   lng: 'fr',
   fallbackLng: 'fr',
-  ns: ['navigation', 'workspace', 'common'],
+  ns: ['workspace', 'common'],
   defaultNS: 'workspace',
-  resources: { fr: { navigation: frNavigation, workspace: frWorkspace, common: frCommon } },
+  resources: { fr: { workspace: frWorkspace, common: frCommon } },
   interpolation: { escapeValue: false },
 })
 
-function render(isOpen: boolean, isConfigurationActive: boolean) {
+function render(isOpen: boolean) {
   return renderToStaticMarkup(
     <MemoryRouter>
       <WorkspaceSidebar
-        workspaces={[]}
-        activeId={null}
+        workspaces={[{ id: 'a', name: 'Alpha', task_counts: {} } as never]}
+        activeId="a"
         onSelect={vi.fn()}
         isOpen={isOpen}
         onToggle={vi.fn()}
-        isConfigurationActive={isConfigurationActive}
       />
     </MemoryRouter>
   )
 }
 
-describe('WorkspaceSidebar Configuration entry', () => {
-  it('shows icon and label linking to /configuration when open', () => {
-    const html = render(true, false)
-    expect(html).toContain('href="/configuration"')
-    expect(html).toContain('>Configuration</span>')
+describe('WorkspaceSidebar', () => {
+  it('has no Configuration link nor agent selector', () => {
+    const html = render(true)
+    expect(html).not.toContain('/configuration')
+    expect(html).not.toContain('agent-selector')
   })
 
-  it('is icon-only and outside the collapsed projects block when closed', () => {
-    const html = render(false, false)
-    const linkIdx = html.indexOf('href="/configuration"')
-    const collapsedIdx = html.indexOf('pointer-events-none')
-    expect(linkIdx).toBeGreaterThan(-1)
-    expect(collapsedIdx).toBeGreaterThan(linkIdx)
-    expect(html).not.toContain('>Configuration</span>')
+  it('shows project list, add button and toggle', () => {
+    const html = render(true)
+    expect(html).toContain('Alpha')
+    expect(html).toContain(frWorkspace.addProject)
+    expect(html).toContain(`aria-label="${frWorkspace.closeMenu}"`)
   })
 
-  it('is highlighted only when active', () => {
-    expect(render(true, true)).toContain('bg-blue-50 text-blue-700')
-    expect(render(true, false)).not.toContain('bg-blue-50 text-blue-700')
+  it('shows the open toggle when collapsed', () => {
+    expect(render(false)).toContain(`aria-label="${frWorkspace.openMenu}"`)
   })
 })

@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
-import { NavLink } from 'react-router-dom'
-import { FolderOpen, PlusCircle, X, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { FolderOpen, PlusCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { Workspace } from '../hooks/useWorkspaces'
 import { useAddWorkspace, useRemoveWorkspace } from '../hooks/useWorkspaces'
-import { AgentSelector } from './AgentSelector'
 
 const BADGE_COLORS: Record<string, string> = {
   'to-explore': 'bg-violet-400',
@@ -22,13 +20,11 @@ interface Props {
   onSelect: (id: string) => void
   isOpen: boolean
   onToggle: () => void
-  isConfigurationActive?: boolean
 }
 
-export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onToggle, isConfigurationActive = false }: Props) {
+export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onToggle }: Props) {
   const { t } = useTranslation('workspace')
   const { t: tCommon } = useTranslation('common')
-  const { t: tNav } = useTranslation('navigation')
 
   const [newPath, setNewPath] = useState('')
   const [adding, setAdding] = useState(false)
@@ -60,25 +56,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
         </button>
       </div>
 
-      <div className={`px-2 pb-2 shrink-0 ${isOpen ? '' : 'flex justify-center'}`}>
-        <NavLink
-          to="/configuration"
-          end
-          aria-label={tNav('configuration')}
-          title={tNav('configuration')}
-          className={`flex items-center gap-2 rounded-md transition-colors no-underline ${isOpen ? 'px-2.5 py-2' : 'p-1'} ${
-            isConfigurationActive
-              ? 'bg-blue-50 text-blue-700'
-              : 'text-slate-600 hover:bg-white hover:text-slate-800'
-          }`}
-        >
-          <Settings size={isOpen ? 13 : 14} className={`shrink-0 ${isConfigurationActive ? 'text-blue-500' : 'text-slate-400'}`} />
-          {isOpen && <span className={`text-xs truncate ${isConfigurationActive ? 'font-semibold' : 'font-medium'}`}>{tNav('configuration')}</span>}
-        </NavLink>
-      </div>
-
       <div className={`flex flex-col flex-1 overflow-hidden transition-opacity duration-150 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-      <AgentSelector />
       <ScrollArea.Root className="flex-1 overflow-hidden">
         <ScrollArea.Viewport className="h-full w-full">
           <div className="px-2 pb-2 flex flex-col gap-0.5">

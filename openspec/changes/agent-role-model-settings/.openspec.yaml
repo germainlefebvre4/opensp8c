@@ -1,0 +1,23 @@
+schema: spec-driven
+created: "2026-09-29"
+tags:
+    type:
+        - frontend
+    complexity: 5
+    components:
+        - agent-role-settings
+        - workspace-settings
+        - platform-configuration-menu
+        - agent-pool-real-execution
+        - workspace-agent-pool-tab
+        - agent-specialization
+        - agent-language-settings
+        - api-router
+        - workspace-management
+        - explore-session
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+    _auto: true
+    _tagged_at: "2026-09-29"

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD — Capabilities for persisting and resuming Claude session identifiers across explore session lifecycle events (subprocess restarts, inactivity timeouts).
+Assurer la continuité de conversation des sessions d'exploration (nommées et anonymes) : persister l'identifiant de session Claude, reprendre le contexte via `--resume` quand le sous-processus est relancé (inactivité, redémarrage manuel), signaler au client un démarrage sans continuité de contexte, et re-déclencher une question restée en attente.
 
 ## Requirements
 ### Requirement: Persistance de l'identifiant de session Claude

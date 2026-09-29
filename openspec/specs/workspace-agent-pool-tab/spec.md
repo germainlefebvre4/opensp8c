@@ -7,7 +7,7 @@ Donne, depuis la navigation principale, une vue en lecture seule limitée au wor
 ## Requirements
 
 ### Requirement: Onglet Agents scopé au workspace actif
-L'onglet "Agents" de la navigation principale SHALL être lié au workspace actuellement sélectionné, au même titre que les onglets Kanban, Specs et Timeline. Lorsqu'aucun workspace n'est sélectionné, il SHALL afficher le même état vide "aucun workspace" que les autres onglets liés au workspace, plutôt qu'une liste tous workspaces confondus.
+L'onglet "Agents" du sous-menu du workspace SHALL être lié au workspace actuellement sélectionné, au même titre que les onglets Kanban, Specs et Timeline. Lorsqu'aucun workspace n'est sélectionné, il SHALL afficher le même état vide "aucun workspace" que les autres onglets liés au workspace, plutôt qu'une liste tous workspaces confondus.
 
 #### Scenario: Changement de workspace met à jour la liste affichée
 - **WHEN** l'utilisateur navigue du Kanban du workspace `A` vers l'onglet Agents, puis sélectionne le workspace `B` dans la sidebar

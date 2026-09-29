@@ -34,7 +34,7 @@ L'utilisateur SHALL pouvoir ajouter des tags de spécialisation personnalisés e
 - **THEN** les changes déjà tagués avec cette valeur dans leur `agent_specialization` conservent ce tag sans erreur ni purge rétroactive
 
 ### Requirement: Écran de configuration pour gérer les extensions
-Le système SHALL afficher un nouvel écran "Settings" dans la navigation principale, distinct des écrans Kanban/Specs/Timeline/Agents, permettant de visualiser la liste de base (lecture seule) et de gérer (ajouter/retirer) les tags de spécialisation personnalisés.
+Le système SHALL afficher un écran "Settings" comme onglet du sous-menu du workspace, distinct des écrans Kanban/Specs/Timeline/Agents, permettant de visualiser la liste de base (lecture seule) et de gérer (ajouter/retirer) les tags de spécialisation personnalisés.
 
 #### Scenario: Affichage de l'écran Settings
 - **WHEN** l'utilisateur navigue vers l'écran "Settings"
