@@ -2,11 +2,13 @@ package agents
 
 // DocsFormalismPrompt is opensp8c's own fixed formalism for generating
 // project documentation pages from raw OpenSpec specs. It is injected as an
-// extraPrompt into AgentConfig.BuildSubprocessArgs alongside the concatenated
-// content of openspec/specs/**/spec.md (see internal/docsgen.BuildPrompt),
-// so its exact page list, skip rules, and output path stay owned by
-// opensp8c rather than by the shared opsx:* OpenSpec skill package.
-const DocsFormalismPrompt = `You are generating project documentation from a set of raw OpenSpec capability specs (EARS-style "SHALL"/"WHEN"/"THEN" requirement files) provided below. Produce narrative, readable documentation pages that let a newcomer understand the product without reading every raw spec file.
+// extraPrompt into AgentConfig.BuildSubprocessArgs (see
+// internal/docsgen.BuildPrompt). It stays small and fixed: the agent reads
+// openspec/specs/*/spec.md itself, so the CLI argument never approaches the
+// OS per-argument limit (E2BIG). Its exact page list, skip rules, and output
+// path stay owned by opensp8c rather than by the shared opsx:* OpenSpec
+// skill package.
+const DocsFormalismPrompt = `You are generating project documentation from a set of raw OpenSpec capability specs (EARS-style "SHALL"/"WHEN"/"THEN" requirement files). Before writing anything, list and read every file matching openspec/specs/*/spec.md in the current project (sorted by capability name); read all of them, none skipped. If there is no such file, work from whatever project context is available. Produce narrative, readable documentation pages that let a newcomer understand the product without reading every raw spec file.
 
 Fixed page list — always produce these three pages, never fewer, never more of them:
 - overview.md: what the product does, its purpose, its main capabilities, at a glance.
@@ -24,4 +26,4 @@ Mermaid diagrams:
 Output:
 - Write each produced page as a standalone Markdown file directly under the docs/opensp8c/ directory at the root of this project (create the directory if it does not exist), using exactly these filenames: overview.md, architecture.md, domain-model.md, and workflows.md when applicable.
 - Never modify or delete any other file under docs/, or anywhere else in the project, outside of docs/opensp8c/.
-- Do not ask clarifying questions — produce the best documentation you can directly from the specs content provided below.`
+- Do not ask clarifying questions — produce the best documentation you can directly from the content of the specs you read.`

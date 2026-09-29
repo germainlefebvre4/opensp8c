@@ -1,6 +1,7 @@
 package docsgen
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,23 +35,40 @@ func writePage(t *testing.T, workspacePath, page, content string) string {
 	return path
 }
 
-// TestBuildPromptIncludesAllSpecFiles verifies the assembled prompt includes
-// opensp8c's formalism plus the content of every spec.md found under a test
-// openspec/specs/ directory.
-func TestBuildPromptIncludesAllSpecFiles(t *testing.T) {
+// TestBuildPromptDoesNotInlineSpecs verifies the prompt carries the formalism
+// but none of the spec content, and stays bounded for a large spec corpus.
+func TestBuildPromptDoesNotInlineSpecs(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeSpec(t, tmpDir, "capability-a", "Requirement A content")
-	writeSpec(t, tmpDir, "capability-b", "Requirement B content")
+	big := strings.Repeat("The system SHALL do something. ", 500)
+	for i := 0; i < 40; i++ {
+		writeSpec(t, tmpDir, fmt.Sprintf("big-%02d", i), big)
+	}
 
 	prompt, err := BuildPrompt(tmpDir)
 	if err != nil {
 		t.Fatalf("BuildPrompt failed: %v", err)
 	}
+	if strings.Contains(prompt, "Requirement A content") || strings.Contains(prompt, "SHALL do something") {
+		t.Error("expected prompt not to inline spec content")
+	}
+	if !strings.Contains(prompt, "openspec/specs/") {
+		t.Error("expected prompt to instruct the agent to read openspec/specs/")
+	}
+	if len(prompt) > 100*1024 {
+		t.Errorf("expected prompt under 100 KB, got %d bytes", len(prompt))
+	}
+}
 
-	for _, want := range []string{"Requirement A content", "Requirement B content", "capability-a", "capability-b"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("expected prompt to contain %q, got: %s", want, prompt)
-		}
+// TestBuildPromptWithoutSpecs verifies a workspace with no spec still yields
+// a prompt and no error.
+func TestBuildPromptWithoutSpecs(t *testing.T) {
+	prompt, err := BuildPrompt(t.TempDir())
+	if err != nil {
+		t.Fatalf("BuildPrompt failed: %v", err)
+	}
+	if prompt == "" {
+		t.Error("expected non-empty prompt")
 	}
 }
 

@@ -22,6 +22,7 @@ func TestDocsFormalismPromptLoads(t *testing.T) {
 		"workflows.md",
 		"Mermaid",
 		"docs/opensp8c/",
+		"openspec/specs/",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("expected DocsFormalismPrompt to mention %q", want)

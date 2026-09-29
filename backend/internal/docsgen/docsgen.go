@@ -7,11 +7,8 @@ package docsgen
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 )
@@ -38,30 +35,13 @@ func specsGlob(workspacePath string) string {
 	return filepath.Join(workspacePath, "openspec", "specs", "*", "spec.md")
 }
 
-// BuildPrompt assembles the final generation prompt: opensp8c's fixed
-// formalism (agents.DocsFormalismPrompt) followed by the concatenated
-// content of every openspec/specs/**/spec.md file found in workspacePath.
+// BuildPrompt returns the generation prompt: opensp8c's fixed formalism
+// (agents.DocsFormalismPrompt) only. Specs are deliberately not inlined; the
+// agent reads openspec/specs/*/spec.md itself from its working directory, so
+// the prompt size stays bounded whatever the spec corpus (avoids E2BIG when
+// passed as a CLI argument).
 func BuildPrompt(workspacePath string) (string, error) {
-	matches, err := filepath.Glob(specsGlob(workspacePath))
-	if err != nil {
-		return "", err
-	}
-	sort.Strings(matches)
-
-	var b strings.Builder
-	b.WriteString(agents.DocsFormalismPrompt)
-	b.WriteString("\n\nHere are the raw OpenSpec capability specs for this project:\n")
-
-	for _, specPath := range matches {
-		data, err := os.ReadFile(specPath)
-		if err != nil {
-			continue
-		}
-		capability := filepath.Base(filepath.Dir(specPath))
-		fmt.Fprintf(&b, "\n---\n## Capability: %s\n\n%s\n", capability, string(data))
-	}
-
-	return b.String(), nil
+	return agents.DocsFormalismPrompt, nil
 }
 
 // ListPages returns the subset of PageOrder whose file is actually present
