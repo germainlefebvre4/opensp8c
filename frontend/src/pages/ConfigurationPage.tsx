@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { deriveCliFormState, deriveAgentFormState, GEMINI_RECOMMENDED_KEYS } from '../lib/cliSettings'
 import type { EnvVar } from '../lib/cliSettings'
+import type { AgentLanguageLevel, AgentLanguages, SupportedLanguage } from '../lib/api'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
@@ -425,6 +426,71 @@ export function CliSettingsTab() {
   )
 }
 
+const LANGUAGE_LEVELS: { level: AgentLanguageLevel; allowAuto: boolean }[] = [
+  { level: 'chat', allowAuto: true },
+  { level: 'documentation', allowAuto: true },
+  { level: 'code', allowAuto: false },
+]
+
+const DEFAULT_AGENT_LANGUAGES: AgentLanguages = { chat: 'auto', documentation: 'auto', code: 'en' }
+
+// Partial PATCH body for a single level: the other levels are left untouched.
+export function buildLanguagePatch(level: AgentLanguageLevel, value: string) {
+  return { agentLanguages: { [level]: value } }
+}
+
+export function LanguageTab() {
+  const { t, i18n } = useTranslation('configuration')
+  const { data: prefs } = usePreferences()
+  const patchPrefs = usePatchPreferences()
+
+  const supported: SupportedLanguage[] = prefs?.supportedLanguages ?? []
+  const values = { ...DEFAULT_AGENT_LANGUAGES, ...prefs?.agentLanguages }
+  const uiLocale = i18n.language || prefs?.uiLocale || 'en'
+  const resolvedName =
+    supported.find(l => l.code === uiLocale)?.nativeName ?? uiLocale
+
+  return (
+    <div className="space-y-6">
+      <LanguageSwitcher />
+
+      <div className="max-w-xl space-y-4">
+        <div>
+          <h2 className="text-xs font-semibold text-slate-700">{t('languageTab.title')}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{t('languageTab.description')}</p>
+        </div>
+
+        {LANGUAGE_LEVELS.map(({ level, allowAuto }) => (
+          <div key={level}>
+            <label
+              htmlFor={`agent-language-${level}`}
+              className="block text-xs font-medium text-slate-600"
+            >
+              {t(`languageTab.levels.${level}.label`)}
+            </label>
+            <p className="text-[11px] text-slate-400 mb-1">
+              {t(`languageTab.levels.${level}.hint`)}
+            </p>
+            <select
+              id={`agent-language-${level}`}
+              value={values[level]}
+              onChange={e => { void patchPrefs.mutateAsync(buildLanguagePatch(level, e.target.value)) }}
+              className="h-8 px-2 text-xs border border-slate-200 rounded bg-white text-slate-700"
+            >
+              {allowAuto && (
+                <option value="auto">{t('languageTab.auto', { language: resolvedName })}</option>
+              )}
+              {supported.map(l => (
+                <option key={l.code} value={l.code}>{l.nativeName}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function ConfigurationPage() {
   const { t } = useTranslation('configuration')
   const [searchParams, setSearchParams] = useSearchParams()
@@ -469,7 +535,7 @@ export function ConfigurationPage() {
         {tab === 'agent-pool' ? (
           <AgentPoolTab />
         ) : tab === 'language' ? (
-          <LanguageSwitcher />
+          <LanguageTab />
         ) : agentId ? (
           <AgentCliConfigView agentId={agentId} />
         ) : (

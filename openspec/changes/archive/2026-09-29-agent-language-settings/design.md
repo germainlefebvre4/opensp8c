@@ -4,7 +4,7 @@
 
 La locale de l'application n'existe que dans le navigateur (`localStorage.lang`, initialisée dans `frontend/src/i18n.ts`) ; le backend n'en a aucune notion. Les préférences globales vivent dans `backend/preferences.json`, lues/écrites par `internal/preferences/preferences.go` et exposées par `GET`/`PATCH /api/preferences` (`handlers/preferences.go`). Voir `proposal.md` - Why pour la motivation.
 
-Tout lancement d'agent passe par `session.StartSubprocess` (`internal/session/subprocess.go`), appelé depuis : `session/manager.go` (exploration nommée, anonyme), `handlers/explore.go` (promotion d'une exploration), `handlers/ff.go`, `handlers/docs.go`, et `pool/worker.go` (via le seam `startSubprocessFn`). Chaque site relit lui-même les préférences pour construire `customEnv`. Le mécanisme de transmission d'un prompt supplémentaire diffère selon l'agent :
+Tout lancement d'agent passe par `session.StartSubprocess` (`internal/session/subprocess.go`), appelé depuis : `session/manager.go` (exploration nommée, anonyme), `handlers/explore.go` (promotion d'une exploration), `handlers/ff.go`, `handlers/docs.go`, et `pool/worker.go` (via le seam `startSubprocessFn`). Chaque site charge lui-même les préférences une fois (`prefs.Load()`) pour construire `customEnv` via `p.EnvFor(agentID)` ; l'échec du chargement est déjà toléré (env vide). L'onglet « Langue » de `ConfigurationPage.tsx` (sélection par `?tab=language`) n'affiche aujourd'hui que `<LanguageSwitcher />`. Le mécanisme de transmission d'un prompt supplémentaire diffère selon l'agent :
 
 | Agent | Sort actuel de `extraSystemPrompt` |
 |---|---|
@@ -34,7 +34,7 @@ Contraintes de format : les artefacts OpenSpec ont un formalisme que `openspec v
 
 **Liste des langues : registre unique côté backend, exposée à l'UI.** Un petit paquet `internal/language` porte le registre (`code`, libellé natif affiché en UI, nom anglais utilisé dans la consigne), initialement `en` et `fr`. `GET /api/preferences` retourne aussi `supportedLanguages` ; le frontend construit ses trois listes à partir de cette réponse et ne duplique aucun code de langue. Le `PATCH` valide contre ce registre (400 sinon) et refuse `auto` pour `code`. Alternative écartée : liste codée dans le frontend — elle diverge du backend dès la troisième langue.
 
-**Résolution : `language.Resolve(prefs)` appelée à chaque lancement.** Retourne les trois langues concrètes : valeur explicite, sinon `uiLocale`, sinon `en`. Si `prefs.Load()` échoue, on résout avec les défauts et on lance l'agent quand même (le lancement ne dépend pas de la lisibilité des réglages). La résolution a lieu au lancement, pas à l'enregistrement : un agent en cours n'est jamais modifié.
+**Résolution : `language.Resolve(langs, uiLocale)` appelée à chaque lancement.** Prend des valeurs simples (et non `*Preferences`, pour que `preferences` puisse importer `language` pour la validation sans cycle) et retourne les trois langues concrètes : valeur explicite, sinon `uiLocale`, sinon `en`. Si `prefs.Load()` échoue, on résout avec les défauts et on lance l'agent quand même (le lancement ne dépend pas de la lisibilité des réglages). La résolution a lieu au lancement, pas à l'enregistrement : un agent en cours n'est jamais modifié.
 
 **Synchronisation de `uiLocale` : hook frontend, pas requête par requête.** Un hook monté à la racine de l'application envoie `PATCH /api/preferences {uiLocale}` au chargement puis à chaque `languageChanged`. C'est le seul moyen de servir les workers du pool, lancés en arrière-plan sans requête du navigateur ; d'où le choix contre « envoyer la locale avec chaque requête de lancement ». Le hook est séparé de `i18n.ts` pour ne pas y importer le client HTTP.
 
@@ -47,9 +47,9 @@ Contraintes de format : les artefacts OpenSpec ont un formalisme que `openspec v
 
 Alternative écartée : passer par des variables d'environnement — aucun agent ne les lit comme une instruction. Alternative reportée : transformer les paramètres positionnels (9 aujourd'hui, 10 avec celui-ci) en structure d'options ; plus propre, mais hors périmètre et conflictuel avec `per-agent-cli-env-config`, qui modifie les mêmes sites.
 
-**Sites de lancement : un helper commun.** Chaque site remplace sa lecture ad hoc des préférences par un appel unique retournant `customEnv` (déjà présent), `nativeQuestionMode` (session) et la consigne de langue de son rôle. Aucun site ne construit de consigne lui-même.
+**Sites de lancement : une méthode sur les préférences déjà chargées.** Chaque site tient déjà un `*Preferences` chargé pour `EnvFor` ; on y ajoute `(*Preferences).LanguageDirective(role)`, sûre sur un pointeur `nil` (échec de chargement : consigne par défaut). Pas de seconde lecture du fichier, et le motif est celui d'`EnvFor`. Aucun site ne construit de consigne lui-même. Alternative écartée : un helper prenant le service de préférences, qui relirait le fichier à chaque lancement.
 
-**Interface : trois listes dans l'onglet Langue.** Alimentées par `supportedLanguages`, enregistrées avec le `PATCH` existant via `usePatchPreferences`. Les listes chat et documentation ajoutent l'option `auto` qui affiche la langue résolue ; la liste code n'a pas `auto`.
+**Interface : trois listes dans l'onglet Langue.** Un composant d'onglet remplace le `<LanguageSwitcher />` nu actuel et le conserve en tête. Alimentées par `supportedLanguages`, enregistrées avec le `PATCH` existant via `usePatchPreferences`. Les listes chat et documentation ajoutent l'option `auto` qui affiche la langue résolue ; la liste code n'a pas `auto`.
 
 ## Risks / Trade-offs
 
@@ -57,7 +57,7 @@ Alternative écartée : passer par des variables d'environnement — aucun agent
 - [Codex et Copilot reçoivent des arguments de type Claude qui ne sont pas validés] → la consigne suit ce canal aujourd'hui ; si leurs vraies interfaces sont branchées plus tard, ces agents devront être reclassés dans le tableau de transmission.
 - [`uiLocale` est global : le dernier navigateur ouvert gagne] → acceptable pour un outil local mono-utilisateur ; noté comme limite.
 - [Un modèle peut ignorer ou dérouler partiellement la consigne, surtout sur une conversation reprise déjà écrite dans une autre langue] → consigne courte et explicite, ré-appliquée à chaque lancement ; le réglage reste un défaut, pas une garantie.
-- [Collision de fichiers et de signatures avec `per-agent-cli-env-config` et `move-configuration-to-sidebar`] → implémenter après eux ; les specs delta de ce change ne portent que sur des requirements ajoutés (`ADDED`), pour limiter les conflits à l'archivage.
+- [Les specs delta de `platform-configuration` côtoient l'exigence « Sous-onglet Langue dans Configuration »] → elles ne portent que sur des requirements ajoutés (`ADDED`) et n'en modifient aucun existant ; aucun recalage n'est nécessaire à l'archivage.
 
 ## Migration Plan
 

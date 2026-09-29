@@ -16,6 +16,7 @@ import (
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
@@ -604,16 +605,18 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	}
 
 	var customEnv map[string]string
+	langDirective := language.Directive(language.Docs, language.Resolve(language.Levels{}, ""))
 	if h.prefs != nil {
 		if p, err := h.prefs.Load(); err == nil && p != nil {
 			customEnv = p.EnvFor(cfg.ID)
+			langDirective = p.LanguageDirective(language.Docs)
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil, customEnv, false)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, systemPrompt, "", false, nil, customEnv, false, langDirective)
 	if err != nil {
 		h.watcher.Broadcast(workspaceID, watcher.Event{Type: "ff_failed", Name: ghostName, Error: err.Error()})
 		return

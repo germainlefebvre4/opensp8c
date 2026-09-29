@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage } from './ConfigurationPage'
+import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage, LanguageTab, buildLanguagePatch } from './ConfigurationPage'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AllPoolsStatus } from '../hooks/useAllPools'
@@ -297,5 +297,68 @@ describe('ConfigurationPage language tab', () => {
     expect(html).toContain('Langue')
     expect(html).toContain('>en<')
     expect(html).toContain('>fr<')
+  })
+})
+
+const SUPPORTED = [
+  { code: 'en', nativeName: 'English', englishName: 'English' },
+  { code: 'fr', nativeName: 'Français', englishName: 'French' },
+]
+
+function renderLanguageTab(prefs: Preferences) {
+  mockPreferences(prefs)
+  return renderToStaticMarkup(<MemoryRouter><LanguageTab /></MemoryRouter>)
+}
+
+// Extracts the <select> markup of one level.
+function selectOf(html: string, level: string): string {
+  const start = html.indexOf(`id="agent-language-${level}"`)
+  return html.slice(start, html.indexOf('</select>', start))
+}
+
+describe('LanguageTab agent language settings', () => {
+  const base = { defaultAgent: 'claude', env: {}, supportedLanguages: SUPPORTED }
+
+  it('shows defaults: auto for chat and documentation, English for code', () => {
+    const html = renderLanguageTab({
+      ...base,
+      agentLanguages: { chat: 'auto', documentation: 'auto', code: 'en' },
+    })
+
+    expect(selectOf(html, 'chat')).toMatch(/<option value="auto" selected/)
+    expect(selectOf(html, 'documentation')).toMatch(/<option value="auto" selected/)
+    expect(selectOf(html, 'code')).toMatch(/<option value="en" selected/)
+    expect(html).toContain('>en<') // language switcher kept at the top
+  })
+
+  it('offers no auto option for the code level', () => {
+    const html = renderLanguageTab(base)
+
+    expect(selectOf(html, 'chat')).toContain('value="auto"')
+    expect(selectOf(html, 'documentation')).toContain('value="auto"')
+    expect(selectOf(html, 'code')).not.toContain('value="auto"')
+  })
+
+  it('builds the three lists from supportedLanguages, so a new language shows up everywhere', () => {
+    const html = renderLanguageTab({
+      ...base,
+      supportedLanguages: [...SUPPORTED, { code: 'de', nativeName: 'Deutsch', englishName: 'German' }],
+    })
+
+    for (const level of ['chat', 'documentation', 'code']) {
+      expect(selectOf(html, level)).toContain('<option value="de"')
+      expect(selectOf(html, level)).toContain('Deutsch')
+    }
+  })
+
+  it('shows the resolved application language in the auto option', () => {
+    const html = renderLanguageTab(base)
+    expect(selectOf(html, 'chat')).toContain('Suivre la langue de l&#x27;application (Français)')
+  })
+})
+
+describe('buildLanguagePatch', () => {
+  it('produces a partial update touching a single level', () => {
+    expect(buildLanguagePatch('documentation', 'fr')).toEqual({ agentLanguages: { documentation: 'fr' } })
   })
 })

@@ -33,5 +33,24 @@
     "title": "{{agent}} configuration",
     "docs": "Official documentation",
     "description": "Environment variables injected only into this agent's processes (they take precedence over global variables)."
+  },
+  "languageTab": {
+    "title": "Agent languages",
+    "description": "Default languages sent to agents at launch. An explicit request from the user or the project's conventions always takes precedence.",
+    "auto": "Follow the application language ({{language}})",
+    "levels": {
+      "chat": {
+        "label": "Chat language",
+        "hint": "Conversations with the agent (explorations)."
+      },
+      "documentation": {
+        "label": "Documentation language",
+        "hint": "Generated documentation and OpenSpec artifacts (proposal, design, specs, tasks)."
+      },
+      "code": {
+        "label": "Code language",
+        "hint": "Identifiers, comments, commit messages, error messages and visible text."
+      }
+    }
   }
 }

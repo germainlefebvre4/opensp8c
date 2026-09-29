@@ -33,5 +33,24 @@
     "title": "Configuration de {{agent}}",
     "docs": "Documentation officielle",
     "description": "Variables d'environnement injectées uniquement dans les processus de cet agent (prioritaires sur les variables globales)."
+  },
+  "languageTab": {
+    "title": "Langues des agents",
+    "description": "Langues par défaut transmises aux agents à leur lancement. Une demande explicite de l'utilisateur ou les conventions du projet l'emportent toujours.",
+    "auto": "Suivre la langue de l'application ({{language}})",
+    "levels": {
+      "chat": {
+        "label": "Langue du chat",
+        "hint": "Échanges avec l'agent (explorations)."
+      },
+      "documentation": {
+        "label": "Langue de la documentation",
+        "hint": "Documentation générée et artefacts OpenSpec (proposal, design, specs, tasks)."
+      },
+      "code": {
+        "label": "Langue du code",
+        "hint": "Identifiants, commentaires, messages de commit, messages d'erreur et textes visibles."
+      }
+    }
   }
 }

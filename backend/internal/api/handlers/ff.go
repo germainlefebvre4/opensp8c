@@ -14,6 +14,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
@@ -100,14 +101,16 @@ func (h *FFHandler) TriggerFF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var customEnv map[string]string
+	langDirective := language.Directive(language.Docs, language.Resolve(language.Levels{}, ""))
 	if h.mgr != nil && h.mgr.Prefs() != nil {
 		if p, err := h.mgr.Prefs().Load(); err == nil && p != nil {
 			customEnv = p.EnvFor(cfg.ID)
+			langDirective = p.LanguageDirective(language.Docs)
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil, customEnv, false)
+	proc, err := session.StartSubprocess(ctx, workspacePath, cfg, "", "", false, nil, customEnv, false, langDirective)
 	if err != nil {
 		cancel()
 		logFile.Close()

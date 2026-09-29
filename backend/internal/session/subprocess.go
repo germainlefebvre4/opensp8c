@@ -174,7 +174,12 @@ func (r *geminiStdoutReader) Close() error {
 //
 // nativeQuestionMode is the global preference toggle; it only takes effect
 // when agentCfg is Claude (see resolveBaseSystemPrompt).
-func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*Subprocess, error) {
+//
+// languageDirective is the language instruction for this launch (may be empty).
+// It is delivered through the channel each agent supports: appended to the
+// extra system prompt (Claude, Codex, Copilot), sent with the first message and
+// again on resume (Antigravity), or added to every turn (Gemini).
+func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*Subprocess, error) {
 	basePrompt := resolveBaseSystemPrompt(agentCfg.ID, nativeQuestionMode)
 
 	if agentCfg.ID == "gemini" {
@@ -242,6 +247,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 				if !strings.HasPrefix(trimmedPrompt, "/") && !strings.HasPrefix(trimmedPrompt, "{") {
 					prompt = "/opsx:explore " + prompt
 				}
+				prompt = appendLanguageDirective(prompt, languageDirective)
 
 				// Build subprocess arguments for the one-shot run
 				args := agentCfg.BuildSubprocessArgs(basePrompt, extraSystemPrompt)
@@ -348,7 +354,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		}, nil
 	}
 
-	args := buildSubprocessArgs(agentCfg, basePrompt, extraSystemPrompt, claudeSessionID, resume)
+	args := buildSubprocessArgs(agentCfg, basePrompt, joinPrompts(extraSystemPrompt, languageDirective), claudeSessionID, resume)
 	cmd := exec.CommandContext(ctx, agentCfg.CLI, args...)
 
 	stdin, err := cmd.StdinPipe()
@@ -393,14 +399,40 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 
 	var adaptedStdin io.WriteCloser = stdin
 	if agentCfg.ID == "antigravity" {
-		framing := extraSystemPrompt
-		if resume {
-			framing = ""
-		}
-		adaptedStdin = newAntigravityWriter(stdin, framing)
+		adaptedStdin = newAntigravityWriter(stdin, antigravityFraming(extraSystemPrompt, languageDirective, resume))
 	}
 
 	return &Subprocess{cmd: cmd, stdin: adaptedStdin, stdout: adaptedStdout, agentID: agentCfg.ID}, nil
+}
+
+// joinPrompts concatenates non-empty prompt parts with a blank line.
+func joinPrompts(parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, "\n\n")
+}
+
+// antigravityFraming returns the framing sent with Antigravity's first message.
+// On resume the framing prompt is dropped but the language directive is kept,
+// since it must apply to every launch.
+func antigravityFraming(extraSystemPrompt, languageDirective string, resume bool) string {
+	if resume {
+		return strings.TrimSpace(languageDirective)
+	}
+	return joinPrompts(extraSystemPrompt, languageDirective)
+}
+
+// appendLanguageDirective adds the directive in its own paragraph after the
+// prompt, so the first line of a slash-command prompt stays the intact command.
+func appendLanguageDirective(prompt, languageDirective string) string {
+	if strings.TrimSpace(languageDirective) == "" {
+		return prompt
+	}
+	return prompt + "\n\n" + languageDirective
 }
 
 func buildSubprocessArgs(agentCfg agents.AgentConfig, basePrompt, extraSystemPrompt, sessionID string, resume bool) []string {

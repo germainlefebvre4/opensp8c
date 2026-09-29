@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/language"
 )
 
 type SessionEntry struct {
@@ -24,6 +25,21 @@ type ExplorationRecord struct {
 	LastActivityAt string `json:"lastActivityAt"`
 }
 
+// AgentLanguages holds the raw language settings per level ("auto" or a code).
+// Empty values mean the default.
+type AgentLanguages struct {
+	Chat          string `json:"chat,omitempty"`
+	Documentation string `json:"documentation,omitempty"`
+	Code          string `json:"code,omitempty"`
+}
+
+// AgentLanguagesUpdate is a partial update: nil fields are left untouched.
+type AgentLanguagesUpdate struct {
+	Chat          *string
+	Documentation *string
+	Code          *string
+}
+
 type Preferences struct {
 	DefaultAgent               string                       `json:"defaultAgent"`
 	Sessions                   map[string]SessionEntry      `json:"sessions,omitempty"`
@@ -33,6 +49,8 @@ type Preferences struct {
 	AgentEnv                   map[string]map[string]string `json:"agentEnv,omitempty"` // Per-agent environment variables, layered over Env
 	NativeQuestionMode         bool                         `json:"nativeQuestionMode,omitempty"`
 	CustomAgentSpecializations []string                     `json:"customAgentSpecializations,omitempty"`
+	AgentLanguages             *AgentLanguages              `json:"agentLanguages,omitempty"`
+	UILocale                   string                       `json:"uiLocale,omitempty"`
 }
 
 type Service struct {
@@ -125,6 +143,29 @@ func (p *Preferences) EnvFor(agentID string) map[string]string {
 	return out
 }
 
+// LanguageLevels returns the raw stored settings; safe on a nil receiver.
+func (p *Preferences) LanguageLevels() language.Levels {
+	if p == nil || p.AgentLanguages == nil {
+		return language.Levels{}
+	}
+	return language.Levels{Chat: p.AgentLanguages.Chat, Documentation: p.AgentLanguages.Documentation, Code: p.AgentLanguages.Code}
+}
+
+// ResolvedLanguages resolves the three levels; safe on a nil receiver
+// (failed load), in which case defaults apply.
+func (p *Preferences) ResolvedLanguages() language.Resolved {
+	if p == nil {
+		return language.Resolve(language.Levels{}, "")
+	}
+	return language.Resolve(p.LanguageLevels(), p.UILocale)
+}
+
+// LanguageDirective builds the language directive for a role; safe on a nil
+// receiver, like EnvFor's callers tolerate a failed load.
+func (p *Preferences) LanguageDirective(role language.Role) string {
+	return language.Directive(role, p.ResolvedLanguages())
+}
+
 func (s *Service) save(p *Preferences) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return err
@@ -188,6 +229,40 @@ func (s *Service) SetAgentEnv(updates map[string]map[string]string) error {
 		}
 		p.AgentEnv[id] = env
 	}
+	return s.save(p)
+}
+
+// SetAgentLanguages applies a partial update of the language levels.
+func (s *Service) SetAgentLanguages(u AgentLanguagesUpdate) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	if p.AgentLanguages == nil {
+		p.AgentLanguages = &AgentLanguages{}
+	}
+	if u.Chat != nil {
+		p.AgentLanguages.Chat = *u.Chat
+	}
+	if u.Documentation != nil {
+		p.AgentLanguages.Documentation = *u.Documentation
+	}
+	if u.Code != nil {
+		p.AgentLanguages.Code = *u.Code
+	}
+	return s.save(p)
+}
+
+func (s *Service) SetUILocale(locale string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.load()
+	if err != nil {
+		return err
+	}
+	p.UILocale = locale
 	return s.save(p)
 }
 

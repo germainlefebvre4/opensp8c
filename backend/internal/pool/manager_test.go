@@ -210,7 +210,7 @@ func TestStatus_IncludesPausedWorkers(t *testing.T) {
 	repoDir := newGoFixtureRepo(t, changeName, "- [x] one\n- [ ] two\n")
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return fakeAutoRespondingSubprocess(), nil
 		})
 	m.workspaceID = "workspace-status-test"
@@ -282,7 +282,7 @@ func TestTick_PausedWorkersDoNotBlockDispatch(t *testing.T) {
 	defer close(block)
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			<-block
 			return nil, context.Canceled
 		})

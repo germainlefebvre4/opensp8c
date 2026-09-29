@@ -16,6 +16,7 @@ import (
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
@@ -357,17 +358,19 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 
 	var customEnv map[string]string
 	nativeQuestionMode := false
+	langDirective := language.Directive(language.Chat, language.Resolve(language.Levels{}, ""))
 	if p, err := m.prefs.Load(); err == nil && p != nil {
 		customEnv = p.EnvFor(resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
+		langDirective = p.LanguageDirective(language.Chat)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, isResume, sessLog, customEnv, nativeQuestionMode)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, isResume, sessLog, customEnv, nativeQuestionMode, langDirective)
 	if err != nil && isResume {
 		// Fallback: --resume failed at process start, try without resume
 		log.Printf("[session] --resume failed for %s/%s, starting fresh: %v", workspaceID, changeName, err)
-		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, false, sessLog, customEnv, nativeQuestionMode)
+		proc, err = StartSubprocess(ctx, workspacePath, resolved.config, explorationFramingPrompt, claudeSessionID, false, sessLog, customEnv, nativeQuestionMode, langDirective)
 	}
 	if err != nil {
 		cancel()
@@ -495,14 +498,16 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 
 	var customEnv map[string]string
 	nativeQuestionMode := false
+	langDirective := language.Directive(language.Chat, language.Resolve(language.Levels{}, ""))
 	if p, err := m.prefs.Load(); err == nil && p != nil {
 		customEnv = p.EnvFor(resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
+		langDirective = p.LanguageDirective(language.Chat)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// Anonymous sessions use no session flags (no persistence, no resume)
-	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog, customEnv, nativeQuestionMode)
+	proc, err := StartSubprocess(ctx, workspacePath, resolved.config, anonSystemPrompt, "", false, sessLog, customEnv, nativeQuestionMode, langDirective)
 	if err != nil {
 		cancel()
 		sessLog.Close()

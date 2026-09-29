@@ -144,7 +144,7 @@ func TestInvokeAgentHeal_WritesValidationErrorWithoutStartingNewSubprocess(t *te
 
 	origStart := startSubprocessFn
 	callCount := 0
-	startSubprocessFn = func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+	startSubprocessFn = func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 		callCount++
 		return nil, errors.New("invokeAgentHeal must never call this")
 	}
@@ -300,7 +300,7 @@ func newGoFixtureRepo(t *testing.T, changeName, tasksMd string) string {
 // newWorkerTestManager builds a Manager wired directly (bypassing Start())
 // for exercising runWorker synchronously in a test, with startSubprocessFn
 // stubbed so no real agent CLI is ever invoked.
-func newWorkerTestManager(t *testing.T, repoDir string, cfg AgentPoolConfig, stub func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error)) *Manager {
+func newWorkerTestManager(t *testing.T, repoDir string, cfg AgentPoolConfig, stub func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error)) *Manager {
 	t.Helper()
 	origStart := startSubprocessFn
 	startSubprocessFn = stub
@@ -321,7 +321,7 @@ func TestRunWorker_StartsSubprocessExactlyOnce(t *testing.T) {
 
 	callCount := 0
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 3},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			callCount++
 			return fakeAutoRespondingSubprocess(), nil
 		})
@@ -355,8 +355,8 @@ func TestRunWorker_TerminatesSubprocessWhenItReturns(t *testing.T) {
 	}
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
-			return session.StartSubprocess(ctx, workspacePath, agents.AgentConfig{ID: "fake", CLI: scriptPath}, extraSystemPrompt, claudeSessionID, resume, sessionLog, customEnv, nativeQuestionMode)
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
+			return session.StartSubprocess(ctx, workspacePath, agents.AgentConfig{ID: "fake", CLI: scriptPath}, extraSystemPrompt, claudeSessionID, resume, sessionLog, customEnv, nativeQuestionMode, languageDirective)
 		})
 
 	w := &Worker{ID: 1, ActiveChange: "leak-check-change"}
@@ -381,7 +381,7 @@ func TestRunWorker_PausesWithoutFinalizingWhenTasksIncomplete(t *testing.T) {
 	repoDir := newGoFixtureRepo(t, changeName, "- [x] one\n- [ ] two\n")
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return fakeAutoRespondingSubprocess(), nil
 		})
 
@@ -422,7 +422,7 @@ func TestRunWorker_PausesWithReason_SubprocessStartFailure(t *testing.T) {
 
 	startErr := errors.New("boom: no such CLI")
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return nil, startErr
 		})
 
@@ -458,7 +458,7 @@ func TestRunWorker_PausesWithReason_ApplyInvocationFailure(t *testing.T) {
 	// A subprocess whose stdout closes immediately, without ever writing a
 	// completion line, so invokeAgentApply's runTurn returns an error.
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			inR, inW := io.Pipe()
 			outR, outW := io.Pipe()
 			go func() {
@@ -529,7 +529,7 @@ func TestRunWorker_PausesWithReason_HealExhausted(t *testing.T) {
 	})
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return fakeAutoRespondingSubprocess(), nil
 		})
 
@@ -562,7 +562,7 @@ func TestRunWorker_FinalizesWhenTasksComplete(t *testing.T) {
 	repoDir := newGoFixtureRepo(t, changeName, "- [x] one\n- [x] two\n")
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return fakeAutoRespondingSubprocess(), nil
 		})
 
@@ -715,7 +715,7 @@ func TestRunWorker_InjectsOnlyConfiguredAgentEnv(t *testing.T) {
 
 	var gotEnv map[string]string
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 3},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			gotEnv = customEnv
 			return fakeAutoRespondingSubprocess(), nil
 		})

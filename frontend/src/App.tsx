@@ -9,11 +9,13 @@ import { SettingsPage } from './pages/SettingsPage'
 import { ConfigurationPage } from './pages/ConfigurationPage'
 import { NoWorkspaceState } from './pages/NoWorkspaceState'
 import { useWorkspaces } from './hooks/useWorkspaces'
+import { useUiLocaleSync } from './hooks/useUiLocaleSync'
 import { ToastProvider } from './components/ui/Toast'
 
 const queryClient = new QueryClient()
 
 function AppRoutes() {
+  useUiLocaleSync()
   const { isLoading } = useWorkspaces()
 
   if (isLoading) return null

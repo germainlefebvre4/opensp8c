@@ -39,6 +39,22 @@ export interface AgentStatus {
   docsUrl?: string
 }
 
+export interface SupportedLanguage {
+  code: string
+  nativeName: string
+  englishName: string
+}
+
+export type AgentLanguageLevel = 'chat' | 'documentation' | 'code'
+
+export type AgentLanguages = Record<AgentLanguageLevel, string>
+
+// Partial update accepted by PATCH /api/preferences (one level at a time is fine).
+export interface AgentLanguagesPatch {
+  agentLanguages?: Partial<AgentLanguages>
+  uiLocale?: string
+}
+
 export interface Preferences {
   defaultAgent: string
   env: Record<string, string>
@@ -46,6 +62,9 @@ export interface Preferences {
   systemEnv?: Record<string, string>
   nativeQuestionMode?: boolean
   customAgentSpecializations?: string[]
+  agentLanguages?: AgentLanguages
+  uiLocale?: string
+  supportedLanguages?: SupportedLanguage[]
 }
 
 export interface AgentSpecializations {
@@ -59,7 +78,7 @@ export const getAgents = () =>
 export const getPreferences = () =>
   api.get<Preferences>('/api/preferences').then(r => r.data)
 
-export const patchPreferences = (data: Partial<Preferences>) =>
+export const patchPreferences = (data: Omit<Partial<Preferences>, 'agentLanguages'> & AgentLanguagesPatch) =>
   api.patch('/api/preferences', data)
 
 export const getAgentSpecializations = () =>

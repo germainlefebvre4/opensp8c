@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 )
@@ -50,7 +51,24 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 	if customAgentSpecializations == nil {
 		customAgentSpecializations = []string{}
 	}
+	levels := p.LanguageLevels()
+	if levels.Chat == "" {
+		levels.Chat = language.Auto
+	}
+	if levels.Documentation == "" {
+		levels.Documentation = language.Auto
+	}
+	if levels.Code == "" {
+		levels.Code = language.Default
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
+		"agentLanguages": map[string]string{
+			"chat":          levels.Chat,
+			"documentation": levels.Documentation,
+			"code":          levels.Code,
+		},
+		"uiLocale":                   p.UILocale,
+		"supportedLanguages":         language.Supported(),
 		"defaultAgent":               p.DefaultAgent,
 		"env":                        env,
 		"agentEnv":                   agentEnv,
@@ -67,6 +85,12 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 		AgentEnv                   map[string]map[string]string `json:"agentEnv"`
 		NativeQuestionMode         *bool                        `json:"nativeQuestionMode"`
 		CustomAgentSpecializations []string                     `json:"customAgentSpecializations"`
+		AgentLanguages             *struct {
+			Chat          *string `json:"chat"`
+			Documentation *string `json:"documentation"`
+			Code          *string `json:"code"`
+		} `json:"agentLanguages"`
+		UILocale *string `json:"uiLocale"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -76,6 +100,31 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 	for id := range body.AgentEnv {
 		if _, ok := agents.ByID(id); !ok {
 			http.Error(w, "unknown agent id", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Validate language settings before any write so a rejection changes nothing.
+	if body.AgentLanguages != nil {
+		validLevel := func(v *string, allowAuto bool) bool {
+			if v == nil {
+				return true
+			}
+			if *v == language.Auto {
+				return allowAuto
+			}
+			_, ok := language.Lookup(*v)
+			return ok
+		}
+		l := body.AgentLanguages
+		if !validLevel(l.Chat, true) || !validLevel(l.Documentation, true) || !validLevel(l.Code, false) {
+			http.Error(w, "invalid agent language", http.StatusBadRequest)
+			return
+		}
+	}
+	if body.UILocale != nil {
+		if _, ok := language.Lookup(*body.UILocale); !ok {
+			http.Error(w, "invalid ui locale", http.StatusBadRequest)
 			return
 		}
 	}
@@ -115,6 +164,25 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 	if body.CustomAgentSpecializations != nil {
 		sanitized := openspec.SanitizeCustomSpecializations(body.CustomAgentSpecializations)
 		if err := h.prefs.SetCustomAgentSpecializations(sanitized); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.AgentLanguages != nil {
+		update := preferences.AgentLanguagesUpdate{
+			Chat:          body.AgentLanguages.Chat,
+			Documentation: body.AgentLanguages.Documentation,
+			Code:          body.AgentLanguages.Code,
+		}
+		if err := h.prefs.SetAgentLanguages(update); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.UILocale != nil {
+		if err := h.prefs.SetUILocale(*body.UILocale); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
 			return
 		}

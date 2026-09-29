@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
 )
@@ -86,13 +87,15 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	}
 
 	var customEnv map[string]string
+	langDirective := language.Directive(language.Worker, language.Resolve(language.Levels{}, ""))
 	if m.prefs != nil {
 		if p, err := m.prefs.Load(); err == nil && p != nil {
 			customEnv = p.EnvFor(agentCfg.ID)
+			langDirective = p.LanguageDirective(language.Worker)
 		}
 	}
 
-	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false)
+	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false, langDirective)
 	if err != nil {
 		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
 		m.pauseWorker(w, fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
