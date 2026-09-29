@@ -76,17 +76,23 @@ func (h *PoolHandler) GetPoolStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// ListAllPools returns every active worker across all workspaces, each
-// tagged with its own workspace identity, change, status, delegation mode
-// and start time. It is not scoped to a single workspace.
+// ListAllPools returns every currently running pool across all workspaces,
+// grouped by pool of origin with its configured size and delegation mode,
+// each with the detail of its active and paused workers. It is not scoped to
+// a single workspace.
 func (h *PoolHandler) ListAllPools(w http.ResponseWriter, r *http.Request) {
-	workers := h.reg.AllWorkers()
-	if workers == nil {
-		workers = []pool.Worker{}
+	pools := h.reg.AllPools()
+	if pools == nil {
+		pools = []pool.PoolSummary{}
+	}
+	for i := range pools {
+		if pools[i].Workers == nil {
+			pools[i].Workers = []pool.Worker{}
+		}
 	}
 
 	resp := map[string]interface{}{
-		"workers": workers,
+		"pools": pools,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

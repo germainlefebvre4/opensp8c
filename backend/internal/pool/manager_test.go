@@ -1,12 +1,16 @@
 package pool
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
+	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 )
 
@@ -193,6 +197,118 @@ func TestWorkerStatusTransition_BroadcastsAndAppendsActivity(t *testing.T) {
 	}
 	if entries[1].Meta["status"] != string(StatusTesting) {
 		t.Errorf("expected status testing, got %v", entries[1].Meta["status"])
+	}
+}
+
+// TestStatus_IncludesPausedWorkers verifies task 1.4: once runWorker pauses a
+// worker (via pauseWorker) and returns, its own deferred cleanup removes it
+// from m.activeWorkers, but Status() still reports it, because it was
+// snapshotted into m.pausedWorkers - unlike the pre-task-1 behavior where a
+// paused worker vanished from Status() as soon as runWorker returned.
+func TestStatus_IncludesPausedWorkers(t *testing.T) {
+	changeName := "partial-tasks-status-change"
+	repoDir := newGoFixtureRepo(t, changeName, "- [x] one\n- [ ] two\n")
+
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			return fakeAutoRespondingSubprocess(), nil
+		})
+	m.workspaceID = "workspace-status-test"
+	m.isRunning = true
+
+	w := &Worker{ID: 1, WorkspaceID: m.workspaceID, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.runWorker(ctx, w)
+
+	m.mu.Lock()
+	_, stillActive := m.activeWorkers[1]
+	m.mu.Unlock()
+	if stillActive {
+		t.Fatalf("expected runWorker's own deferred cleanup to remove the worker from activeWorkers")
+	}
+
+	_, running, workers := m.Status(m.workspaceID)
+	if !running {
+		t.Fatalf("expected pool to still report running")
+	}
+	if len(workers) != 1 {
+		t.Fatalf("expected the paused worker to still be reported by Status(), got %d workers: %+v", len(workers), workers)
+	}
+	if workers[0].Status != StatusPaused || workers[0].BlockedReason == "" {
+		t.Errorf("expected the reported worker to be paused with its BlockedReason, got %+v", workers[0])
+	}
+}
+
+// TestStop_ClearsPausedWorkersToo verifies task 1.6: Stop() empties
+// m.pausedWorkers in addition to m.activeWorkers, so a previously paused
+// worker no longer appears in Status() once the pool has been stopped.
+func TestStop_ClearsPausedWorkersToo(t *testing.T) {
+	m := NewManager(nil, nil, nil, nil)
+	tmpDir := t.TempDir()
+
+	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+
+	m.mu.Lock()
+	m.pausedWorkers[1] = &Worker{ID: 1, ActiveChange: "some-change", Status: StatusPaused, BlockedReason: "some reason"}
+	m.mu.Unlock()
+
+	if _, running, workers := m.Status("workspace-a"); !running || len(workers) != 1 {
+		t.Fatalf("expected the paused worker to be reported before Stop(), got running=%v workers=%+v", running, workers)
+	}
+
+	m.Stop()
+
+	if _, running, workers := m.Status("workspace-a"); running || len(workers) != 0 {
+		t.Fatalf("expected Stop() to clear paused workers too, got running=%v workers=%+v", running, workers)
+	}
+}
+
+// TestTick_PausedWorkersDoNotBlockDispatch verifies task 1.5: tick() decides
+// dispatch capacity solely from len(m.activeWorkers), so a worker already
+// moved into m.pausedWorkers (occupying its own former slot conceptually,
+// but no longer counted for capacity) does not prevent a new Todo change
+// from being picked up - the "libère le worker pour d'autres tâches
+// indépendantes" scenario of agent-pool-orchestrator.
+func TestTick_PausedWorkersDoNotBlockDispatch(t *testing.T) {
+	changeName := "todo-after-pause-change"
+	repoDir := newGoFixtureRepo(t, changeName, "- [ ] do the thing\n")
+
+	block := make(chan struct{})
+	defer close(block)
+
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			<-block
+			return nil, context.Canceled
+		})
+
+	// Simulate a worker from a previous change that already paused: freed
+	// from m.activeWorkers, tracked only in m.pausedWorkers (as pauseWorker
+	// leaves things once runWorker's defer runs).
+	m.mu.Lock()
+	m.pausedWorkers[1] = &Worker{ID: 1, ActiveChange: "already-paused-change", Status: StatusPaused, BlockedReason: "some reason"}
+	m.mu.Unlock()
+
+	m.tick()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		m.mu.Lock()
+		activeCount := len(m.activeWorkers)
+		_, gotNewWorker := m.activeWorkers[2]
+		m.mu.Unlock()
+		if activeCount == 1 && gotNewWorker {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected tick() to dispatch a new worker (id 2) for the runnable Todo change despite a paused worker occupying id 1, got %d active worker(s)", activeCount)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

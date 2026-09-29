@@ -1,7 +1,7 @@
 {
   "title": "Configuration",
   "tabs": {
-    "agents": "Agents",
+    "agentPool": "Agent Pool",
     "cli": "CLI"
   },
   "agentsTab": {
@@ -13,5 +13,17 @@
     },
     "installed": "Installé",
     "notInstalled": "Non installé"
+  },
+  "agentPoolTab": {
+    "activeWorkers": "{{active}}/{{size}} workers actifs",
+    "table": {
+      "change": "Changement",
+      "status": "Statut",
+      "activity": "Activité",
+      "duration": "Durée",
+      "blockedReason": "Raison du blocage"
+    },
+    "rowTooltip": "Aller au Kanban de {{workspace}}",
+    "emptyState": "Aucun agent n'est actuellement actif."
   }
 }

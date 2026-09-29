@@ -96,7 +96,7 @@ func TestWorkspaceDelete_StopsActivePool(t *testing.T) {
 
 	listRec := httptest.NewRecorder()
 	poolHandler.ListAllPools(listRec, httptest.NewRequest(http.MethodGet, "/api/pools", nil))
-	if got := listRec.Body.String(); !strings.Contains(got, `"workers":[]`) {
-		t.Fatalf("expected GET /api/pools to report no workers after workspace deletion, got %s", got)
+	if got := listRec.Body.String(); !strings.Contains(got, `"pools":[]`) {
+		t.Fatalf("expected GET /api/pools to report no pools after workspace deletion, got %s", got)
 	}
 }

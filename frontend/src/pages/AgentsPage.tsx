@@ -1,9 +1,11 @@
 import { Cpu } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useAllPools } from '../hooks/useAllPools'
-import type { AgentWorker } from '../hooks/useAllPools'
-import type { WorkerStatus } from '../hooks/usePoolStatus'
+import { usePoolStatus } from '../hooks/usePoolStatus'
+import type { PoolWorker, WorkerStatus } from '../hooks/usePoolStatus'
+
+interface Props {
+  workspaceId: string
+}
 
 const STATUS_BADGE_CLASSES: Record<WorkerStatus, string> = {
   idle: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -23,20 +25,16 @@ function formatDuration(startedAt: string): string {
   return `${seconds}s`
 }
 
-export function AgentsPage() {
+export function AgentsPage({ workspaceId }: Props) {
   const { t } = useTranslation('agents')
   const { t: tDialogs } = useTranslation('dialogs')
-  const navigate = useNavigate()
 
-  const { data } = useAllPools()
+  const { data } = usePoolStatus(workspaceId)
   const workers = data?.workers ?? []
 
-  const delegationLabel = (mode: AgentWorker['delegation_mode']) =>
-    mode === 'full-autonomy' ? tDialogs('agentPool.fullAutonomy.label') : tDialogs('agentPool.hitlReview.label')
-
-  const handleRowClick = (workspaceId: string) => {
-    navigate(`/?workspace=${workspaceId}`)
-  }
+  const delegationLabel = data?.config.delegation_mode === 'full-autonomy'
+    ? tDialogs('agentPool.fullAutonomy.label')
+    : tDialogs('agentPool.hitlReview.label')
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -52,30 +50,27 @@ export function AgentsPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                <th className="py-2 pr-4">{t('table.workspace')}</th>
                 <th className="py-2 pr-4">{t('table.change')}</th>
                 <th className="py-2 pr-4">{t('table.status')}</th>
                 <th className="py-2 pr-4">{t('table.delegationMode')}</th>
+                <th className="py-2 pr-4">{t('table.activity')}</th>
                 <th className="py-2 pr-4">{t('table.duration')}</th>
+                <th className="py-2 pr-4">{t('table.blockedReason')}</th>
               </tr>
             </thead>
             <tbody>
-              {workers.map(w => (
-                <tr
-                  key={`${w.workspace_id}-${w.id}`}
-                  onClick={() => handleRowClick(w.workspace_id)}
-                  title={t('rowTooltip', { workspace: w.workspace_name })}
-                  className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
-                >
-                  <td className="py-2.5 pr-4 font-medium text-slate-800">{w.workspace_name}</td>
+              {workers.map((w: PoolWorker) => (
+                <tr key={w.id} className="border-b border-slate-100">
                   <td className="py-2.5 pr-4 text-slate-600">{w.active_change}</td>
                   <td className="py-2.5 pr-4">
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_BADGE_CLASSES[w.status]}`}>
                       {tDialogs(`agentPool.statusPanel.status.${w.status}`)}
                     </span>
                   </td>
-                  <td className="py-2.5 pr-4 text-slate-600">{delegationLabel(w.delegation_mode)}</td>
+                  <td className="py-2.5 pr-4 text-slate-600">{delegationLabel}</td>
+                  <td className="py-2.5 pr-4 text-slate-500 truncate max-w-xs">{w.activity}</td>
                   <td className="py-2.5 pr-4 text-slate-500">{formatDuration(w.started_at)}</td>
+                  <td className="py-2.5 pr-4 text-red-600">{w.blocked_reason}</td>
                 </tr>
               ))}
             </tbody>

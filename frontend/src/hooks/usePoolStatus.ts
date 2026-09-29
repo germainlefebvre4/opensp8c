@@ -7,6 +7,9 @@ export interface PoolWorker {
   id: number
   active_change: string
   status: WorkerStatus
+  activity?: string
+  blocked_reason?: string
+  started_at: string
 }
 
 export interface PoolStatus {

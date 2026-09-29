@@ -27,6 +27,7 @@ type Manager struct {
 	workspacePath    string
 	config           AgentPoolConfig
 	activeWorkers    map[int]*Worker
+	pausedWorkers    map[int]*Worker
 	lastWorkerStatus map[int]WorkerStatus
 	cancelLoop       context.CancelFunc
 	isRunning        bool
@@ -43,6 +44,7 @@ type Manager struct {
 func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store) *Manager {
 	return &Manager{
 		activeWorkers:    make(map[int]*Worker),
+		pausedWorkers:    make(map[int]*Worker),
 		lastWorkerStatus: make(map[int]WorkerStatus),
 		broadcaster:      broadcaster,
 		sessionMgr:       sessionMgr,
@@ -104,6 +106,7 @@ func (m *Manager) Stop() {
 		}
 	}
 	m.activeWorkers = make(map[int]*Worker)
+	m.pausedWorkers = make(map[int]*Worker)
 	m.isRunning = false
 
 	m.broadcastLocked()
@@ -145,8 +148,20 @@ func (m *Manager) Status(workspaceID string) (AgentPoolConfig, bool, []Worker) {
 	for _, w := range m.activeWorkers {
 		workers = append(workers, *w)
 	}
+	for _, w := range m.pausedWorkers {
+		workers = append(workers, *w)
+	}
 
 	return m.config, m.isRunning, workers
+}
+
+// WorkspaceName returns the name of the workspace the pool currently runs
+// for (empty if not running), for callers that need it even when the pool
+// has no worker yet to read it off of.
+func (m *Manager) WorkspaceName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.workspaceName
 }
 
 // broadcastLocked publishes a pool_updated event for the workspace the pool
@@ -232,10 +247,13 @@ func (m *Manager) tick() {
 }
 
 func (m *Manager) startWorker(changeName string) {
-	// Find next available ID
+	// Find next available ID, skipping both active and (still displayed)
+	// paused workers so a new worker never collides with a paused one's ID.
 	id := 1
 	for {
-		if _, exists := m.activeWorkers[id]; !exists {
+		_, activeExists := m.activeWorkers[id]
+		_, pausedExists := m.pausedWorkers[id]
+		if !activeExists && !pausedExists {
 			break
 		}
 		id++

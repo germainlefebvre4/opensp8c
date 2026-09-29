@@ -20,19 +20,20 @@ func TestRegistry_For_CachesPerWorkspace(t *testing.T) {
 	}
 }
 
-// TestRegistry_AllWorkers verifies that AllWorkers flattens the active
-// workers of every known workspace's Manager, covering zero, one, and
-// multiple workspaces with active workers.
-func TestRegistry_AllWorkers(t *testing.T) {
+// TestRegistry_AllPools verifies that AllPools returns one PoolSummary per
+// running pool across every known workspace, each carrying its configured
+// size, delegation mode, and its own workers - covering zero, one, and
+// multiple workspaces with active pools.
+func TestRegistry_AllPools(t *testing.T) {
 	reg := NewRegistry(nil, nil, nil, nil)
 
-	if workers := reg.AllWorkers(); len(workers) != 0 {
-		t.Fatalf("expected no workers with no registered workspaces, got %+v", workers)
+	if pools := reg.AllPools(); len(pools) != 0 {
+		t.Fatalf("expected no pools with no registered workspaces, got %+v", pools)
 	}
 
 	tmpA := t.TempDir()
 	mgrA := reg.For("workspace-a")
-	if err := mgrA.Start(AgentPoolConfig{Size: 2, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpA); err != nil {
+	if err := mgrA.Start(AgentPoolConfig{Size: 2, DelegationMode: ModeHITLReview, MaxAttempts: 1}, "workspace-a", "Workspace A", tmpA); err != nil {
 		t.Fatalf("failed to start pool for workspace-a: %v", err)
 	}
 	t.Cleanup(mgrA.Stop)
@@ -42,13 +43,23 @@ func TestRegistry_AllWorkers(t *testing.T) {
 	mgrA.startWorker("change-2")
 	mgrA.mu.Unlock()
 
-	if workers := reg.AllWorkers(); len(workers) != 2 {
-		t.Fatalf("expected 2 workers with only workspace-a active, got %d: %+v", len(workers), workers)
+	pools := reg.AllPools()
+	if len(pools) != 1 {
+		t.Fatalf("expected 1 pool with only workspace-a active, got %d: %+v", len(pools), pools)
+	}
+	if pools[0].WorkspaceID != "workspace-a" || pools[0].WorkspaceName != "Workspace A" {
+		t.Fatalf("expected pool tagged with workspace-a identity, got %+v", pools[0])
+	}
+	if pools[0].Size != 2 || pools[0].DelegationMode != ModeHITLReview {
+		t.Fatalf("expected pool to carry its configured size and delegation mode, got %+v", pools[0])
+	}
+	if len(pools[0].Workers) != 2 {
+		t.Fatalf("expected 2 workers in workspace-a's pool, got %d: %+v", len(pools[0].Workers), pools[0].Workers)
 	}
 
 	tmpB := t.TempDir()
 	mgrB := reg.For("workspace-b")
-	if err := mgrB.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "workspace-b", "Workspace B", tmpB); err != nil {
+	if err := mgrB.Start(AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1}, "workspace-b", "Workspace B", tmpB); err != nil {
 		t.Fatalf("failed to start pool for workspace-b: %v", err)
 	}
 	t.Cleanup(mgrB.Stop)
@@ -57,17 +68,17 @@ func TestRegistry_AllWorkers(t *testing.T) {
 	mgrB.startWorker("change-3")
 	mgrB.mu.Unlock()
 
-	workers := reg.AllWorkers()
-	if len(workers) != 3 {
-		t.Fatalf("expected 3 workers across workspace-a and workspace-b, got %d: %+v", len(workers), workers)
+	pools = reg.AllPools()
+	if len(pools) != 2 {
+		t.Fatalf("expected 2 pools across workspace-a and workspace-b, got %d: %+v", len(pools), pools)
 	}
 
-	byWorkspace := map[string]int{}
-	for _, w := range workers {
-		byWorkspace[w.WorkspaceID]++
+	byWorkspace := map[string]PoolSummary{}
+	for _, p := range pools {
+		byWorkspace[p.WorkspaceID] = p
 	}
-	if byWorkspace["workspace-a"] != 2 || byWorkspace["workspace-b"] != 1 {
-		t.Fatalf("expected 2 workers for workspace-a and 1 for workspace-b, got %+v", byWorkspace)
+	if len(byWorkspace["workspace-a"].Workers) != 2 || len(byWorkspace["workspace-b"].Workers) != 1 {
+		t.Fatalf("expected 2 workers for workspace-a's pool and 1 for workspace-b's, got %+v", byWorkspace)
 	}
 }
 

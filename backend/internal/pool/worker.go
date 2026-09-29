@@ -28,6 +28,21 @@ const maxActivityLen = 200
 // subprocess creation without spawning a real agent CLI.
 var startSubprocessFn = session.StartSubprocess
 
+// pauseWorker marks w as paused with a human-readable reason and snapshots it
+// into m.pausedWorkers, so it stays visible via Status()/AllPools() even
+// after runWorker's own deferred cleanup removes it from m.activeWorkers.
+func (m *Manager) pauseWorker(w *Worker, reason string) {
+	w.Status = StatusPaused
+	w.BlockedReason = reason
+
+	m.mu.Lock()
+	snapshot := *w
+	m.pausedWorkers[w.ID] = &snapshot
+	m.mu.Unlock()
+
+	m.notify()
+}
+
 // runWorker coordinates the lifecycle of a worker on a specific change.
 func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	defer func() {
@@ -80,8 +95,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false)
 	if err != nil {
 		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
-		w.Status = StatusPaused
-		m.notify()
+		m.pauseWorker(w, fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
 		return
 	}
 	defer func() {
@@ -92,8 +106,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// 3. Invoke the agent CLI to implement the remaining tasks.
 	if err := m.invokeAgentApply(w, proc); err != nil {
 		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-		w.Status = StatusPaused
-		m.notify()
+		m.pauseWorker(w, fmt.Sprintf("Échec de l'invocation de l'agent pour appliquer les tâches restantes : %v", err))
 		return
 	}
 
@@ -123,8 +136,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 	if validationErr != nil {
 		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
-		w.Status = StatusPaused
-		m.notify()
+		m.pauseWorker(w, fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", m.config.MaxAttempts, validationErr))
 		return
 	}
 
@@ -138,8 +150,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	done, total := openspec.ParseTaskProgress(tasksPath)
 	if done < total {
 		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
-		w.Status = StatusPaused
-		m.notify()
+		m.pauseWorker(w, fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
 		return
 	}
 

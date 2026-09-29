@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import { AgentsRegistryTab, CliSettingsTab } from './ConfigurationPage'
+import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab } from './ConfigurationPage'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
+import { useAllPools } from '../hooks/useAllPools'
+import type { AllPoolsStatus } from '../hooks/useAllPools'
 import type { AgentStatus, Preferences } from '../lib/api'
 import frConfiguration from '../locales/fr/configuration.json'
 import frDialogs from '../locales/fr/dialogs.json'
@@ -12,6 +15,10 @@ vi.mock('../hooks/useAgentPreferences', () => ({
   useAgents: vi.fn(),
   usePreferences: vi.fn(),
   usePatchPreferences: vi.fn(),
+}))
+
+vi.mock('../hooks/useAllPools', () => ({
+  useAllPools: vi.fn(),
 }))
 
 void i18n.use(initReactI18next).init({
@@ -32,6 +39,10 @@ function mockPreferences(prefs: Preferences | undefined) {
   vi.mocked(usePatchPreferences).mockReturnValue({
     mutateAsync: vi.fn(),
   } as unknown as ReturnType<typeof usePatchPreferences>)
+}
+
+function mockAllPools(data: AllPoolsStatus) {
+  vi.mocked(useAllPools).mockReturnValue({ data } as ReturnType<typeof useAllPools>)
 }
 
 describe('AgentsRegistryTab', () => {
@@ -134,5 +145,93 @@ describe('CliSettingsTab', () => {
     const html = renderToStaticMarkup(<CliSettingsTab />)
 
     expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/)
+  })
+})
+
+describe('AgentPoolTab', () => {
+  it('groups workers by pool, showing each workspace with its active/size count and delegation mode', () => {
+    mockAllPools({
+      pools: [
+        {
+          workspace_id: 'workspace-a',
+          workspace_name: 'Workspace A',
+          size: 3,
+          delegation_mode: 'full-autonomy',
+          workers: [
+            { id: 1, workspace_id: 'workspace-a', workspace_name: 'Workspace A', active_change: 'change-1', status: 'working', delegation_mode: 'full-autonomy', started_at: new Date().toISOString() },
+            { id: 2, workspace_id: 'workspace-a', workspace_name: 'Workspace A', active_change: 'change-2', status: 'testing', delegation_mode: 'full-autonomy', started_at: new Date().toISOString() },
+          ],
+        },
+        {
+          workspace_id: 'workspace-b',
+          workspace_name: 'Workspace B',
+          size: 1,
+          delegation_mode: 'hitl-review',
+          workers: [
+            { id: 1, workspace_id: 'workspace-b', workspace_name: 'Workspace B', active_change: 'change-3', status: 'healing', delegation_mode: 'hitl-review', started_at: new Date().toISOString() },
+          ],
+        },
+      ],
+    })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AgentPoolTab />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('Workspace A')
+    expect(html).toContain('2/3')
+    expect(html).toContain('change-1')
+    expect(html).toContain('change-2')
+    expect(html).toContain('Workspace B')
+    expect(html).toContain('1/1')
+    expect(html).toContain('change-3')
+  })
+
+  it('shows the blocked reason for a paused worker', () => {
+    mockAllPools({
+      pools: [
+        {
+          workspace_id: 'workspace-a',
+          workspace_name: 'Workspace A',
+          size: 1,
+          delegation_mode: 'full-autonomy',
+          workers: [
+            {
+              id: 1,
+              workspace_id: 'workspace-a',
+              workspace_name: 'Workspace A',
+              active_change: 'flaky-change',
+              status: 'paused',
+              delegation_mode: 'full-autonomy',
+              started_at: new Date().toISOString(),
+              blocked_reason: 'Tentatives de réparation épuisées après 3 essai(s)',
+            },
+          ],
+        },
+      ],
+    })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AgentPoolTab />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('En pause')
+    expect(html).toContain('Tentatives de réparation épuisées après 3 essai(s)')
+  })
+
+  it('shows the empty state when no pool is active', () => {
+    mockAllPools({ pools: [] })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AgentPoolTab />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
   })
 })

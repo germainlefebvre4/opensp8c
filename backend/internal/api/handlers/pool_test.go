@@ -130,10 +130,10 @@ func setupGitWorkspace(t *testing.T, changeName string) string {
 	return tmpDir
 }
 
-// TestListAllPools_TwoWorkspaces verifies that ListAllPools returns workers
-// from every active workspace, each correctly tagged with its own workspace,
-// by driving the real pool.Manager dispatch loop against two throwaway git
-// repos.
+// TestListAllPools_TwoWorkspaces verifies that ListAllPools groups workers by
+// their pool of origin, one entry per active workspace with its size and
+// delegation mode, by driving the real pool.Manager dispatch loop against two
+// throwaway git repos.
 func TestListAllPools_TwoWorkspaces(t *testing.T) {
 	changeA := fmt.Sprintf("change-a-%d", time.Now().UnixNano())
 	changeB := fmt.Sprintf("change-b-%d", time.Now().UnixNano())
@@ -177,22 +177,29 @@ func TestListAllPools_TwoWorkspaces(t *testing.T) {
 	h.ListAllPools(rec, httptest.NewRequest(http.MethodGet, "/api/pools", nil))
 
 	var resp struct {
-		Workers []pool.Worker `json:"workers"`
+		Pools []pool.PoolSummary `json:"pools"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode /api/pools response: %v", err)
 	}
 
-	byWorkspace := map[string]pool.Worker{}
-	for _, w := range resp.Workers {
-		byWorkspace[w.WorkspaceID] = w
+	byWorkspace := map[string]pool.PoolSummary{}
+	for _, p := range resp.Pools {
+		byWorkspace[p.WorkspaceID] = p
 	}
-	wa, ok := byWorkspace[idA]
-	if !ok || wa.ActiveChange != changeA || wa.WorkspaceName != "workspace-a" {
-		t.Errorf("expected workspace A's worker on %q named %q, got %+v", changeA, "workspace-a", resp.Workers)
+	poolA, ok := byWorkspace[idA]
+	if !ok || poolA.WorkspaceName != "workspace-a" || poolA.Size != 1 || poolA.DelegationMode != pool.ModeHITLReview {
+		t.Fatalf("expected workspace A's pool tagged with its name/size/delegation mode, got %+v", resp.Pools)
 	}
-	wb, ok := byWorkspace[idB]
-	if !ok || wb.ActiveChange != changeB || wb.WorkspaceName != "workspace-b" {
-		t.Errorf("expected workspace B's worker on %q named %q, got %+v", changeB, "workspace-b", resp.Workers)
+	if len(poolA.Workers) != 1 || poolA.Workers[0].ActiveChange != changeA {
+		t.Errorf("expected workspace A's pool to list its worker on %q, got %+v", changeA, poolA.Workers)
+	}
+
+	poolB, ok := byWorkspace[idB]
+	if !ok || poolB.WorkspaceName != "workspace-b" || poolB.Size != 1 || poolB.DelegationMode != pool.ModeHITLReview {
+		t.Fatalf("expected workspace B's pool tagged with its name/size/delegation mode, got %+v", resp.Pools)
+	}
+	if len(poolB.Workers) != 1 || poolB.Workers[0].ActiveChange != changeB {
+		t.Errorf("expected workspace B's pool to list its worker on %q, got %+v", changeB, poolB.Workers)
 	}
 }

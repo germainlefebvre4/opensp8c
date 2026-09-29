@@ -8,6 +8,16 @@ import (
 	"github.com/glefebvre/opensp8c/internal/session"
 )
 
+// PoolSummary groups a single workspace's pool configuration with its
+// currently active and paused workers, for the "all workspaces" list view.
+type PoolSummary struct {
+	WorkspaceID    string         `json:"workspace_id"`
+	WorkspaceName  string         `json:"workspace_name"`
+	Size           int            `json:"size"`
+	DelegationMode DelegationMode `json:"delegation_mode"`
+	Workers        []Worker       `json:"workers"`
+}
+
 // Registry manages one Manager per workspace, created lazily on first use.
 // It lets independent pools run concurrently for different workspaces while
 // reusing the existing single-workspace Manager implementation unchanged.
@@ -62,9 +72,10 @@ func (reg *Registry) Remove(workspaceID string) {
 	}
 }
 
-// AllWorkers flattens the active workers of every known workspace's Manager
-// into one slice, tagged with their own workspace identity.
-func (reg *Registry) AllWorkers() []Worker {
+// AllPools returns one PoolSummary per currently running pool across every
+// known workspace, each carrying its configured size, delegation mode, and
+// the detail of its active and paused workers (see Manager.Status).
+func (reg *Registry) AllPools() []PoolSummary {
 	reg.mu.Lock()
 	managers := make(map[string]*Manager, len(reg.managers))
 	for id, m := range reg.managers {
@@ -72,13 +83,19 @@ func (reg *Registry) AllWorkers() []Worker {
 	}
 	reg.mu.Unlock()
 
-	var workers []Worker
+	var pools []PoolSummary
 	for workspaceID, m := range managers {
-		_, running, ws := m.Status(workspaceID)
+		cfg, running, workers := m.Status(workspaceID)
 		if !running {
 			continue
 		}
-		workers = append(workers, ws...)
+		pools = append(pools, PoolSummary{
+			WorkspaceID:    workspaceID,
+			WorkspaceName:  m.WorkspaceName(),
+			Size:           cfg.Size,
+			DelegationMode: cfg.DelegationMode,
+			Workers:        workers,
+		})
 	}
-	return workers
+	return pools
 }

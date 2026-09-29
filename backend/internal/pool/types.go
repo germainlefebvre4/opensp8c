@@ -37,6 +37,7 @@ type Worker struct {
 	BranchName     string             `json:"branch_name,omitempty"`
 	Status         WorkerStatus       `json:"status"`
 	Activity       string             `json:"activity,omitempty"`
+	BlockedReason  string             `json:"blocked_reason,omitempty"`
 	DelegationMode DelegationMode     `json:"delegation_mode"`
 	StartedAt      time.Time          `json:"started_at"`
 	CancelFunc     context.CancelFunc `json:"-"`

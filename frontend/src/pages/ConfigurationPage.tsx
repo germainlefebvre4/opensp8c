@@ -1,8 +1,98 @@
 import { useState, useEffect } from 'react'
 import { Settings as SettingsIcon, Plus, Trash2, Check, PenLine } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { deriveCliFormState } from '../lib/cliSettings'
+import { useAllPools } from '../hooks/useAllPools'
+import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
+import type { WorkerStatus } from '../hooks/usePoolStatus'
+
+const STATUS_BADGE_CLASSES: Record<WorkerStatus, string> = {
+  idle: 'bg-slate-100 text-slate-600 border-slate-200',
+  working: 'bg-violet-50 text-violet-600 border-violet-200',
+  testing: 'bg-blue-50 text-blue-600 border-blue-200',
+  healing: 'bg-amber-50 text-amber-600 border-amber-200',
+  paused: 'bg-red-50 text-red-600 border-red-200',
+}
+
+function formatDuration(startedAt: string): string {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+  const hours = Math.floor(elapsedSeconds / 3600)
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60)
+  const seconds = elapsedSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+export function AgentPoolTab() {
+  const { t } = useTranslation('configuration')
+  const { t: tDialogs } = useTranslation('dialogs')
+  const navigate = useNavigate()
+
+  const { data } = useAllPools()
+  const pools = data?.pools ?? []
+
+  const delegationLabel = (mode: PoolSummary['delegation_mode']) =>
+    mode === 'full-autonomy' ? tDialogs('agentPool.fullAutonomy.label') : tDialogs('agentPool.hitlReview.label')
+
+  const handleRowClick = (workspaceId: string) => {
+    navigate(`/?workspace=${workspaceId}`)
+  }
+
+  if (pools.length === 0) {
+    return <p className="text-sm text-slate-400">{t('agentPoolTab.emptyState')}</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {pools.map(pool => (
+        <div key={pool.workspace_id} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold text-slate-800">{pool.workspace_name}</h2>
+            <span className="text-[11px] text-slate-500">
+              {t('agentPoolTab.activeWorkers', { active: pool.workers.length, size: pool.size })}
+            </span>
+            <span className="text-[11px] text-slate-500">{delegationLabel(pool.delegation_mode)}</span>
+          </div>
+
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <th className="py-2 pr-4">{t('agentPoolTab.table.change')}</th>
+                <th className="py-2 pr-4">{t('agentPoolTab.table.status')}</th>
+                <th className="py-2 pr-4">{t('agentPoolTab.table.activity')}</th>
+                <th className="py-2 pr-4">{t('agentPoolTab.table.duration')}</th>
+                <th className="py-2 pr-4">{t('agentPoolTab.table.blockedReason')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pool.workers.map((w: AgentWorker) => (
+                <tr
+                  key={w.id}
+                  onClick={() => handleRowClick(pool.workspace_id)}
+                  title={t('agentPoolTab.rowTooltip', { workspace: pool.workspace_name })}
+                  className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
+                >
+                  <td className="py-2.5 pr-4 font-medium text-slate-800">{w.active_change}</td>
+                  <td className="py-2.5 pr-4">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_BADGE_CLASSES[w.status]}`}>
+                      {tDialogs(`agentPool.statusPanel.status.${w.status}`)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 pr-4 text-slate-500 truncate max-w-xs">{w.activity}</td>
+                  <td className="py-2.5 pr-4 text-slate-500">{formatDuration(w.started_at)}</td>
+                  <td className="py-2.5 pr-4 text-red-600">{w.blocked_reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function AgentsRegistryTab() {
   const { t } = useTranslation('configuration')
@@ -97,193 +187,199 @@ export function CliSettingsTab() {
   }
 
   return (
-    <form onSubmit={handleSave} className="flex flex-col gap-4 max-w-lg">
-      {/* Recommended Variables */}
-      <div className="flex flex-col gap-3">
-        <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          {t('agentSettings.recommended')}
-        </h3>
-
-        {/* GOOGLE_CLOUD_PROJECT */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-            {t('agentSettings.googleCloudProject')}
-            <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.googleCloudProjectDesc')})</span>
-          </label>
-          <input
-            type="text"
-            value={gcpProject}
-            onChange={e => setGcpProject(e.target.value)}
-            placeholder={prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GOOGLE_CLOUD_PROJECT']}` : 'ex: my-gcp-project-123'}
-            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
-          />
-          {prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] && (
-            gcpProject.trim() ? (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
-                <PenLine size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemOverridden')}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
-                <Check size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemActive')}</span>
-              </div>
-            )
-          )}
-        </div>
-
-        {/* GEMINI_MODEL */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-            {t('agentSettings.geminiModel')}
-            <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.geminiModelDesc')})</span>
-          </label>
-          <input
-            type="text"
-            value={geminiModel}
-            onChange={e => setGeminiModel(e.target.value)}
-            placeholder={prefs?.systemEnv?.['GEMINI_MODEL'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_MODEL']}` : 'ex: gemini-1.5-pro'}
-            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
-          />
-          {prefs?.systemEnv?.['GEMINI_MODEL'] && (
-            geminiModel.trim() ? (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
-                <PenLine size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemOverridden')}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
-                <Check size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemActive')}</span>
-              </div>
-            )
-          )}
-        </div>
-
-        {/* GEMINI_SANDBOX */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-            {t('agentSettings.geminiSandbox')}
-            <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.geminiSandboxDesc')})</span>
-          </label>
-          <input
-            type="text"
-            value={geminiSandbox}
-            onChange={e => setGeminiSandbox(e.target.value)}
-            placeholder={prefs?.systemEnv?.['GEMINI_SANDBOX'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_SANDBOX']}` : 'ex: true ou false'}
-            className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
-          />
-          {prefs?.systemEnv?.['GEMINI_SANDBOX'] && (
-            geminiSandbox.trim() ? (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
-                <PenLine size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemOverridden')}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
-                <Check size={10} className="shrink-0" />
-                <span>{t('agentSettings.systemActive')}</span>
-              </div>
-            )
-          )}
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <AgentsRegistryTab />
 
       <div className="h-px bg-slate-100" />
 
-      {/* Custom Variables */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+      <form onSubmit={handleSave} className="flex flex-col gap-4 max-w-lg">
+        {/* Recommended Variables */}
+        <div className="flex flex-col gap-3">
           <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-            {t('agentSettings.custom')}
+            {t('agentSettings.recommended')}
           </h3>
+
+          {/* GOOGLE_CLOUD_PROJECT */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+              {t('agentSettings.googleCloudProject')}
+              <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.googleCloudProjectDesc')})</span>
+            </label>
+            <input
+              type="text"
+              value={gcpProject}
+              onChange={e => setGcpProject(e.target.value)}
+              placeholder={prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GOOGLE_CLOUD_PROJECT']}` : 'ex: my-gcp-project-123'}
+              className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
+            />
+            {prefs?.systemEnv?.['GOOGLE_CLOUD_PROJECT'] && (
+              gcpProject.trim() ? (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                  <PenLine size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemOverridden')}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                  <Check size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemActive')}</span>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* GEMINI_MODEL */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+              {t('agentSettings.geminiModel')}
+              <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.geminiModelDesc')})</span>
+            </label>
+            <input
+              type="text"
+              value={geminiModel}
+              onChange={e => setGeminiModel(e.target.value)}
+              placeholder={prefs?.systemEnv?.['GEMINI_MODEL'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_MODEL']}` : 'ex: gemini-1.5-pro'}
+              className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
+            />
+            {prefs?.systemEnv?.['GEMINI_MODEL'] && (
+              geminiModel.trim() ? (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                  <PenLine size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemOverridden')}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                  <Check size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemActive')}</span>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* GEMINI_SANDBOX */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+              {t('agentSettings.geminiSandbox')}
+              <span className="text-[10px] text-slate-400 font-normal">({t('agentSettings.geminiSandboxDesc')})</span>
+            </label>
+            <input
+              type="text"
+              value={geminiSandbox}
+              onChange={e => setGeminiSandbox(e.target.value)}
+              placeholder={prefs?.systemEnv?.['GEMINI_SANDBOX'] ? `${t('agentSettings.systemPrefix')} ${prefs.systemEnv['GEMINI_SANDBOX']}` : 'ex: true ou false'}
+              className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-400"
+            />
+            {prefs?.systemEnv?.['GEMINI_SANDBOX'] && (
+              geminiSandbox.trim() ? (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-600 font-medium">
+                  <PenLine size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemOverridden')}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-600 font-medium">
+                  <Check size={10} className="shrink-0" />
+                  <span>{t('agentSettings.systemActive')}</span>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="h-px bg-slate-100" />
+
+        {/* Custom Variables */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              {t('agentSettings.custom')}
+            </h3>
+            <button
+              type="button"
+              onClick={handleAddVar}
+              className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+            >
+              <Plus size={11} />
+              {t('agentSettings.addVar')}
+            </button>
+          </div>
+
+          {customVars.length === 0 ? (
+            <p className="text-[11px] text-slate-400 italic text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+              Aucune variable personnalisée définie.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {customVars.map((v, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder={t('agentSettings.keyPlaceholder')}
+                    value={v.key}
+                    onChange={e => handleCustomVarChange(i, 'key', e.target.value)}
+                    className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
+                  />
+                  <span className="text-slate-400 font-mono text-xs">=</span>
+                  <input
+                    type="text"
+                    placeholder={t('agentSettings.valuePlaceholder')}
+                    value={v.value}
+                    onChange={e => handleCustomVarChange(i, 'value', e.target.value)}
+                    className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveVar(i)}
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
+                    title="Supprimer cette variable"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="h-px bg-slate-100" />
+
+        {/* Native question mode (Claude only) */}
+        <div className="flex flex-col gap-2">
+          <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            {t('agentSettings.explore')}
+          </h3>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={nativeQuestionMode}
+              onChange={e => setNativeQuestionMode(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 cursor-pointer"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-slate-700">
+                {t('agentSettings.nativeQuestionMode')}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {t('agentSettings.nativeQuestionModeDesc')}
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div className="flex justify-end">
           <button
-            type="button"
-            onClick={handleAddVar}
-            className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+            type="submit"
+            className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors cursor-pointer"
           >
-            <Plus size={11} />
-            {t('agentSettings.addVar')}
+            {t('agentSettings.save')}
           </button>
         </div>
-
-        {customVars.length === 0 ? (
-          <p className="text-[11px] text-slate-400 italic text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-            Aucune variable personnalisée définie.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {customVars.map((v, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  placeholder={t('agentSettings.keyPlaceholder')}
-                  value={v.key}
-                  onChange={e => handleCustomVarChange(i, 'key', e.target.value)}
-                  className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
-                />
-                <span className="text-slate-400 font-mono text-xs">=</span>
-                <input
-                  type="text"
-                  placeholder={t('agentSettings.valuePlaceholder')}
-                  value={v.value}
-                  onChange={e => handleCustomVarChange(i, 'value', e.target.value)}
-                  className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder:text-slate-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemoveVar(i)}
-                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-                  title="Supprimer cette variable"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="h-px bg-slate-100" />
-
-      {/* Native question mode (Claude only) */}
-      <div className="flex flex-col gap-2">
-        <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          {t('agentSettings.explore')}
-        </h3>
-        <label className="flex items-start gap-2.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={nativeQuestionMode}
-            onChange={e => setNativeQuestionMode(e.target.checked)}
-            className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 cursor-pointer"
-          />
-          <span className="flex flex-col gap-0.5">
-            <span className="text-xs font-medium text-slate-700">
-              {t('agentSettings.nativeQuestionMode')}
-            </span>
-            <span className="text-[10px] text-slate-400">
-              {t('agentSettings.nativeQuestionModeDesc')}
-            </span>
-          </span>
-        </label>
-      </div>
-
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors cursor-pointer"
-        >
-          {t('agentSettings.save')}
-        </button>
-      </div>
-    </form>
+      </form>
+    </div>
   )
 }
 
 export function ConfigurationPage() {
   const { t } = useTranslation('configuration')
-  const [tab, setTab] = useState<'agents' | 'cli'>('agents')
+  const [tab, setTab] = useState<'agent-pool' | 'cli'>('agent-pool')
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -294,7 +390,7 @@ export function ConfigurationPage() {
 
       <div className="shrink-0 px-6 pt-3 flex gap-4 border-b border-slate-100">
         {([
-          { id: 'agents', label: t('tabs.agents') },
+          { id: 'agent-pool', label: t('tabs.agentPool') },
           { id: 'cli', label: t('tabs.cli') },
         ] as const).map(({ id, label }) => (
           <button
@@ -313,7 +409,7 @@ export function ConfigurationPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {tab === 'agents' ? <AgentsRegistryTab /> : <CliSettingsTab />}
+        {tab === 'agent-pool' ? <AgentPoolTab /> : <CliSettingsTab />}
       </div>
     </div>
   )

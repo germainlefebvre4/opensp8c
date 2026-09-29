@@ -34,7 +34,10 @@ function AppRoutes() {
             path="/timeline"
             element={workspaceId ? <TimelinePage workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
-          <Route path="/agents" element={<AgentsPage />} />
+          <Route
+            path="/agents"
+            element={workspaceId ? <AgentsPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
+          />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/configuration" element={<ConfigurationPage />} />
         </Routes>

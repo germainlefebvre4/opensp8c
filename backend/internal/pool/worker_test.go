@@ -394,11 +394,162 @@ func TestRunWorker_PausesWithoutFinalizingWhenTasksIncomplete(t *testing.T) {
 	if w.Status != StatusPaused {
 		t.Errorf("expected worker status to be %q when tasks.md is incomplete, got %q", StatusPaused, w.Status)
 	}
+	if !strings.Contains(w.BlockedReason, "tâches restantes incomplètes") {
+		t.Errorf("expected BlockedReason to describe incomplete tasks.md, got %q", w.BlockedReason)
+	}
+	m.mu.Lock()
+	paused, ok := m.pausedWorkers[w.ID]
+	m.mu.Unlock()
+	if !ok || paused.BlockedReason != w.BlockedReason {
+		t.Errorf("expected worker to be snapshotted into pausedWorkers with its BlockedReason, got %+v (ok=%v)", paused, ok)
+	}
 
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/feature/"+changeName)
 	cmd.Dir = repoDir
 	if err := cmd.Run(); err != nil {
 		t.Errorf("expected the feature branch to still exist (no merge should have happened): %v", err)
+	}
+}
+
+// TestRunWorker_PausesWithReason_SubprocessStartFailure verifies the first of
+// the 4 paused paths (task 1.3): when the agent subprocess itself fails to
+// start, the worker pauses with a BlockedReason describing that failure, and
+// is snapshotted into pausedWorkers so it remains observable.
+func TestRunWorker_PausesWithReason_SubprocessStartFailure(t *testing.T) {
+	changeName := "subprocess-start-failure-change"
+	repoDir := newGoFixtureRepo(t, changeName, "- [x] done\n")
+
+	startErr := errors.New("boom: no such CLI")
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			return nil, startErr
+		})
+
+	w := &Worker{ID: 1, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.runWorker(ctx, w)
+
+	if w.Status != StatusPaused {
+		t.Fatalf("expected worker status to be %q, got %q", StatusPaused, w.Status)
+	}
+	if w.BlockedReason == "" || !strings.Contains(w.BlockedReason, "démarrage du subprocess") {
+		t.Errorf("expected BlockedReason to describe the subprocess start failure, got %q", w.BlockedReason)
+	}
+	m.mu.Lock()
+	paused, ok := m.pausedWorkers[w.ID]
+	m.mu.Unlock()
+	if !ok || paused.BlockedReason != w.BlockedReason {
+		t.Errorf("expected worker to be snapshotted into pausedWorkers with its BlockedReason, got %+v (ok=%v)", paused, ok)
+	}
+}
+
+// TestRunWorker_PausesWithReason_ApplyInvocationFailure verifies the second
+// paused path (task 1.3): when the agent subprocess ends before completing
+// the initial apply turn, the worker pauses with a BlockedReason describing
+// that invocation failure.
+func TestRunWorker_PausesWithReason_ApplyInvocationFailure(t *testing.T) {
+	changeName := "apply-invocation-failure-change"
+	repoDir := newGoFixtureRepo(t, changeName, "- [x] done\n")
+
+	// A subprocess whose stdout closes immediately, without ever writing a
+	// completion line, so invokeAgentApply's runTurn returns an error.
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			inR, inW := io.Pipe()
+			outR, outW := io.Pipe()
+			go func() {
+				_, _ = io.Copy(io.Discard, inR)
+			}()
+			_ = outW.Close()
+			return session.NewTestSubprocess(inW, outR, "claude"), nil
+		})
+
+	w := &Worker{ID: 1, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.runWorker(ctx, w)
+
+	if w.Status != StatusPaused {
+		t.Fatalf("expected worker status to be %q, got %q", StatusPaused, w.Status)
+	}
+	if w.BlockedReason == "" || !strings.Contains(w.BlockedReason, "invocation de l'agent") {
+		t.Errorf("expected BlockedReason to describe the apply invocation failure, got %q", w.BlockedReason)
+	}
+	m.mu.Lock()
+	paused, ok := m.pausedWorkers[w.ID]
+	m.mu.Unlock()
+	if !ok || paused.BlockedReason != w.BlockedReason {
+		t.Errorf("expected worker to be snapshotted into pausedWorkers with its BlockedReason, got %+v (ok=%v)", paused, ok)
+	}
+}
+
+// TestRunWorker_PausesWithReason_HealExhausted verifies the third paused path
+// (task 1.3): when validation keeps failing until MaxAttempts is exhausted,
+// the worker pauses with a BlockedReason describing that exhaustion.
+func TestRunWorker_PausesWithReason_HealExhausted(t *testing.T) {
+	changeName := "heal-exhausted-change"
+	// A deliberately broken Go file: `go test ./...` will always fail here,
+	// regardless of the (fake, no-op) heal turns the agent produces.
+	repoDir := t.TempDir()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module fixture\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\n\nfunc main() { this is not valid go }\n"), 0644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	changeDir := filepath.Join(repoDir, "openspec", "changes", changeName)
+	if err := os.MkdirAll(changeDir, 0755); err != nil {
+		t.Fatalf("mkdir change dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("- [x] done\n"), 0644); err != nil {
+		t.Fatalf("write tasks.md: %v", err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-q")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
+	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
+	t.Cleanup(func() {
+		home, _ := os.UserHomeDir()
+		_ = os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
+	})
+
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool) (*session.Subprocess, error) {
+			return fakeAutoRespondingSubprocess(), nil
+		})
+
+	w := &Worker{ID: 1, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.runWorker(ctx, w)
+
+	if w.Status != StatusPaused {
+		t.Fatalf("expected worker status to be %q, got %q", StatusPaused, w.Status)
+	}
+	if w.BlockedReason == "" || !strings.Contains(w.BlockedReason, "réparation épuisées") {
+		t.Errorf("expected BlockedReason to describe heal exhaustion, got %q", w.BlockedReason)
+	}
+	m.mu.Lock()
+	paused, ok := m.pausedWorkers[w.ID]
+	m.mu.Unlock()
+	if !ok || paused.BlockedReason != w.BlockedReason {
+		t.Errorf("expected worker to be snapshotted into pausedWorkers with its BlockedReason, got %+v (ok=%v)", paused, ok)
 	}
 }
 

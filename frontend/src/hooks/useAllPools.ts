@@ -8,12 +8,22 @@ export interface AgentWorker {
   workspace_name: string
   active_change: string
   status: WorkerStatus
+  activity?: string
+  blocked_reason?: string
   delegation_mode: 'full-autonomy' | 'hitl-review'
   started_at: string
 }
 
-export interface AllPoolsStatus {
+export interface PoolSummary {
+  workspace_id: string
+  workspace_name: string
+  size: number
+  delegation_mode: 'full-autonomy' | 'hitl-review'
   workers: AgentWorker[]
+}
+
+export interface AllPoolsStatus {
+  pools: PoolSummary[]
 }
 
 export function useAllPools() {
