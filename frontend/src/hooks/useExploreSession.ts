@@ -7,6 +7,7 @@ import {
   buildAnswerWSPayload,
   buildConsolidatedUserMessage,
   extractText,
+  isTurnEnd,
   extractToolCalls,
   extractToolResult,
   markQuestionAnswered,
@@ -86,6 +87,8 @@ export function useExploreSession(workspaceId: string, changeName: string) {
         }
 
         // Claude stream-json format: extract text content
+        if (isTurnEnd(data)) setWaiting(false)
+
         const text = extractText(data)
         if (!text) return
 

@@ -9,6 +9,7 @@ import {
   buildAnswerWSPayload,
   buildConsolidatedUserMessage,
   extractText,
+  isTurnEnd,
   extractToolCalls,
   extractToolResult,
   markQuestionAnswered,
@@ -179,6 +180,8 @@ export function useAnonymousExploreSession(workspaceId: string, resumeGhostId?: 
             return updated
           })
         }
+
+        if (isTurnEnd(data)) setWaiting(false)
 
         const text = extractText(data)
         if (!text) return

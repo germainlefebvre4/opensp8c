@@ -154,6 +154,11 @@ export function stripResidualGhostQuestionMarkers(text: string): string {
   return text.replace(residualGhostQuestionMarkerPattern, '')
 }
 
+/** True for events that mark the end of an agent turn (with or without text). */
+export function isTurnEnd(data: Record<string, unknown>): boolean {
+  return data.type === 'result' || data.type === 'message_complete'
+}
+
 export function extractText(data: Record<string, unknown>): string {
   if (data.type === 'content_block_delta') {
     const delta = data.delta as Record<string, unknown> | undefined

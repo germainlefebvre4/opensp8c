@@ -1,6 +1,9 @@
 package session
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 import "testing"
 
 func TestSystemPromptsIncludeFramingAndGhostQuestionMarker(t *testing.T) {
@@ -251,4 +254,76 @@ func TestExtractGhostMarkers_AntigravityTranslation(t *testing.T) {
 			t.Errorf("expected 'Faut-il supporter PostgreSQL ?', got %q", gotQuestion)
 		}
 	})
+}
+
+func msgN(i int) []byte { return []byte(fmt.Sprintf("m%d", i)) }
+
+func TestMessagesSinceDeliversAfterSaturation(t *testing.T) {
+	s := NewTestSession(nil)
+	_, cursor := s.Snapshot()
+	total := maxMessages*2 + 37
+	for i := 0; i < total; i++ {
+		s.appendMessage(msgN(i))
+		var got [][]byte
+		got, cursor = s.MessagesSince(cursor)
+		if len(got) != 1 || string(got[0]) != string(msgN(i)) {
+			t.Fatalf("step %d: got %q, want exactly %q", i, got, msgN(i))
+		}
+	}
+	if cursor != total {
+		t.Fatalf("cursor = %d, want %d", cursor, total)
+	}
+}
+
+func TestMessagesSinceStaleCursor(t *testing.T) {
+	s := NewTestSession(nil)
+	for i := 0; i < maxMessages+10; i++ {
+		s.appendMessage(msgN(i))
+	}
+	got, cursor := s.MessagesSince(3) // entries 0..9 evicted
+	if len(got) != maxMessages || string(got[0]) != string(msgN(10)) {
+		t.Fatalf("got %d msgs starting %q, want %d starting %q", len(got), got[0], maxMessages, msgN(10))
+	}
+	if cursor != maxMessages+10 {
+		t.Fatalf("cursor = %d, want %d", cursor, maxMessages+10)
+	}
+	got, _ = s.MessagesSince(cursor + 50) // future cursor clamps
+	if len(got) != 0 {
+		t.Fatalf("future cursor returned %d msgs", len(got))
+	}
+}
+
+func TestSnapshotThenMessagesSinceSaturated(t *testing.T) {
+	s := NewTestSession(nil)
+	for i := 0; i < maxMessages+25; i++ {
+		s.appendMessage(msgN(i))
+	}
+	snap, cursor := s.Snapshot()
+	if len(snap) != maxMessages {
+		t.Fatalf("snapshot len = %d", len(snap))
+	}
+	if got, _ := s.MessagesSince(cursor); len(got) != 0 {
+		t.Fatalf("expected no duplicates after snapshot, got %d", len(got))
+	}
+	s.appendMessage(msgN(9999))
+	got, _ := s.MessagesSince(cursor)
+	if len(got) != 1 || string(got[0]) != string(msgN(9999)) {
+		t.Fatalf("got %q, want only the new message", got)
+	}
+}
+
+func TestInjectMessageOnSaturatedBuffer(t *testing.T) {
+	s := NewTestSession(nil)
+	for i := 0; i < maxMessages; i++ {
+		s.appendMessage(msgN(i))
+	}
+	_, cursor := s.Snapshot()
+	s.InjectMessage([]byte("injected"))
+	got, cursor := s.MessagesSince(cursor)
+	if len(got) != 1 || string(got[0]) != "injected" {
+		t.Fatalf("got %q, want injected", got)
+	}
+	if got, _ = s.MessagesSince(cursor); len(got) != 0 {
+		t.Fatalf("duplicate delivery: %q", got)
+	}
 }

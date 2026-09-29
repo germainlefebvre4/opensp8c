@@ -6,6 +6,7 @@ import {
   buildAnswerWSPayload,
   buildConsolidatedUserMessage,
   extractToolCalls,
+  isTurnEnd,
   extractToolResult,
   markQuestionAnswered,
   mergeAssistantText,
@@ -265,5 +266,18 @@ describe('buildAnswerWSPayload', () => {
       buildAnswerWSPayload({ id: 'ghost-1', source: 'ghost', text: 'Q' }, 'ma réponse')
     )
     expect(payload).toEqual({ type: 'user', message: { role: 'user', content: 'ma réponse' } })
+  })
+})
+
+describe('isTurnEnd', () => {
+  it('is true for result and message_complete', () => {
+    expect(isTurnEnd({ type: 'result', result: '' })).toBe(true)
+    expect(isTurnEnd({ type: 'message_complete' })).toBe(true)
+  })
+
+  it('is false for other events', () => {
+    expect(isTurnEnd({ type: 'assistant' })).toBe(false)
+    expect(isTurnEnd({ type: 'content_block_delta' })).toBe(false)
+    expect(isTurnEnd({})).toBe(false)
   })
 })

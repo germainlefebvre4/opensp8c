@@ -47,6 +47,7 @@ type Session struct {
 
 	msgMu            sync.RWMutex
 	messages         [][]byte
+	dropped          int                 // entries evicted from messages since session start; absolute position of messages[i] is dropped+i
 	notify           chan struct{}       // buffered(1): signals new messages available
 	done             chan struct{}       // closed when subprocess stdout ends
 	pendingQuestion  string              // clarification question awaiting a user reply, if any (most recently detected)
@@ -138,27 +139,46 @@ func (s *Session) Stop() {
 	s.log.Close()
 }
 
-// Snapshot returns a copy of the message buffer and the cursor (buffer length at snapshot time).
+// appendMessage adds b to the sliding window, evicting the oldest entry when
+// full and counting it in dropped so absolute cursors stay valid.
+func (s *Session) appendMessage(b []byte) {
+	s.msgMu.Lock()
+	defer s.msgMu.Unlock()
+	if len(s.messages) >= maxMessages {
+		s.messages = s.messages[1:]
+		s.dropped++
+	}
+	s.messages = append(s.messages, b)
+}
+
+// Snapshot returns a copy of the message buffer and the absolute cursor
+// (total entries produced so far, evicted ones included).
 func (s *Session) Snapshot() ([][]byte, int) {
 	s.msgMu.RLock()
 	defer s.msgMu.RUnlock()
 	snap := make([][]byte, len(s.messages))
 	copy(snap, s.messages)
-	return snap, len(s.messages)
+	return snap, s.dropped + len(s.messages)
 }
 
-// MessagesSince returns messages from cursor onward and the updated cursor.
-// If cursor exceeds buffer length (sliding window moved), starts from 0.
+// MessagesSince returns messages from the absolute cursor onward and the
+// updated absolute cursor. A cursor older than the window (entries evicted
+// meanwhile) resumes at the oldest available entry; a cursor in the future is
+// clamped to the end.
 func (s *Session) MessagesSince(cursor int) ([][]byte, int) {
 	s.msgMu.RLock()
 	defer s.msgMu.RUnlock()
-	if cursor > len(s.messages) {
-		cursor = 0
+	start := cursor - s.dropped
+	if start < 0 {
+		start = 0
 	}
-	slice := s.messages[cursor:]
+	if start > len(s.messages) {
+		start = len(s.messages)
+	}
+	slice := s.messages[start:]
 	msgs := make([][]byte, len(slice))
 	copy(msgs, slice)
-	return msgs, len(s.messages)
+	return msgs, s.dropped + len(s.messages)
 }
 
 func (s *Session) Notify() <-chan struct{} { return s.notify }
@@ -167,12 +187,7 @@ func (s *Session) Done() <-chan struct{}   { return s.done }
 // InjectMessage inserts a custom message into the session's message buffer
 // and notifies any listeners that new messages are available.
 func (s *Session) InjectMessage(msg []byte) {
-	s.msgMu.Lock()
-	if len(s.messages) >= maxMessages {
-		s.messages = s.messages[1:]
-	}
-	s.messages = append(s.messages, msg)
-	s.msgMu.Unlock()
+	s.appendMessage(msg)
 
 	select {
 	case s.notify <- struct{}{}:
@@ -316,9 +331,7 @@ func injectAgentInfo(s *Session, r resolvedAgent) {
 		if err != nil {
 			return
 		}
-		s.msgMu.Lock()
-		s.messages = append(s.messages, warnData)
-		s.msgMu.Unlock()
+		s.appendMessage(warnData)
 	}
 }
 
@@ -808,12 +821,7 @@ func (m *Manager) startFanOut(s *Session, key string, workspaceID string, anonym
 				}
 			}
 
-			s.msgMu.Lock()
-			if len(s.messages) >= maxMessages {
-				s.messages = s.messages[1:]
-			}
-			s.messages = append(s.messages, b)
-			s.msgMu.Unlock()
+			s.appendMessage(b)
 
 			select {
 			case s.notify <- struct{}{}:

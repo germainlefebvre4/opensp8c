@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -481,5 +482,50 @@ func TestServeWSWritesToolResultOnNativeQuestionResponse(t *testing.T) {
 
 	if got := sess.PendingQuestion(); got != "" {
 		t.Errorf("expected pending question to be cleared after tool_result, got %q", got)
+	}
+}
+
+// TestServeWSDeliversLiveMessagesPastBufferCapacity reproduces a long Explore
+// session: a connected client must keep receiving every event, in order, well
+// beyond the 500-entry buffer window (regression: the client used to stall
+// once the buffer saturated, leaving the final result undelivered).
+func TestServeWSDeliversLiveMessagesPastBufferCapacity(t *testing.T) {
+	sess := session.NewTestSession(nil)
+	conn, ctx := dialExploreWS(t, sess)
+
+	const total = 1500
+	go func() {
+		for i := 0; i < total; i++ {
+			sess.InjectMessage([]byte(fmt.Sprintf(`{"type":"assistant","n":%d}`, i)))
+			if i%20 == 0 {
+				time.Sleep(time.Millisecond)
+			}
+		}
+		sess.InjectMessage([]byte(`{"type":"result","n":-1}`))
+	}()
+
+	next := 0
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("stalled after %d events: %v", next, err)
+		}
+		var evt struct {
+			Type string `json:"type"`
+			N    int    `json:"n"`
+		}
+		if err := json.Unmarshal(data, &evt); err != nil {
+			t.Fatalf("bad event %s: %v", data, err)
+		}
+		if evt.Type == "result" {
+			break
+		}
+		if evt.N != next {
+			t.Fatalf("out of order or lost: got n=%d, want %d", evt.N, next)
+		}
+		next++
+	}
+	if next != total {
+		t.Fatalf("received %d events, want %d", next, total)
 	}
 }
