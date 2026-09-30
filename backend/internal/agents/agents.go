@@ -8,12 +8,36 @@ import (
 	"time"
 )
 
+// Model is a selectable model identifier for an agent.
+type Model struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Source string `json:"source"` // "seed" or "cli"
+}
+
+const (
+	ModelSourceSeed = "seed"
+	ModelSourceCLI  = "cli"
+)
+
 type AgentConfig struct {
 	ID          string
 	Label       string
 	CLI         string
 	VersionArgs []string
 	DocsURL     string
+
+	// Capabilities. An empty flag means the agent cannot be driven for that setting.
+	ModelFlag    string
+	EffortFlag   string
+	EffortLevels []string
+	SeedModels   []Model
+	// ListModels discovers models from the CLI; nil when the CLI cannot list them.
+	ListModels func(ctx context.Context) ([]Model, error)
+
+	// Execution fields, set per launch (see preferences.ApplyRole).
+	Model  string
+	Effort string
 }
 
 type AgentStatus struct {
@@ -28,6 +52,42 @@ type AgentStatus struct {
 // Claude uses stream-json format; other agents use the same flags as placeholders
 // until their actual CLI interfaces are validated.
 func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []string {
+	return append(a.baseArgs(basePrompt, extraPrompt), a.modelEffortArgs()...)
+}
+
+// modelEffortArgs returns the model then effort flags, each only when both the
+// agent's flag and the value are non-empty.
+func (a AgentConfig) modelEffortArgs() []string {
+	var args []string
+	if a.ModelFlag != "" && a.Model != "" {
+		args = append(args, a.ModelFlag, a.Model)
+	}
+	if a.EffortFlag != "" && a.Effort != "" {
+		args = append(args, a.EffortFlag, a.Effort)
+	}
+	return args
+}
+
+// SupportsModel reports whether the agent declares a model flag.
+func (a AgentConfig) SupportsModel() bool { return a.ModelFlag != "" }
+
+// SupportsEffort reports whether the agent declares effort levels and a flag.
+func (a AgentConfig) SupportsEffort() bool { return a.EffortFlag != "" && len(a.EffortLevels) > 0 }
+
+// ValidEffort reports whether level is one of the agent's effort levels.
+func (a AgentConfig) ValidEffort(level string) bool {
+	if !a.SupportsEffort() {
+		return false
+	}
+	for _, l := range a.EffortLevels {
+		if l == level {
+			return true
+		}
+	}
+	return false
+}
+
+func (a AgentConfig) baseArgs(basePrompt, extraPrompt string) []string {
 	if a.ID == "gemini" {
 		return []string{
 			"--output-format", "stream-json",
@@ -59,11 +119,20 @@ func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []strin
 
 var SupportedAgents = []AgentConfig{
 	{
-		ID:          "claude",
-		Label:       "Claude",
-		CLI:         "claude",
-		VersionArgs: []string{"--version"},
-		DocsURL:     "https://docs.claude.com/en/docs/claude-code/overview",
+		ID:           "claude",
+		Label:        "Claude",
+		CLI:          "claude",
+		VersionArgs:  []string{"--version"},
+		DocsURL:      "https://docs.claude.com/en/docs/claude-code/overview",
+		ModelFlag:    "--model",
+		EffortFlag:   "--effort",
+		EffortLevels: []string{"low", "medium", "high", "xhigh", "max"},
+		SeedModels: []Model{
+			{ID: "fable", Label: "Fable", Source: ModelSourceSeed},
+			{ID: "opus", Label: "Opus", Source: ModelSourceSeed},
+			{ID: "sonnet", Label: "Sonnet", Source: ModelSourceSeed},
+			{ID: "haiku", Label: "Haiku", Source: ModelSourceSeed},
+		},
 	},
 	{
 		ID:          "codex",
@@ -71,6 +140,8 @@ var SupportedAgents = []AgentConfig{
 		CLI:         "codex",
 		VersionArgs: []string{"--version"},
 		DocsURL:     "https://github.com/openai/codex",
+		ModelFlag:   "-m",
+		SeedModels:  []Model{{ID: "gpt-5.5", Label: "GPT-5.5", Source: ModelSourceSeed}},
 	},
 	{
 		ID:          "gemini",
@@ -78,13 +149,24 @@ var SupportedAgents = []AgentConfig{
 		CLI:         "gemini",
 		VersionArgs: []string{"--version"},
 		DocsURL:     "https://github.com/google-gemini/gemini-cli",
+		ModelFlag:   "-m",
+		SeedModels: []Model{
+			{ID: "auto", Label: "Auto", Source: ModelSourceSeed},
+			{ID: "pro", Label: "Pro", Source: ModelSourceSeed},
+			{ID: "flash", Label: "Flash", Source: ModelSourceSeed},
+			{ID: "flash-lite", Label: "Flash Lite", Source: ModelSourceSeed},
+		},
 	},
 	{
-		ID:          "antigravity",
-		Label:       "Antigravity CLI",
-		CLI:         "agy",
-		VersionArgs: []string{"--version"},
-		DocsURL:     "https://antigravity.google/docs",
+		ID:           "antigravity",
+		Label:        "Antigravity CLI",
+		CLI:          "agy",
+		VersionArgs:  []string{"--version"},
+		DocsURL:      "https://antigravity.google/docs",
+		ModelFlag:    "--model",
+		EffortFlag:   "--effort",
+		EffortLevels: []string{"low", "medium", "high", "max"},
+		ListModels:   listAntigravityModels,
 	},
 	{
 		// Copilot is accessed via the gh CLI extension

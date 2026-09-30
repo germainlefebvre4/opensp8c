@@ -92,6 +92,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 	specializationsHandler := handlers.NewSpecializationsHandler(prefsSvc)
 	poolHandler := handlers.NewPoolHandler(wsHandler, poolRegistry)
+	wsSettingsHandler := handlers.NewWorkspaceSettingsHandler(wsHandler, prefsSvc)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(jsonContentType)
@@ -107,6 +108,9 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 			r.Post("/stop", poolHandler.StopPool)
 			r.Get("/status", poolHandler.GetPoolStatus)
 		})
+
+		r.Get("/workspaces/{id}/settings", wsSettingsHandler.Get)
+		r.Patch("/workspaces/{id}/settings", wsSettingsHandler.Patch)
 
 		r.Get("/workspaces/{id}/changes", kanbanHandler.ListChanges)
 		r.Get("/workspaces/{id}/changes/{name}", kanbanHandler.GetChange)
@@ -151,6 +155,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Get("/workspaces/{id}/events", eventsHandler.HandleSSE)
 
 		r.Get("/agents", prefsHandler.ListAgents)
+		r.Get("/agents/models", prefsHandler.ListAgentModels)
 		r.Get("/preferences", prefsHandler.GetPreferences)
 		r.Patch("/preferences", prefsHandler.PatchPreferences)
 		r.Get("/agent-specializations", specializationsHandler.GetAgentSpecializations)

@@ -1,0 +1,17 @@
+schema: spec-driven
+created: "2026-09-29"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 1
+    components:
+        - activity-timeline
+        - change-tags
+    agent_specialization:
+        - frontend
+        - backend
+        - testing
+    _auto: true
+    _tagged_at: "2026-09-29"
+launched: false

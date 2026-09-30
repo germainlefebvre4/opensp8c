@@ -40,7 +40,10 @@ function AppRoutes() {
             path="/agents"
             element={workspaceId ? <AgentsPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/settings"
+            element={workspaceId ? <SettingsPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
+          />
           <Route path="/configuration" element={<ConfigurationPage />} />
         </Routes>
       )}

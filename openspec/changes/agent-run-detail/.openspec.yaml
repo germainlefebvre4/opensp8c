@@ -1,0 +1,21 @@
+schema: spec-driven
+created: "2026-09-29"
+tags:
+    type: []
+    complexity: 4
+    components:
+        - agent-run-detail
+        - workspace-agent-pool-tab
+        - agent-pool-real-execution
+        - conversation-store
+        - workspace-events
+        - activity-timeline
+        - api-router
+        - agent-pool-status-visibility
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+    _auto: true
+    _tagged_at: "2026-09-29"
+launched: false

@@ -312,17 +312,30 @@ func (m *Manager) resolveAgentFromID(agentID string) resolvedAgent {
 	return resolvedAgent{config: cfg, status: status}
 }
 
-func (m *Manager) resolveAgent(workspaceID, changeName string) resolvedAgent {
-	agentID := ""
-	if changeName != "" {
-		agentID = m.prefs.GetSession(workspaceID, changeName).Agent
+// resolveRole resolves the agent for a role and applies its model and effort.
+// lockedAgent, when non-empty, takes precedence over the configured agent. When
+// the resolved agent is not installed the fallback agent is used and
+// model/effort are re-resolved for it.
+func (m *Manager) resolveRole(workspaceID string, role preferences.Role, lockedAgent string) resolvedAgent {
+	var p *preferences.Preferences
+	if m.prefs != nil {
+		if loaded, err := m.prefs.Load(); err == nil {
+			p = loaded
+		}
 	}
-	return m.resolveAgentFromID(agentID)
+	res := p.ResolveRole(workspaceID, role, lockedAgent)
+	r := m.resolveAgentFromID(res.Agent)
+	if r.config.ID != res.Agent {
+		res = p.ResolveRole(workspaceID, role, r.config.ID)
+	}
+	r.config = preferences.ApplyRole(r.config, res)
+	return r
 }
 
-func (m *Manager) ResolveAgentConfig(workspaceID, changeName string) agents.AgentConfig {
-	r := m.resolveAgent(workspaceID, changeName)
-	return r.config
+// ResolveRoleConfig returns the agent configuration, with model and effort
+// applied, for a subprocess launched for role in workspaceID.
+func (m *Manager) ResolveRoleConfig(workspaceID string, role preferences.Role) agents.AgentConfig {
+	return m.resolveRole(workspaceID, role, "").config
 }
 
 func injectAgentInfo(s *Session, r resolvedAgent) {
@@ -365,7 +378,7 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 
 	// Read persisted session entry (agent + claudeSessionId)
 	entry := m.prefs.GetSession(workspaceID, changeName)
-	resolved := m.resolveAgentFromID(entry.Agent)
+	resolved := m.resolveRole(workspaceID, preferences.RoleExplorer, entry.Agent)
 
 	claudeSessionID := entry.ClaudeSessionId
 	isResume := claudeSessionID != ""
@@ -391,7 +404,7 @@ func (m *Manager) Start(workspaceID, changeName, workspacePath string) (*Session
 	nativeQuestionMode := false
 	langDirective := language.Directive(language.Chat, language.Resolve(language.Levels{}, ""))
 	if p, err := m.prefs.Load(); err == nil && p != nil {
-		customEnv = p.EnvFor(resolved.config.ID)
+		customEnv = p.EnvForWorkspace(workspaceID, resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
 		langDirective = p.LanguageDirective(language.Chat)
 	}
@@ -514,7 +527,7 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 	}
 	m.mu.Unlock()
 
-	resolved := m.resolveAgent(workspaceID, "")
+	resolved := m.resolveRole(workspaceID, preferences.RoleExplorer, "")
 
 	// A subprocess restart reusing an existing ghost id is this function's
 	// equivalent of Start's --resume: capture the most recent prior run's
@@ -536,7 +549,7 @@ func (m *Manager) StartAnonymous(workspaceID, workspacePath, sessionID string) (
 	nativeQuestionMode := false
 	langDirective := language.Directive(language.Chat, language.Resolve(language.Levels{}, ""))
 	if p, err := m.prefs.Load(); err == nil && p != nil {
-		customEnv = p.EnvFor(resolved.config.ID)
+		customEnv = p.EnvForWorkspace(workspaceID, resolved.config.ID)
 		nativeQuestionMode = p.NativeQuestionMode
 		langDirective = p.LanguageDirective(language.Chat)
 	}

@@ -3,6 +3,8 @@ package pool
 import (
 	"context"
 	"time"
+
+	"github.com/glefebvre/opensp8c/internal/preferences"
 )
 
 type DelegationMode string
@@ -41,4 +43,16 @@ type Worker struct {
 	DelegationMode DelegationMode     `json:"delegation_mode"`
 	StartedAt      time.Time          `json:"started_at"`
 	CancelFunc     context.CancelFunc `json:"-"`
+	// Role selects the agent/model/effort settings of the worker's subprocess.
+	// Empty means implementer; a worker restarted after "Demander des
+	// corrections" is created with RoleFixer.
+	Role preferences.Role `json:"-"`
+}
+
+// role returns the effective role of the worker.
+func (w *Worker) role() preferences.Role {
+	if w.Role == "" {
+		return preferences.RoleImplementer
+	}
+	return w.Role
 }

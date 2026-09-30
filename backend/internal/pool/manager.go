@@ -63,6 +63,23 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 		return fmt.Errorf("pool is already running")
 	}
 
+	// Omitted fields are completed from the resolved (workspace, then
+	// Configuration) pool settings; explicit request values win and nothing
+	// is persisted.
+	if m.prefs != nil {
+		if p, err := m.prefs.Load(); err == nil {
+			resolved := p.ResolvePool(workspaceID)
+			if cfg.Size <= 0 {
+				cfg.Size = resolved.Size
+			}
+			if cfg.DelegationMode == "" {
+				cfg.DelegationMode = DelegationMode(resolved.DelegationMode)
+			}
+			if cfg.MaxAttempts <= 0 {
+				cfg.MaxAttempts = resolved.MaxAttempts
+			}
+		}
+	}
 	if cfg.Size <= 0 {
 		cfg.Size = 1
 	}

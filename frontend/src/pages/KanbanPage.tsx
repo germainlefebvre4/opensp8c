@@ -571,6 +571,7 @@ export function KanbanPage({ workspaceId }: Props) {
         )}
 
         <AgentPoolModal
+          workspaceId={workspaceId}
           isOpen={isPoolModalOpen}
           onClose={() => setIsPoolModalOpen(false)}
           onStart={handleStartPool}

@@ -704,7 +704,7 @@ func (h *ExploreHandler) PromoteGhost(w http.ResponseWriter, r *http.Request) {
 func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspacePath, explorationContext string) {
 	var cfg agents.AgentConfig
 	if h.mgr != nil {
-		cfg = h.mgr.ResolveAgentConfig(workspaceID, "")
+		cfg = h.mgr.ResolveRoleConfig(workspaceID, preferences.RoleFF)
 	} else {
 		var ok bool
 		cfg, ok = agents.ByID("claude")
@@ -748,7 +748,7 @@ func (h *ExploreHandler) runPromoteFF(workspaceID, ghostID, ghostName, workspace
 	langDirective := language.Directive(language.Docs, language.Resolve(language.Levels{}, ""))
 	if h.prefs != nil {
 		if p, err := h.prefs.Load(); err == nil && p != nil {
-			customEnv = p.EnvFor(cfg.ID)
+			customEnv = p.EnvForWorkspace(workspaceID, cfg.ID)
 			langDirective = p.LanguageDirective(language.Docs)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/docsgen"
 	"github.com/glefebvre/opensp8c/internal/language"
+	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 	"github.com/go-chi/chi/v5"
@@ -153,7 +154,7 @@ func (h *DocsHandler) TriggerGenerate(w http.ResponseWriter, r *http.Request) {
 
 	var cfg agents.AgentConfig
 	if h.mgr != nil {
-		cfg = h.mgr.ResolveAgentConfig(wsID, "")
+		cfg = h.mgr.ResolveRoleConfig(wsID, preferences.RoleDocumenter)
 	} else {
 		var ok bool
 		cfg, ok = agents.ByID("claude")
@@ -175,7 +176,7 @@ func (h *DocsHandler) TriggerGenerate(w http.ResponseWriter, r *http.Request) {
 	langDirective := language.Directive(language.Docs, language.Resolve(language.Levels{}, ""))
 	if h.mgr != nil && h.mgr.Prefs() != nil {
 		if p, err := h.mgr.Prefs().Load(); err == nil && p != nil {
-			customEnv = p.EnvFor(cfg.ID)
+			customEnv = p.EnvForWorkspace(wsID, cfg.ID)
 			langDirective = p.LanguageDirective(language.Docs)
 		}
 	}

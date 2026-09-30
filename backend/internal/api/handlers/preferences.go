@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 
@@ -62,6 +63,9 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		levels.Code = language.Default
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
+		"agentSettings":         storedView(p, ""),
+		"resolvedAgentSettings": resolveView(p, ""),
+		"poolDefaults":          p.ResolvePool(""),
 		"agentLanguages": map[string]string{
 			"chat":          levels.Chat,
 			"documentation": levels.Documentation,
@@ -90,7 +94,9 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 			Documentation *string `json:"documentation"`
 			Code          *string `json:"code"`
 		} `json:"agentLanguages"`
-		UILocale *string `json:"uiLocale"`
+		UILocale      *string                         `json:"uiLocale"`
+		AgentSettings *preferences.AgentSettingsPatch `json:"agentSettings"`
+		PoolDefaults  *preferences.PoolPatch          `json:"poolDefaults"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -127,6 +133,16 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 			http.Error(w, "invalid ui locale", http.StatusBadRequest)
 			return
 		}
+	}
+
+	if err := h.prefs.ValidateGlobalUpdate(body.AgentSettings, body.PoolDefaults); err != nil {
+		var ve *preferences.ValidationError
+		if errors.As(err, &ve) {
+			http.Error(w, ve.Msg, http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "failed to load preferences", http.StatusInternalServerError)
+		return
 	}
 
 	if body.DefaultAgent != "" {
@@ -181,6 +197,20 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	if body.AgentSettings != nil {
+		if err := h.prefs.SetAgentSettings(*body.AgentSettings); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.PoolDefaults != nil {
+		if err := h.prefs.SetPoolDefaults(*body.PoolDefaults); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if body.UILocale != nil {
 		if err := h.prefs.SetUILocale(*body.UILocale); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
@@ -189,4 +219,34 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type agentModelsView struct {
+	Models         []agents.Model `json:"models"`
+	EffortLevels   []string       `json:"effortLevels"`
+	SupportsModel  bool           `json:"supportsModel"`
+	SupportsEffort bool           `json:"supportsEffort"`
+}
+
+// ListAgentModels returns the model catalog and effort levels of each agent,
+// keyed by agent id. Discovery failures silently fall back to the seed list.
+func (h *PreferencesHandler) ListAgentModels(w http.ResponseWriter, r *http.Request) {
+	out := make(map[string]agentModelsView, len(agents.SupportedAgents))
+	for _, a := range agents.SupportedAgents {
+		models := a.Models(r.Context())
+		if models == nil {
+			models = []agents.Model{}
+		}
+		levels := a.EffortLevels
+		if levels == nil || !a.SupportsEffort() {
+			levels = []string{}
+		}
+		out[a.ID] = agentModelsView{
+			Models:         models,
+			EffortLevels:   levels,
+			SupportsModel:  a.SupportsModel(),
+			SupportsEffort: a.SupportsEffort(),
+		}
+	}
+	json.NewEncoder(w).Encode(out)
 }

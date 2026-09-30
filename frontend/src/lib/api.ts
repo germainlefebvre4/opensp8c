@@ -55,8 +55,111 @@ export interface AgentLanguagesPatch {
   uiLocale?: string
 }
 
+export type Role = 'explorer' | 'ff' | 'implementer' | 'fixer' | 'documenter'
+export const ROLES: Role[] = ['explorer', 'ff', 'implementer', 'fixer', 'documenter']
+
+// One level of agent/model/effort; an empty or absent field means "inherit".
+export interface RoleSetting {
+  agent?: string
+  model?: string
+  effort?: string
+}
+
+export interface AgentSettings {
+  global: RoleSetting
+  roles: Record<Role, RoleSetting>
+}
+
+export interface ResolvedRole {
+  agent: string
+  model: string
+  effort: string
+}
+
+export interface ResolvedSettings {
+  global: ResolvedRole
+  roles: Record<Role, ResolvedRole>
+}
+
+export type DelegationMode = 'full-autonomy' | 'hitl-review'
+
+export interface PoolSettings {
+  size: number
+  delegationMode: DelegationMode
+  maxAttempts: number
+}
+
+// Partial per-workspace pool override; absent field = inherit.
+export type PoolOverride = Partial<PoolSettings>
+
+// null resets a field to inheritance.
+export interface RoleSettingPatch {
+  agent?: string | null
+  model?: string | null
+  effort?: string | null
+}
+
+export interface AgentSettingsPatch {
+  global?: RoleSettingPatch
+  roles?: Partial<Record<Role, RoleSettingPatch | null>>
+}
+
+export interface PoolPatch {
+  size?: number | null
+  delegationMode?: DelegationMode | null
+  maxAttempts?: number | null
+}
+
+export interface GlobalSettingsPatch {
+  agentSettings?: AgentSettingsPatch
+  poolDefaults?: PoolPatch
+}
+
+export interface AgentModel {
+  id: string
+  label: string
+  source: 'seed' | 'cli'
+}
+
+export interface AgentModelCatalogEntry {
+  models: AgentModel[]
+  effortLevels: string[]
+  supportsModel: boolean
+  supportsEffort: boolean
+}
+
+export type AgentModelCatalog = Record<string, AgentModelCatalogEntry>
+
+export interface WorkspaceSettings {
+  overrides: {
+    agentSettings: AgentSettings
+    pool: PoolOverride
+    env: Record<string, string>
+    agentEnv: Record<string, Record<string, string>>
+  }
+  inherited: {
+    agentSettings: ResolvedSettings
+    pool: PoolSettings
+    env: Record<string, string>
+    agentEnv: Record<string, Record<string, string>>
+  }
+  resolved: {
+    agentSettings: ResolvedSettings
+    pool: PoolSettings
+  }
+}
+
+export interface WorkspaceSettingsPatch extends GlobalSettingsPatch {
+  pool?: PoolPatch
+  env?: Record<string, string>
+  agentEnv?: Record<string, Record<string, string>>
+}
+
 export interface Preferences {
   defaultAgent: string
+  agentSettings?: AgentSettings
+  resolvedAgentSettings?: ResolvedSettings
+  poolDefaults?: PoolSettings
   env: Record<string, string>
   agentEnv?: Record<string, Record<string, string>>
   systemEnv?: Record<string, string>
@@ -78,8 +181,18 @@ export const getAgents = () =>
 export const getPreferences = () =>
   api.get<Preferences>('/api/preferences').then(r => r.data)
 
-export const patchPreferences = (data: Omit<Partial<Preferences>, 'agentLanguages'> & AgentLanguagesPatch) =>
-  api.patch('/api/preferences', data)
+export const patchPreferences = (
+  data: Omit<Partial<Preferences>, 'agentLanguages' | 'agentSettings' | 'poolDefaults'> & AgentLanguagesPatch & GlobalSettingsPatch,
+) => api.patch('/api/preferences', data)
+
+export const getAgentModels = () =>
+  api.get<AgentModelCatalog>('/api/agents/models').then(r => r.data)
+
+export const getWorkspaceSettings = (workspaceId: string) =>
+  api.get<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`).then(r => r.data)
+
+export const patchWorkspaceSettings = (workspaceId: string, patch: WorkspaceSettingsPatch) =>
+  api.patch<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`, patch).then(r => r.data)
 
 export const getAgentSpecializations = () =>
   api.get<AgentSpecializations>('/api/agent-specializations').then(r => r.data)

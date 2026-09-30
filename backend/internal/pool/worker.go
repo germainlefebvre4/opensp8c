@@ -83,14 +83,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 	var agentCfg agents.AgentConfig
 	if m.sessionMgr != nil {
-		agentCfg = m.sessionMgr.ResolveAgentConfig(w.WorkspaceID, w.ActiveChange)
+		agentCfg = m.sessionMgr.ResolveRoleConfig(w.WorkspaceID, w.role())
 	}
 
 	var customEnv map[string]string
 	langDirective := language.Directive(language.Worker, language.Resolve(language.Levels{}, ""))
 	if m.prefs != nil {
 		if p, err := m.prefs.Load(); err == nil && p != nil {
-			customEnv = p.EnvFor(agentCfg.ID)
+			customEnv = p.EnvForWorkspace(w.WorkspaceID, agentCfg.ID)
 			langDirective = p.LanguageDirective(language.Worker)
 		}
 	}

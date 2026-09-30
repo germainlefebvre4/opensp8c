@@ -83,3 +83,106 @@ func TestDetectAll_ExposesDocsURL(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportedAgents_Capabilities(t *testing.T) {
+	cases := []struct {
+		id, modelFlag, effortFlag string
+		levels                    []string
+	}{
+		{"claude", "--model", "--effort", []string{"low", "medium", "high", "xhigh", "max"}},
+		{"antigravity", "--model", "--effort", []string{"low", "medium", "high", "max"}},
+		{"gemini", "-m", "", nil},
+		{"codex", "-m", "", nil},
+		{"copilot", "", "", nil},
+	}
+	for _, c := range cases {
+		a, ok := ByID(c.id)
+		if !ok {
+			t.Fatalf("missing agent %s", c.id)
+		}
+		if a.ModelFlag != c.modelFlag || a.EffortFlag != c.effortFlag || !reflect.DeepEqual(a.EffortLevels, c.levels) {
+			t.Errorf("%s: unexpected capabilities %q %q %v", c.id, a.ModelFlag, a.EffortFlag, a.EffortLevels)
+		}
+		if a.SupportsModel() != (c.modelFlag != "") || a.SupportsEffort() != (c.effortFlag != "") {
+			t.Errorf("%s: unexpected Supports*", c.id)
+		}
+	}
+	claude, _ := ByID("claude")
+	ids := map[string]bool{}
+	for _, m := range claude.SeedModels {
+		ids[m.ID] = true
+	}
+	for _, want := range []string{"fable", "opus", "sonnet", "haiku"} {
+		if !ids[want] {
+			t.Errorf("claude seed missing %s", want)
+		}
+	}
+	gemini, _ := ByID("gemini")
+	if len(gemini.SeedModels) != 4 {
+		t.Errorf("gemini seed: %v", gemini.SeedModels)
+	}
+	for _, a := range SupportedAgents {
+		if len(a.SeedModels) > 0 && a.ModelFlag == "" {
+			t.Errorf("%s has seed models without a model flag", a.ID)
+		}
+	}
+}
+
+func withModelEffort(id, model, effort string) AgentConfig {
+	a, _ := ByID(id)
+	a.Model, a.Effort = model, effort
+	return a
+}
+
+func containsPair(args []string, k, v string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == k && args[i+1] == v {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildSubprocessArgs_ModelAndEffort(t *testing.T) {
+	args := withModelEffort("claude", "sonnet", "medium").BuildSubprocessArgs("b", "")
+	if !containsPair(args, "--model", "sonnet") || !containsPair(args, "--effort", "medium") {
+		t.Errorf("claude args: %v", args)
+	}
+	// model precedes effort
+	if len(args) < 4 || args[len(args)-4] != "--model" {
+		t.Errorf("model/effort should end the args: %v", args)
+	}
+
+	args = withModelEffort("codex", "gpt-5.5", "high").BuildSubprocessArgs("b", "")
+	if !containsPair(args, "-m", "gpt-5.5") {
+		t.Errorf("codex args: %v", args)
+	}
+	for _, a := range args {
+		if a == "--effort" || a == "high" {
+			t.Errorf("codex must not receive effort: %v", args)
+		}
+	}
+
+	args = withModelEffort("claude", "", "").BuildSubprocessArgs("b", "")
+	for _, a := range args {
+		if a == "--model" || a == "--effort" {
+			t.Errorf("empty values must not add flags: %v", args)
+		}
+	}
+
+	args = withModelEffort("copilot", "x", "high").BuildSubprocessArgs("b", "")
+	for _, a := range args {
+		if a == "--model" || a == "-m" || a == "--effort" {
+			t.Errorf("copilot must not receive flags: %v", args)
+		}
+	}
+
+	args = withModelEffort("gemini", "flash", "high").BuildSubprocessArgs("b", "")
+	if !containsPair(args, "-m", "flash") {
+		t.Errorf("gemini args: %v", args)
+	}
+	args = withModelEffort("antigravity", "m1", "max").BuildSubprocessArgs("b", "")
+	if !containsPair(args, "--model", "m1") || !containsPair(args, "--effort", "max") {
+		t.Errorf("agy args: %v", args)
+	}
+}

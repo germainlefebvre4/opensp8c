@@ -2,6 +2,7 @@
   "title": "Configuration",
   "tabs": {
     "agentPool": "Agent Pool",
+    "columns": "Columns",
     "cli": "CLI",
     "language": "Language"
   },
@@ -52,5 +53,70 @@
         "hint": "Identifiers, comments, commit messages, error messages and visible text."
       }
     }
+  },
+  "columnsTab": {
+    "description": "Agent, model and reasoning effort used for each kind of agent launch. An empty field inherits from the row above; the global row is the base for every role."
+  },
+  "roleSettings": {
+    "table": {
+      "role": "Role",
+      "column": "Kanban stage",
+      "agent": "Agent",
+      "model": "Model",
+      "effort": "Effort"
+    },
+    "rows": {
+      "global": {
+        "label": "All roles",
+        "column": "Base for every role"
+      },
+      "explorer": {
+        "label": "Exploration",
+        "column": "To Explore (chat)"
+      },
+      "ff": {
+        "label": "Fast-forward",
+        "column": "To Explore → Ready (artifact generation)"
+      },
+      "implementer": {
+        "label": "Implementation",
+        "column": "To Do → In Progress"
+      },
+      "fixer": {
+        "label": "Corrections",
+        "column": "To Review"
+      },
+      "documenter": {
+        "label": "Documentation",
+        "column": "Timeline › Documentation"
+      }
+    },
+    "fixerNote": "Only applies to a worker restarted after \"Request corrections\" in the review. The self-healing loop keeps the Implementation settings.",
+    "agentInherit": "Inherit",
+    "cliDefault": "CLI default",
+    "modelPlaceholder": "Model id",
+    "modelUnsupported": "The model flag of this agent's CLI is not validated by the platform, so the model cannot be set.",
+    "effortInherit": "Inherit",
+    "inheritedValue": "Inherited: {{value}}",
+    "defaultValue": "Default: {{value}}",
+    "override": "Override",
+    "reset": "Reset to inherited",
+    "save": "Save",
+    "saving": "Saving…"
+  },
+  "poolSettings": {
+    "title": "Agent Pool defaults",
+    "workspaceTitle": "Agent Pool for this workspace",
+    "description": "Values the launch dialog is pre-filled with. You can still adjust them for a single launch.",
+    "size": "Parallel workers",
+    "sizeInvalid": "Enter a whole number between 1 and 5.",
+    "delegationMode": "Delegation mode",
+    "maxAttempts": "Max self-healing attempts",
+    "attemptsInvalid": "Enter a whole number between 1 and 10.",
+    "inheritOption": "Inherit ({{value}})",
+    "inherited": "Inherited: {{value}}",
+    "override": "Override",
+    "reset": "Reset to inherited",
+    "save": "Save"
   }
 }

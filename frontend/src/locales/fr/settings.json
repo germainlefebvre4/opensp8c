@@ -10,5 +10,26 @@
     "add": "Ajouter",
     "removeTooltip": "Supprimer ce tag",
     "invalidFormat": "Utilisez uniquement du kebab-case (lettres minuscules, chiffres, tirets)."
+  },
+  "workspaceLabel": "Workspace : {{name}}",
+  "tabs": {
+    "agentPool": "Agent Pool",
+    "columns": "Colonnes",
+    "environment": "Environnement",
+    "specializations": "Spécialisations"
+  },
+  "agentPoolTab": {
+    "description": "Surcharge Configuration pour ce workspace uniquement. Les champs vides suivent les défauts de Configuration."
+  },
+  "columnsTab": {
+    "description": "Agent, modèle et effort par rôle pour ce workspace. Les champs laissés vides suivent Configuration."
+  },
+  "environment": {
+    "description": "Variables d'environnement injectées dans les processus d'agents lancés pour ce workspace. Elles surchargent celles de Configuration.",
+    "global": "Variables du workspace",
+    "perAgent": "Variables pour l'agent",
+    "inherited": "Héritées de Configuration",
+    "noneInherited": "Aucune",
+    "save": "Enregistrer"
   }
 }

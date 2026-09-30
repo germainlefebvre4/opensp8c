@@ -69,3 +69,19 @@ Lorsque le mode de délégation est configuré sur `hitl-review` et qu'un change
 #### Scenario: Demande de corrections avec feedback textuel
 - **WHEN** l'utilisateur écrit un retour dans le champ de feedback et clique sur "Demander des Corrections"
 - **THEN** l'application envoie le feedback au backend, qui repasse la carte du changement en colonne "In Progress", relance le worker associé avec le feedback injecté dans son invite système, et ferme le panneau de review
+
+### Requirement: Modale de lancement pré-remplie avec la configuration résolue
+La modale de configuration et de lancement du pool SHALL être pré-remplie avec la configuration résolue du workspace (défauts de Configuration et surcharges du workspace) pour la taille du pool, le mode de délégation et le nombre de tentatives. L'utilisateur SHALL pouvoir ajuster ces valeurs pour le lancement en cours sans modifier les valeurs enregistrées.
+
+#### Scenario: Pré-remplissage avec une surcharge
+- **WHEN** le workspace surcharge la taille du pool à 4 et que l'utilisateur ouvre la modale de lancement
+- **THEN** le sélecteur de taille affiche 4 et le mode affiché est celui résolu pour ce workspace
+
+#### Scenario: Ajustement ponctuel
+- **WHEN** l'utilisateur change la taille à 2 dans la modale et clique sur « Démarrer »
+- **THEN** le pool démarre avec une taille de 2
+- **THEN** la surcharge enregistrée du workspace reste à 4
+
+#### Scenario: Workspace sans surcharge
+- **WHEN** le workspace n'a aucune surcharge et que Configuration fixe la taille par défaut à 2
+- **THEN** la modale affiche une taille de 2

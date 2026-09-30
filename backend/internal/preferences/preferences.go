@@ -54,6 +54,9 @@ type Preferences struct {
 	CustomAgentSpecializations []string                     `json:"customAgentSpecializations,omitempty"`
 	AgentLanguages             *AgentLanguages              `json:"agentLanguages,omitempty"`
 	UILocale                   string                       `json:"uiLocale,omitempty"`
+	AgentSettings              *AgentSettings               `json:"agentSettings,omitempty"` // Per-role agent/model/effort (Configuration level)
+	PoolDefaults               *PoolSettings                `json:"poolDefaults,omitempty"`
+	Workspaces                 map[string]*WorkspacePrefs   `json:"workspaces,omitempty"` // Overrides keyed by workspace stable id
 }
 
 type Service struct {
@@ -134,16 +137,10 @@ func migrateGeminiEnv(p *Preferences) bool {
 	return moved
 }
 
-// EnvFor returns the global env overlaid with the agent-specific env.
+// EnvFor returns the global env overlaid with the agent-specific env, for
+// callers without a workspace context.
 func (p *Preferences) EnvFor(agentID string) map[string]string {
-	out := make(map[string]string, len(p.Env))
-	for k, v := range p.Env {
-		out[k] = v
-	}
-	for k, v := range p.AgentEnv[agentID] {
-		out[k] = v
-	}
-	return out
+	return p.EnvForWorkspace("", agentID)
 }
 
 // LanguageLevels returns the raw stored settings; safe on a nil receiver.

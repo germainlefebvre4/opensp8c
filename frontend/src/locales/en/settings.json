@@ -10,5 +10,26 @@
     "add": "Add",
     "removeTooltip": "Remove this tag",
     "invalidFormat": "Use kebab-case only (lowercase letters, digits, hyphens)."
+  },
+  "workspaceLabel": "Workspace: {{name}}",
+  "tabs": {
+    "agentPool": "Agent Pool",
+    "columns": "Columns",
+    "environment": "Environment",
+    "specializations": "Specializations"
+  },
+  "agentPoolTab": {
+    "description": "Overrides Configuration for this workspace only. Empty fields follow the Configuration defaults."
+  },
+  "columnsTab": {
+    "description": "Agent, model and effort per role for this workspace. Fields you leave empty follow Configuration."
+  },
+  "environment": {
+    "description": "Environment variables injected into agent processes launched for this workspace. They override those of Configuration.",
+    "global": "Workspace variables",
+    "perAgent": "Variables for agent",
+    "inherited": "Inherited from Configuration",
+    "noneInherited": "None",
+    "save": "Save"
   }
 }

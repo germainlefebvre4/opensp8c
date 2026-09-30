@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { Settings as SettingsIcon, Plus, Trash2, Check, PenLine, ArrowLeft, ExternalLink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
+import { useAgents, useAgentModels, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { deriveCliFormState, deriveAgentFormState, GEMINI_RECOMMENDED_KEYS } from '../lib/cliSettings'
 import type { EnvVar } from '../lib/cliSettings'
 import type { AgentLanguageLevel, AgentLanguages, SupportedLanguage } from '../lib/api'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { RoleSettingsTable } from '../components/RoleSettingsTable'
+import { AgentPoolSettingsForm } from '../components/AgentPoolSettingsForm'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
 import type { WorkerStatus } from '../hooks/usePoolStatus'
@@ -151,7 +153,7 @@ export function AgentsRegistryTab() {
   )
 }
 
-function varsToEnv(vars: EnvVar[]): Record<string, string> {
+export function varsToEnv(vars: EnvVar[]): Record<string, string> {
   const env: Record<string, string> = {}
   vars.forEach(({ key, value }) => {
     if (key.trim()) env[key.trim()] = value.trim()
@@ -491,15 +493,55 @@ export function LanguageTab() {
   )
 }
 
+// Platform-wide defaults of the pool launch dialog (workspaces can override them in Settings).
+export function PoolDefaultsSection() {
+  const { data: prefs } = usePreferences()
+  const patch = usePatchPreferences()
+
+  return (
+    <AgentPoolSettingsForm
+      scope="global"
+      values={prefs?.poolDefaults}
+      isSaving={patch.isPending}
+      onSave={poolDefaults => patch.mutateAsync({ poolDefaults })}
+    />
+  )
+}
+
+export function ColumnsTab() {
+  const { t } = useTranslation('configuration')
+  const { data: agents = [] } = useAgents()
+  const { data: catalog } = useAgentModels()
+  const { data: prefs } = usePreferences()
+  const patch = usePatchPreferences()
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[11px] text-slate-400 max-w-2xl">{t('columnsTab.description')}</p>
+      <RoleSettingsTable
+        scope="global"
+        settings={prefs?.agentSettings}
+        resolved={prefs?.resolvedAgentSettings}
+        agents={agents}
+        catalog={catalog}
+        isSaving={patch.isPending}
+        onSave={agentSettings => patch.mutateAsync({ agentSettings })}
+      />
+    </div>
+  )
+}
+
+type ConfigurationTab = 'agent-pool' | 'columns' | 'cli' | 'language'
+
 export function ConfigurationPage() {
   const { t } = useTranslation('configuration')
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const tab: 'agent-pool' | 'cli' | 'language' =
-    tabParam === 'cli' ? 'cli' : tabParam === 'language' ? 'language' : 'agent-pool'
+  const tab: ConfigurationTab =
+    tabParam === 'cli' ? 'cli' : tabParam === 'language' ? 'language' : tabParam === 'columns' ? 'columns' : 'agent-pool'
   const agentId = searchParams.get('agent')
 
-  const setTab = (next: 'agent-pool' | 'cli' | 'language') => {
+  const setTab = (next: ConfigurationTab) => {
     setSearchParams(next === 'agent-pool' ? {} : { tab: next })
   }
 
@@ -513,6 +555,7 @@ export function ConfigurationPage() {
       <div className="shrink-0 px-6 pt-3 flex gap-4 border-b border-slate-100">
         {([
           { id: 'agent-pool', label: t('tabs.agentPool') },
+          { id: 'columns', label: t('tabs.columns') },
           { id: 'cli', label: t('tabs.cli') },
           { id: 'language', label: t('tabs.language') },
         ] as const).map(({ id, label }) => (
@@ -533,7 +576,13 @@ export function ConfigurationPage() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'agent-pool' ? (
-          <AgentPoolTab />
+          <div className="flex flex-col gap-8">
+            <PoolDefaultsSection />
+            <div className="h-px bg-slate-100" />
+            <AgentPoolTab />
+          </div>
+        ) : tab === 'columns' ? (
+          <ColumnsTab />
         ) : tab === 'language' ? (
           <LanguageTab />
         ) : agentId ? (

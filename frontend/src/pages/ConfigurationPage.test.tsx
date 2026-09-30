@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage, LanguageTab, buildLanguagePatch } from './ConfigurationPage'
-import { useAgents, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
+import { useAgents, useAgentModels, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AllPoolsStatus } from '../hooks/useAllPools'
 import type { AgentStatus, Preferences } from '../lib/api'
@@ -13,6 +13,7 @@ import frDialogs from '../locales/fr/dialogs.json'
 
 vi.mock('../hooks/useAgentPreferences', () => ({
   useAgents: vi.fn(),
+  useAgentModels: vi.fn(),
   usePreferences: vi.fn(),
   usePatchPreferences: vi.fn(),
 }))
@@ -29,6 +30,19 @@ void i18n.use(initReactI18next).init({
   resources: { fr: { configuration: frConfiguration, dialogs: frDialogs } },
   interpolation: { escapeValue: false },
 })
+
+function mockCatalog() {
+  vi.mocked(useAgentModels).mockReturnValue({
+    data: {
+      claude: {
+        models: [{ id: 'opus', label: 'Opus', source: 'seed' }],
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+        supportsModel: true,
+        supportsEffort: true,
+      },
+    },
+  } as unknown as ReturnType<typeof useAgentModels>)
+}
 
 function mockAgents(agents: AgentStatus[]) {
   vi.mocked(useAgents).mockReturnValue({ data: agents } as ReturnType<typeof useAgents>)
@@ -360,5 +374,64 @@ describe('LanguageTab agent language settings', () => {
 describe('buildLanguagePatch', () => {
   it('produces a partial update touching a single level', () => {
     expect(buildLanguagePatch('documentation', 'fr')).toEqual({ agentLanguages: { documentation: 'fr' } })
+  })
+})
+
+describe('ConfigurationPage columns tab and pool defaults', () => {
+  const resolved = {
+    global: { agent: 'claude', model: '', effort: '' },
+    roles: {
+      explorer: { agent: 'claude', model: 'opus', effort: 'high' },
+      ff: { agent: 'claude', model: 'sonnet', effort: 'medium' },
+      implementer: { agent: 'claude', model: 'sonnet', effort: 'medium' },
+      fixer: { agent: 'claude', model: 'sonnet', effort: 'medium' },
+      documenter: { agent: 'claude', model: 'haiku', effort: 'low' },
+    },
+  }
+  const prefs: Preferences = {
+    defaultAgent: 'claude',
+    env: {},
+    agentSettings: {
+      global: {},
+      roles: { explorer: {}, ff: {}, implementer: {}, fixer: {}, documenter: {} },
+    },
+    resolvedAgentSettings: resolved,
+    poolDefaults: { size: 2, delegationMode: 'hitl-review', maxAttempts: 3 },
+  }
+
+  it('shows the Colonnes sub-tab with the role presets as defaults', () => {
+    mockAgents(AGENTS)
+    mockCatalog()
+    mockPreferences(prefs)
+    mockAllPools({ pools: [] })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/configuration?tab=columns']}>
+        <ConfigurationPage />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('Colonnes')
+    expect(html).toContain('placeholder="Défaut : opus"')
+    expect(html).toContain('placeholder="Défaut : haiku"')
+    expect(html).toContain('Tous les rôles')
+    expect(html).toContain('Documentation')
+  })
+
+  it('keeps the visibility view and adds the pool defaults on the Agent Pool tab', () => {
+    mockAgents(AGENTS)
+    mockCatalog()
+    mockPreferences(prefs)
+    mockAllPools({ pools: [] })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <ConfigurationPage />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('Défauts de l&#x27;Agent Pool')
+    expect(html).toContain('value="2"')
+    expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
   })
 })

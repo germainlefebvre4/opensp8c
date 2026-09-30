@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Play, ShieldAlert, Cpu, Square, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PoolStatus, WorkerStatus } from '../hooks/usePoolStatus'
+import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
 
 export interface AgentPoolConfig {
   size: number
@@ -10,6 +11,8 @@ export interface AgentPoolConfig {
 }
 
 interface Props {
+  // Workspace whose resolved pool settings pre-fill the launch form.
+  workspaceId?: string
   isOpen: boolean
   onClose: () => void
   onStart: (config: AgentPoolConfig) => void
@@ -25,11 +28,27 @@ const STATUS_BADGE_CLASSES: Record<WorkerStatus, string> = {
   paused: 'bg-red-50 text-red-600 border-red-200',
 }
 
-export function AgentPoolModal({ isOpen, onClose, onStart, onStop, poolStatus }: Props) {
+export function AgentPoolModal({ workspaceId, isOpen, onClose, onStart, onStop, poolStatus }: Props) {
   const { t } = useTranslation('dialogs')
   const { t: tCommon } = useTranslation('common')
-  const [size, setSize] = useState(3)
-  const [mode, setMode] = useState<'full-autonomy' | 'hitl-review'>('hitl-review')
+  const { data: settings } = useWorkspaceSettings(workspaceId)
+  const resolvedPool = settings?.resolved.pool
+
+  // Adjustments made in the dialog (null = untouched) apply to this launch
+  // only: nothing is written back to the workspace or Configuration.
+  const [sizeAdjust, setSizeAdjust] = useState<number | null>(null)
+  const [modeAdjust, setModeAdjust] = useState<'full-autonomy' | 'hitl-review' | null>(null)
+  const size = sizeAdjust ?? resolvedPool?.size ?? 3
+  const mode = modeAdjust ?? resolvedPool?.delegationMode ?? 'hitl-review'
+  const setSize = (update: (s: number) => number) => setSizeAdjust(update(size))
+  const setMode = setModeAdjust
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSizeAdjust(null)
+      setModeAdjust(null)
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -198,7 +217,7 @@ export function AgentPoolModal({ isOpen, onClose, onStart, onStop, poolStatus }:
           </button>
           <button
             onClick={() => {
-              onStart({ size, delegation_mode: mode, max_attempts: 3 })
+              onStart({ size, delegation_mode: mode, max_attempts: resolvedPool?.maxAttempts ?? 3 })
               onClose()
             }}
             className="flex items-center gap-2 px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors cursor-pointer"

@@ -2,6 +2,7 @@
   "title": "Configuration",
   "tabs": {
     "agentPool": "Agent Pool",
+    "columns": "Colonnes",
     "cli": "CLI",
     "language": "Langue"
   },
@@ -52,5 +53,70 @@
         "hint": "Identifiants, commentaires, messages de commit, messages d'erreur et textes visibles."
       }
     }
+  },
+  "columnsTab": {
+    "description": "Agent, modèle et effort de raisonnement utilisés pour chaque type de lancement d'agent. Un champ vide hérite de la ligne du dessus ; la ligne globale sert de base à tous les rôles."
+  },
+  "roleSettings": {
+    "table": {
+      "role": "Rôle",
+      "column": "Étape du Kanban",
+      "agent": "Agent",
+      "model": "Modèle",
+      "effort": "Effort"
+    },
+    "rows": {
+      "global": {
+        "label": "Tous les rôles",
+        "column": "Base de tous les rôles"
+      },
+      "explorer": {
+        "label": "Exploration",
+        "column": "To Explore (chat)"
+      },
+      "ff": {
+        "label": "Fast-forward",
+        "column": "To Explore → Ready (génération d'artéfacts)"
+      },
+      "implementer": {
+        "label": "Implémentation",
+        "column": "To Do → In Progress"
+      },
+      "fixer": {
+        "label": "Corrections",
+        "column": "À Revoir"
+      },
+      "documenter": {
+        "label": "Documentation",
+        "column": "Timeline › Documentation"
+      }
+    },
+    "fixerNote": "S'applique uniquement à un worker relancé après « Demander des corrections » en revue. La boucle d'auto-guérison conserve les réglages de l'implémentation.",
+    "agentInherit": "Hériter",
+    "cliDefault": "Défaut du CLI",
+    "modelPlaceholder": "Identifiant du modèle",
+    "modelUnsupported": "Le flag de modèle du CLI de cet agent n'est pas validé par la plateforme : le modèle ne peut pas être réglé.",
+    "effortInherit": "Hériter",
+    "inheritedValue": "Hérité : {{value}}",
+    "defaultValue": "Défaut : {{value}}",
+    "override": "Surcharge",
+    "reset": "Revenir à l'héritage",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…"
+  },
+  "poolSettings": {
+    "title": "Défauts de l'Agent Pool",
+    "workspaceTitle": "Agent Pool de ce workspace",
+    "description": "Valeurs avec lesquelles la modale de lancement est pré-remplie. Vous pouvez toujours les ajuster pour un seul lancement.",
+    "size": "Workers en parallèle",
+    "sizeInvalid": "Saisissez un entier entre 1 et 5.",
+    "delegationMode": "Mode de délégation",
+    "maxAttempts": "Tentatives d'auto-guérison max",
+    "attemptsInvalid": "Saisissez un entier entre 1 et 10.",
+    "inheritOption": "Hériter ({{value}})",
+    "inherited": "Hérité : {{value}}",
+    "override": "Surcharge",
+    "reset": "Revenir à l'héritage",
+    "save": "Enregistrer"
   }
 }
