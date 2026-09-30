@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
@@ -35,13 +36,25 @@ type Manager struct {
 	sessionMgr       *session.Manager
 	prefs            *preferences.Service
 	activityStore    *activity.Store
+	convStore        *conversation.Store
+
+	// workers tracks running runWorker goroutines so tests can wait for them
+	// after Stop (which only cancels them).
+	workers sync.WaitGroup
+
+	// runMu guards runThrottles, the per-change limiters of pool_run_appended.
+	runMu        sync.Mutex
+	runThrottles map[string]*runThrottle
+	// clock and afterFunc are seams for the run-event limiter.
+	clock     func() time.Time
+	afterFunc func(d time.Duration, f func()) stopper
 }
 
 // NewManager creates a new pool manager. broadcaster may be nil, in which
 // case pool state changes are simply not published as events. sessionMgr and
 // prefs are used to resolve which agent CLI (and custom env) to invoke for a
 // given workspace/change, the same resolution used by interactive sessions.
-func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store) *Manager {
+func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store, convStore *conversation.Store) *Manager {
 	return &Manager{
 		activeWorkers:    make(map[int]*Worker),
 		pausedWorkers:    make(map[int]*Worker),
@@ -50,6 +63,7 @@ func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *pre
 		sessionMgr:       sessionMgr,
 		prefs:            prefs,
 		activityStore:    actStore,
+		convStore:        convStore,
 	}
 }
 
@@ -102,6 +116,9 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 
 	return nil
 }
+
+// waitWorkers blocks until every started worker goroutine has returned.
+func (m *Manager) waitWorkers() { m.workers.Wait() }
 
 // Stop halts the orchestration loop and cancels all active workers.
 func (m *Manager) Stop() {
@@ -290,7 +307,11 @@ func (m *Manager) startWorker(changeName string) {
 	m.activeWorkers[id] = worker
 
 	// Start worker routine asynchronously
-	go m.runWorker(ctx, worker)
+	m.workers.Add(1)
+	go func() {
+		defer m.workers.Done()
+		m.runWorker(ctx, worker)
+	}()
 
 	m.broadcastLocked()
 }

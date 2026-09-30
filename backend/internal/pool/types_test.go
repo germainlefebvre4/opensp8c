@@ -39,3 +39,15 @@ func TestWorker_MarshalJSON_OmitsCancelFunc(t *testing.T) {
 		t.Fatalf("expected CancelFunc to be omitted from marshaled output, got %s", data)
 	}
 }
+
+func TestWorker_MarshalJSON_ExposesRunTS(t *testing.T) {
+	data, err := json.Marshal(Worker{ID: 1, RunTS: "2026-06-29T14-00-00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	_ = json.Unmarshal(data, &decoded)
+	if decoded["run_ts"] != "2026-06-29T14-00-00Z" {
+		t.Fatalf("expected run_ts in %s", data)
+	}
+}

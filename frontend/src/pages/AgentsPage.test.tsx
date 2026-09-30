@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
+import type { ReactElement } from 'react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { AgentsPage } from './AgentsPage'
 import { usePoolStatus } from '../hooks/usePoolStatus'
+import { usePoolRuns } from '../hooks/usePoolRuns'
 import type { PoolStatus } from '../hooks/usePoolStatus'
 import frAgents from '../locales/fr/agents.json'
 import frDialogs from '../locales/fr/dialogs.json'
@@ -12,6 +15,9 @@ vi.mock('../hooks/usePoolStatus', async () => {
   const actual = await vi.importActual<typeof import('../hooks/usePoolStatus')>('../hooks/usePoolStatus')
   return { ...actual, usePoolStatus: vi.fn() }
 })
+
+vi.mock('../hooks/usePoolRuns', () => ({ usePoolRuns: vi.fn(), usePoolRun: vi.fn() }))
+vi.mock('../hooks/useWorkspaceLiveState', () => ({ useWorkspaceLiveState: vi.fn() }))
 
 void i18n.use(initReactI18next).init({
   lng: 'fr',
@@ -24,7 +30,10 @@ void i18n.use(initReactI18next).init({
 
 function mockPoolStatus(data: PoolStatus | undefined) {
   vi.mocked(usePoolStatus).mockReturnValue({ data } as ReturnType<typeof usePoolStatus>)
+  vi.mocked(usePoolRuns).mockReturnValue({ data: [] } as unknown as ReturnType<typeof usePoolRuns>)
 }
+
+const render = (el: ReactElement) => renderToStaticMarkup(<MemoryRouter>{el}</MemoryRouter>)
 
 describe('AgentsPage', () => {
   it("shows the active workspace's workers with their task, status, activity and duration", () => {
@@ -42,7 +51,7 @@ describe('AgentsPage', () => {
       ],
     })
 
-    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+    const html = render(<AgentsPage workspaceId="workspace-a" />)
 
     expect(html).toContain('add-login-flow')
     expect(html).toContain('En cours')
@@ -57,7 +66,7 @@ describe('AgentsPage', () => {
       workers: [],
     })
 
-    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+    const html = render(<AgentsPage workspaceId="workspace-a" />)
 
     expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
   })
@@ -69,7 +78,7 @@ describe('AgentsPage', () => {
       workers: [],
     })
 
-    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+    const html = render(<AgentsPage workspaceId="workspace-a" />)
 
     expect(html).toContain('0/3 workers actifs')
     expect(html).toContain("3 workers disponibles, en attente d&#x27;un change prêt")
@@ -87,7 +96,7 @@ describe('AgentsPage', () => {
       ],
     })
 
-    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+    const html = render(<AgentsPage workspaceId="workspace-a" />)
 
     expect(html).toContain('2/3 workers actifs')
     expect(html).toContain('change-2')
@@ -110,7 +119,7 @@ describe('AgentsPage', () => {
       ],
     })
 
-    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+    const html = render(<AgentsPage workspaceId="workspace-a" />)
 
     expect(html).toContain('En pause')
     expect(html).toContain('Tentatives de réparation épuisées après 3 essai(s)')

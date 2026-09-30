@@ -13,5 +13,37 @@
   "available_one": "{{count}} worker disponible",
   "available_other": "{{count}} workers disponibles",
   "availableWaiting_one": "{{count}} worker disponible, en attente d'un change prêt",
-  "availableWaiting_other": "{{count}} workers disponibles, en attente d'un change prêt"
+  "availableWaiting_other": "{{count}} workers disponibles, en attente d'un change prêt",
+  "recentRuns": {
+    "title": "Runs récents",
+    "empty": "Aucun run sur ce workspace pour le moment.",
+    "table": {
+      "change": "Changement",
+      "startedAt": "Début",
+      "duration": "Durée",
+      "outcome": "Issue",
+      "reason": "Raison"
+    }
+  },
+  "outcome": {
+    "running": "En cours",
+    "completed": "Terminé",
+    "awaiting-review": "En attente de revue",
+    "paused": "En pause",
+    "stopped": "Arrêté",
+    "interrupted": "Interrompu"
+  },
+  "panel": {
+    "title": "Détail du run",
+    "close": "Fermer",
+    "live": "En direct",
+    "worker": "Worker {{id}}",
+    "duration": "Durée",
+    "loading": "Chargement...",
+    "error": "Ce run n'a pas pu être chargé.",
+    "emptyActivity": "Aucune activité enregistrée pour ce run.",
+    "runSelector": "Runs de ce change",
+    "runOption": "{{date}} - {{outcome}}"
+  },
+  "selectHint": "Cliquez sur un worker ou un run pour voir ce que l'agent a fait."
 }

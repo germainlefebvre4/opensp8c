@@ -13,5 +13,37 @@
   "available_one": "{{count}} worker available",
   "available_other": "{{count}} workers available",
   "availableWaiting_one": "{{count}} worker available, waiting for a ready change",
-  "availableWaiting_other": "{{count}} workers available, waiting for a ready change"
+  "availableWaiting_other": "{{count}} workers available, waiting for a ready change",
+  "recentRuns": {
+    "title": "Recent runs",
+    "empty": "No run yet on this workspace.",
+    "table": {
+      "change": "Change",
+      "startedAt": "Started",
+      "duration": "Duration",
+      "outcome": "Outcome",
+      "reason": "Reason"
+    }
+  },
+  "outcome": {
+    "running": "Running",
+    "completed": "Completed",
+    "awaiting-review": "Awaiting review",
+    "paused": "Paused",
+    "stopped": "Stopped",
+    "interrupted": "Interrupted"
+  },
+  "panel": {
+    "title": "Run detail",
+    "close": "Close",
+    "live": "Live",
+    "worker": "Worker {{id}}",
+    "duration": "Duration",
+    "loading": "Loading...",
+    "error": "This run could not be loaded.",
+    "emptyActivity": "No activity recorded for this run.",
+    "runSelector": "Runs of this change",
+    "runOption": "{{date}} - {{outcome}}"
+  },
+  "selectHint": "Click a worker or a run to see what the agent did."
 }

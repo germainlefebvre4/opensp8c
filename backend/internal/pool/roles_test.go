@@ -142,7 +142,7 @@ func TestStart_CompletesConfigFromResolvedPool(t *testing.T) {
 		{"wsA", AgentPoolConfig{Size: 5, DelegationMode: ModeHITLReview, MaxAttempts: 1}, AgentPoolConfig{Size: 5, DelegationMode: ModeHITLReview, MaxAttempts: 1}},
 	}
 	for _, c := range cases {
-		m := NewManager(nil, nil, prefs, nil)
+		m := NewManager(nil, nil, prefs, nil, nil)
 		if err := m.Start(c.req, c.ws, "name", t.TempDir()); err != nil {
 			t.Fatal(err)
 		}

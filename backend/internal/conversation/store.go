@@ -242,6 +242,40 @@ func (s *Store) List(wsID, changeName, kind string) ([]RunMeta, error) {
 	return listDir(s.dir(wsID, changeName, kind))
 }
 
+// ChangeRunMeta is a RunMeta tagged with the change it belongs to.
+type ChangeRunMeta struct {
+	Change string
+	RunMeta
+}
+
+// ListKindAcrossChanges lists the runs of one kind for every change of a
+// workspace (conversations/<ws>/*/<kind>/*.jsonl), skipping the anonymous
+// exploration namespace. Most recent run first; empty when nothing exists.
+func (s *Store) ListKindAcrossChanges(wsID, kind string) ([]ChangeRunMeta, error) {
+	entries, err := os.ReadDir(filepath.Join(s.basePath, wsID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []ChangeRunMeta{}, nil
+		}
+		return nil, err
+	}
+	out := []ChangeRunMeta{}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
+			continue
+		}
+		runs, err := listDir(s.dir(wsID, e.Name(), kind))
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range runs {
+			out = append(out, ChangeRunMeta{Change: e.Name(), RunMeta: r})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Ts > out[j].Ts })
+	return out, nil
+}
+
 // ListKinds returns all kind subdirectories for a given workspace and change.
 func (s *Store) ListKinds(wsID, changeName string) ([]string, error) {
 	dir := filepath.Join(s.basePath, wsID, changeName)

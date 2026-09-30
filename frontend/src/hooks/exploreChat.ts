@@ -28,6 +28,8 @@ export interface ToolCall {
   target: string
   status: 'pending' | 'done'
   resultPreview?: string
+  /** Raw tool input, when the source keeps it (persisted pool runs). */
+  input?: Record<string, unknown>
 }
 
 export interface Message {

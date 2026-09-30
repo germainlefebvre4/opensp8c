@@ -92,7 +92,7 @@ func TestKanbanHandler_Launch(t *testing.T) {
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeDir := writeChangeWithMeta(t, changesDir, "my-change", "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: false\n")
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	rec, req := launchRequest("PATCH", workspaceID, "my-change", "launch", nil)
 	h.Launch(rec, req)
@@ -116,7 +116,7 @@ func TestKanbanHandler_Launch_NotFound(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmpDir, "openspec", "changes"), 0755); err != nil {
 		t.Fatalf("failed to create changes dir: %v", err)
 	}
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	rec, req := launchRequest("PATCH", workspaceID, "does-not-exist", "launch", nil)
 	h.Launch(rec, req)
@@ -131,7 +131,7 @@ func TestKanbanHandler_Unlaunch(t *testing.T) {
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	writeChangeWithMeta(t, changesDir, "my-change", "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	rec, req := launchRequest("PATCH", workspaceID, "my-change", "unlaunch", nil)
 	h.Unlaunch(rec, req)
@@ -170,7 +170,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive(t *testing.T) {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 
-	poolReg := pool.NewRegistry(nil, nil, nil, nil)
+	poolReg := pool.NewRegistry(nil, nil, nil, nil, nil)
 	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
 	poolMgr := poolReg.For(workspaceID)
 
@@ -230,7 +230,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive_Force(t *testing.T) {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 
-	poolReg := pool.NewRegistry(nil, nil, nil, nil)
+	poolReg := pool.NewRegistry(nil, nil, nil, nil, nil)
 	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
 	poolMgr := poolReg.For(workspaceID)
 
@@ -291,7 +291,7 @@ func TestKanbanHandler_ReorderReady(t *testing.T) {
 		writeChangeWithMeta(t, changesDir, name, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: false\n")
 	}
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	body := bytes.NewReader([]byte(`{"order": ["change-c", "change-a", "change-b"]}`))
 	req := httptest.NewRequest("PUT", "/workspaces/"+workspaceID+"/ready-order", body)
@@ -323,7 +323,7 @@ func TestDeleteChange_Success(t *testing.T) {
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeDir := writeTodoChange(t, changesDir, "my-change")
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "my-change")
 	h.DeleteChange(rec, req)
@@ -342,7 +342,7 @@ func TestDeleteChange_NotFound(t *testing.T) {
 		t.Fatalf("failed to create changes dir: %v", err)
 	}
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), nil, nil, "")
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
 
 	rec, req := deleteChangeRequest(workspaceID, "does-not-exist")
 	h.DeleteChange(rec, req)
@@ -371,7 +371,7 @@ func TestDeleteChange_GhostCascade(t *testing.T) {
 	convBase := filepath.Join(tmpDir, "conversations")
 	convStore := conversation.NewStore(convBase)
 
-	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil), prefs, convStore, draftsDir)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), prefs, convStore, draftsDir)
 
 	if err := prefs.AddExploration(preferences.ExplorationRecord{
 		ID:          "ghost-1",
@@ -439,7 +439,7 @@ func TestDeleteChange_WorkerActive(t *testing.T) {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 
-	poolReg := pool.NewRegistry(nil, nil, nil, nil)
+	poolReg := pool.NewRegistry(nil, nil, nil, nil, nil)
 	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
 	poolMgr := poolReg.For(workspaceID)
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type envelopeLine struct {
@@ -56,6 +57,10 @@ func ParseConversationLines(lines [][]byte) ([]Entry, error) {
 		lineTs := ""
 
 		if err := json.Unmarshal([]byte(trimmed), &env); err == nil && len(env.Data) > 0 {
+			if env.Dir == "meta" {
+				// Run start/end markers carry no activity.
+				continue
+			}
 			dataBytes = env.Data
 			lineTs = env.Ts
 		} else {
@@ -130,6 +135,9 @@ func ParseConversationLines(lines [][]byte) ([]Entry, error) {
 		for _, tr := range toolResults {
 			flushNarration()
 			if rec, ok := toolCallMap[tr.toolUseID]; ok {
+				if tr.content != "" {
+					entries[rec.entryIdx].Meta["result"] = tr.content
+				}
 				if !rec.useTime.IsZero() && !tr.resultTime.IsZero() {
 					dur := tr.resultTime.Sub(rec.useTime).Milliseconds()
 					if dur < 0 {
@@ -306,9 +314,41 @@ func extractToolUses(payload map[string]any, defaultTsStr string, defaultTime ti
 	return records
 }
 
+// maxToolResultLen bounds the tool result kept in Entry.Meta["result"].
+const maxToolResultLen = 4096
+
 type toolResultRecord struct {
 	toolUseID  string
 	resultTime time.Time
+	content    string
+}
+
+// resultText flattens a tool_result "content" (a string or an array of text
+// blocks) into plain text truncated to maxToolResultLen bytes.
+func resultText(content any) string {
+	var text string
+	switch c := content.(type) {
+	case string:
+		text = c
+	case []any:
+		var b strings.Builder
+		for _, item := range c {
+			if m, ok := item.(map[string]any); ok {
+				if t, ok := m["text"].(string); ok {
+					b.WriteString(t)
+				}
+			}
+		}
+		text = b.String()
+	}
+	if len(text) > maxToolResultLen {
+		cut := maxToolResultLen
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
+	}
+	return text
 }
 
 func extractToolResults(payload map[string]any, defaultTime time.Time) []toolResultRecord {
@@ -335,6 +375,7 @@ func extractToolResults(payload map[string]any, defaultTime time.Time) []toolRes
 							results = append(results, toolResultRecord{
 								toolUseID:  id,
 								resultTime: resTime,
+								content:    resultText(bMap["content"]),
 							})
 						}
 					}
@@ -353,11 +394,21 @@ func extractToolResults(payload map[string]any, defaultTime time.Time) []toolRes
 			results = append(results, toolResultRecord{
 				toolUseID:  id,
 				resultTime: resTime,
+				content:    resultText(firstNonNil(payload["content"], payload["output"], payload["result"])),
 			})
 		}
 	}
 
 	return results
+}
+
+func firstNonNil(vals ...any) any {
+	for _, v := range vals {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
 }
 
 func deriveToolSummary(name string, input map[string]any) string {

@@ -76,7 +76,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 	go conversation.StartRetentionLoop(cfg, prefsSvc, convStore, activityStore, time.Hour)
 
-	poolRegistry := pool.NewRegistry(watcherSvc, mgr, prefsSvc, activityStore)
+	poolRegistry := pool.NewRegistry(watcherSvc, mgr, prefsSvc, activityStore, convStore)
 	wsHandler := handlers.NewWorkspaceHandler(cfg, cfgPath, poolRegistry)
 	activityHandler := handlers.NewActivityHandler(wsHandler, convStore, activityStore)
 	kanbanHandler := handlers.NewKanbanHandler(wsHandler, prefsSvc, poolRegistry, mgr, convStore, watcherSvc, draftsPath(cfgPath))
@@ -92,6 +92,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 	prefsHandler := handlers.NewPreferencesHandler(prefsSvc)
 	specializationsHandler := handlers.NewSpecializationsHandler(prefsSvc)
 	poolHandler := handlers.NewPoolHandler(wsHandler, poolRegistry)
+	poolRunsHandler := handlers.NewPoolRunsHandler(wsHandler, poolRegistry, convStore, activityStore)
 	wsSettingsHandler := handlers.NewWorkspaceSettingsHandler(wsHandler, prefsSvc)
 
 	r.Route("/api", func(r chi.Router) {
@@ -107,6 +108,8 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 			r.Post("/start", poolHandler.StartPool)
 			r.Post("/stop", poolHandler.StopPool)
 			r.Get("/status", poolHandler.GetPoolStatus)
+			r.Get("/runs", poolRunsHandler.ListRuns)
+			r.Get("/runs/{change}/{ts}", poolRunsHandler.GetRun)
 		})
 
 		r.Get("/workspaces/{id}/settings", wsSettingsHandler.Get)

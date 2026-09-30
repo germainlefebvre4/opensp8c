@@ -60,6 +60,12 @@ export function useWorkspaceLiveState(workspaceId: string | null): {
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
     })
 
+    es.addEventListener('pool_run_appended', (e: MessageEvent) => {
+      const data = JSON.parse(e.data) as { name: string }
+      qc.invalidateQueries({ queryKey: ['pool-run', workspaceId, data.name] })
+      qc.invalidateQueries({ queryKey: ['pool-runs', workspaceId] })
+    })
+
     es.addEventListener('draft_updated', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as { name: string }
       qc.invalidateQueries({ queryKey: ['ghost-draft', workspaceId, data.name] })

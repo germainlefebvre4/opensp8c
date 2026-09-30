@@ -38,10 +38,19 @@ export function ToolCallRow({ toolCall }: Props) {
       </button>
       {expanded && (
         <div className="px-2.5 pb-2 pt-0.5 border-t border-slate-200 text-slate-500">
+          {toolCall.input && Object.keys(toolCall.input).length > 0 && (
+            <div className="mb-1.5">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t('toolCall.input')}</div>
+              <pre data-testid="tool-input" className="whitespace-pre-wrap break-words font-mono text-[11px]">{JSON.stringify(toolCall.input, null, 2)}</pre>
+            </div>
+          )}
           {toolCall.status === 'pending' ? (
             <span className="italic">{t('toolCall.pending')}</span>
           ) : (
-            <pre className="whitespace-pre-wrap break-words font-sans">{toolCall.resultPreview || t('toolCall.noPreview')}</pre>
+            <div>
+              {toolCall.input && <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t('toolCall.result')}</div>}
+              <pre data-testid="tool-result" className="whitespace-pre-wrap break-words font-sans">{toolCall.resultPreview || t('toolCall.noPreview')}</pre>
+            </div>
           )}
         </div>
       )}

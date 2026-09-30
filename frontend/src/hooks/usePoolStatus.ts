@@ -10,6 +10,8 @@ export interface PoolWorker {
   activity?: string
   blocked_reason?: string
   started_at: string
+  /** Stable identity of the worker's current run (a worker id is recycled). */
+  run_ts?: string
 }
 
 export interface PoolStatus {

@@ -6,7 +6,7 @@ import "testing"
 // Manager instance for repeated calls with the same workspace ID, and a
 // distinct instance for a different ID.
 func TestRegistry_For_CachesPerWorkspace(t *testing.T) {
-	reg := NewRegistry(nil, nil, nil, nil)
+	reg := NewRegistry(nil, nil, nil, nil, nil)
 
 	a1 := reg.For("workspace-a")
 	a2 := reg.For("workspace-a")
@@ -25,7 +25,7 @@ func TestRegistry_For_CachesPerWorkspace(t *testing.T) {
 // size, delegation mode, and its own workers - covering zero, one, and
 // multiple workspaces with active pools.
 func TestRegistry_AllPools(t *testing.T) {
-	reg := NewRegistry(nil, nil, nil, nil)
+	reg := NewRegistry(nil, nil, nil, nil, nil)
 
 	if pools := reg.AllPools(); len(pools) != 0 {
 		t.Fatalf("expected no pools with no registered workspaces, got %+v", pools)
@@ -85,7 +85,7 @@ func TestRegistry_AllPools(t *testing.T) {
 // TestRegistry_Remove verifies that Remove stops the workspace's pool and
 // drops it from the registry, so a later For call creates a fresh Manager.
 func TestRegistry_Remove(t *testing.T) {
-	reg := NewRegistry(nil, nil, nil, nil)
+	reg := NewRegistry(nil, nil, nil, nil, nil)
 	tmpDir := t.TempDir()
 
 	mgr := reg.For("workspace-a")

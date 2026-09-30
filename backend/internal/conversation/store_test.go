@@ -210,3 +210,47 @@ func TestStore_DeleteChangeLogs_Idempotent(t *testing.T) {
 		t.Fatalf("expected idempotent delete, got: %v", err)
 	}
 }
+
+func TestStore_ListKindAcrossChanges(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	for _, c := range []struct{ change, ts string }{
+		{"a", "2026-06-29T10-00-00Z"},
+		{"b", "2026-06-29T12-00-00Z"},
+		{"a", "2026-06-29T14-00-00Z"},
+	} {
+		f, err := s.OpenRun("ws1", c.change, "pool", c.ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Write([]byte(`{"x":1}` + "\n"))
+		f.Close()
+	}
+	// other kind and exploration runs must be ignored
+	f, _ := s.OpenRun("ws1", "a", "chat", "2026-06-29T16-00-00Z")
+	f.Close()
+	f, _ = s.OpenExploreRun("ws1", "ghost", "pool", "2026-06-29T17-00-00Z")
+	f.Close()
+
+	runs, err := s.ListKindAcrossChanges("ws1", "pool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 3 {
+		t.Fatalf("expected 3 runs, got %d: %+v", len(runs), runs)
+	}
+	if runs[0].Change != "a" || runs[0].Ts != "2026-06-29T14-00-00Z" || runs[1].Change != "b" {
+		t.Errorf("unexpected order: %+v", runs)
+	}
+	if runs[0].MessageCount != 1 {
+		t.Errorf("expected message count 1, got %d", runs[0].MessageCount)
+	}
+}
+
+func TestStore_ListKindAcrossChanges_MissingDir(t *testing.T) {
+	s := NewStore(t.TempDir())
+	runs, err := s.ListKindAcrossChanges("nope", "pool")
+	if err != nil || runs == nil || len(runs) != 0 {
+		t.Fatalf("expected empty non-nil list, got %v %v", runs, err)
+	}
+}

@@ -26,7 +26,7 @@ func TestWorkspaceList_TaskCountsIncludesReady(t *testing.T) {
 	}
 
 	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}}
-	ws := NewWorkspaceHandler(cfg, "", pool.NewRegistry(nil, nil, nil, nil))
+	ws := NewWorkspaceHandler(cfg, "", pool.NewRegistry(nil, nil, nil, nil, nil))
 	rec := httptest.NewRecorder()
 	ws.List(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil))
 
@@ -60,7 +60,7 @@ func TestWorkspaceDelete_StopsActivePool(t *testing.T) {
 		t.Fatalf("failed to load config: %v", err)
 	}
 	cfg.Workspaces = []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}
-	reg := pool.NewRegistry(nil, nil, nil, nil)
+	reg := pool.NewRegistry(nil, nil, nil, nil, nil)
 	ws := NewWorkspaceHandler(cfg, cfgPath, reg)
 	poolHandler := NewPoolHandler(ws, reg)
 

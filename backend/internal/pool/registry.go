@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 )
@@ -26,6 +27,7 @@ type Registry struct {
 	sessionMgr    *session.Manager
 	prefs         *preferences.Service
 	activityStore *activity.Store
+	convStore     *conversation.Store
 
 	mu       sync.Mutex
 	managers map[string]*Manager
@@ -33,13 +35,14 @@ type Registry struct {
 
 // NewRegistry creates a Registry whose Managers publish pool state changes
 // through broadcaster (may be nil, see NewManager), and resolve agents via
-// sessionMgr/prefs.
-func NewRegistry(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store) *Registry {
+// sessionMgr/prefs. convStore (may be nil) receives the per-worker run journals.
+func NewRegistry(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *preferences.Service, actStore *activity.Store, convStore *conversation.Store) *Registry {
 	return &Registry{
 		broadcaster:   broadcaster,
 		sessionMgr:    sessionMgr,
 		prefs:         prefs,
 		activityStore: actStore,
+		convStore:     convStore,
 		managers:      make(map[string]*Manager),
 	}
 }
@@ -54,7 +57,7 @@ func (reg *Registry) For(workspaceID string) *Manager {
 		return m
 	}
 
-	m := NewManager(reg.broadcaster, reg.sessionMgr, reg.prefs, reg.activityStore)
+	m := NewManager(reg.broadcaster, reg.sessionMgr, reg.prefs, reg.activityStore, reg.convStore)
 	reg.managers[workspaceID] = m
 	return m
 }

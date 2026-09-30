@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -419,8 +420,35 @@ func TestServeWSBroadcastsMultipleGhostQuestionsFromSameTurn(t *testing.T) {
 }
 
 // captureWriteCloser is an io.WriteCloser that buffers writes for inspection.
+// It is safe for concurrent use: the code under test writes from another
+// goroutine while the test polls it.
 type captureWriteCloser struct {
-	bytes.Buffer
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (c *captureWriteCloser) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.Write(p)
+}
+
+func (c *captureWriteCloser) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.Len()
+}
+
+func (c *captureWriteCloser) Bytes() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]byte(nil), c.buf.Bytes()...)
+}
+
+func (c *captureWriteCloser) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
 }
 
 func (c *captureWriteCloser) Close() error { return nil }

@@ -43,7 +43,9 @@
   },
   "toolCall": {
     "pending": "En cours...",
-    "noPreview": "Aucun résultat."
+    "noPreview": "Aucun résultat.",
+    "input": "Entrée",
+    "result": "Résultat"
   },
   "role": {
     "user": "Vous",

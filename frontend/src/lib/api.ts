@@ -288,5 +288,28 @@ export interface ActivityEntry {
   meta?: Record<string, unknown>
 }
 
+export type PoolRunOutcome = 'running' | 'completed' | 'awaiting-review' | 'paused' | 'stopped' | 'interrupted'
+
+export interface PoolRun {
+  change: string
+  ts: string
+  worker_id: number
+  outcome: PoolRunOutcome
+  reason?: string
+  started_at: string
+  ended_at?: string
+  line_count: number
+}
+
+export interface PoolRunDetail extends PoolRun {
+  entries: ActivityEntry[]
+}
+
+export const getPoolRuns = (workspaceId: string) =>
+  api.get<PoolRun[]>(`/api/workspaces/${workspaceId}/pool/runs`).then(r => r.data)
+
+export const getPoolRun = (workspaceId: string, change: string, ts: string) =>
+  api.get<PoolRunDetail>(`/api/workspaces/${workspaceId}/pool/runs/${encodeURIComponent(change)}/${encodeURIComponent(ts)}`).then(r => r.data)
+
 export const getActivity = (workspaceId: string, changeName: string) =>
   api.get<ActivityEntry[]>(`/api/workspaces/${workspaceId}/changes/${changeName}/activity`).then(r => r.data)

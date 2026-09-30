@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
+	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
@@ -33,15 +34,42 @@ var startSubprocessFn = session.StartSubprocess
 // into m.pausedWorkers, so it stays visible via Status()/AllPools() even
 // after runWorker's own deferred cleanup removes it from m.activeWorkers.
 func (m *Manager) pauseWorker(w *Worker, reason string) {
+	m.mu.Lock()
 	w.Status = StatusPaused
 	w.BlockedReason = reason
-
-	m.mu.Lock()
 	snapshot := *w
 	m.pausedWorkers[w.ID] = &snapshot
 	m.mu.Unlock()
 
 	m.notify()
+}
+
+// setStatus, setActivity and setRun mutate w under m.mu so that Status()
+// snapshots (which copy the whole Worker under the same lock) never race.
+func (m *Manager) setStatus(w *Worker, s WorkerStatus) {
+	m.mu.Lock()
+	w.Status = s
+	m.mu.Unlock()
+}
+
+func (m *Manager) setActivity(w *Worker, a string) {
+	m.mu.Lock()
+	w.Activity = a
+	m.mu.Unlock()
+}
+
+func (m *Manager) setRun(w *Worker, ts string, rl *poolRunLog) {
+	m.mu.Lock()
+	w.RunTS = ts
+	w.runLog = rl
+	m.mu.Unlock()
+}
+
+func (m *Manager) setWorktree(w *Worker, path, branch string) {
+	m.mu.Lock()
+	w.WorktreePath = path
+	w.BranchName = branch
+	m.mu.Unlock()
 }
 
 // runWorker coordinates the lifecycle of a worker on a specific change.
@@ -62,8 +90,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		log.Printf("[worker %d] failed to provision worktree: %v\n", w.ID, err)
 		return
 	}
-	w.WorktreePath = worktreePath
-	w.BranchName = "feature/" + w.ActiveChange
+	m.setWorktree(w, worktreePath, "feature/"+w.ActiveChange)
 
 	select {
 	case <-ctx.Done():
@@ -71,7 +98,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	default:
 	}
 
-	w.Status = StatusWorking
+	m.setStatus(w, StatusWorking)
 	m.notify()
 
 	// 2. Start a single agent subprocess for the whole attempt loop (the
@@ -95,10 +122,46 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		}
 	}
 
-	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, nil, customEnv, false, langDirective)
+	// Journal the whole execution as a "pool" conversation run. The end
+	// marker is written by a single defer, registered before any subprocess
+	// cleanup so it runs after the subprocess has exited, and before the
+	// worker is removed from activeWorkers.
+	outcome, outcomeReason := "", ""
+	pause := func(reason string) {
+		m.pauseWorker(w, reason)
+		outcome, outcomeReason = OutcomePaused, reason
+	}
+	runLog, runTS := m.openRunLog(w)
+	m.setRun(w, runTS, runLog)
+	if runLog != nil {
+		m.logRunMarker(w, map[string]any{
+			"type":            "pool_run_start",
+			"worker_id":       w.ID,
+			"change":          w.ActiveChange,
+			"delegation_mode": string(w.DelegationMode),
+		})
+		defer func() {
+			if outcome == "" || ctx.Err() != nil {
+				outcome = OutcomeStopped
+			}
+			m.logRunMarker(w, map[string]any{
+				"type":    "pool_run_end",
+				"outcome": outcome,
+				"reason":  outcomeReason,
+			})
+			m.finishRunEvents(w)
+			_ = runLog.sess.Close()
+		}()
+	}
+
+	var stderrLog *conversation.SessionLog
+	if runLog != nil {
+		stderrLog = runLog.sess
+	}
+	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, stderrLog, customEnv, false, langDirective)
 	if err != nil {
 		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
-		m.pauseWorker(w, fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
+		pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
 		return
 	}
 	defer func() {
@@ -109,12 +172,12 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// 3. Invoke the agent CLI to implement the remaining tasks.
 	if err := m.invokeAgentApply(w, proc); err != nil {
 		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-		m.pauseWorker(w, fmt.Sprintf("Échec de l'invocation de l'agent pour appliquer les tâches restantes : %v", err))
+		pause(fmt.Sprintf("Échec de l'invocation de l'agent pour appliquer les tâches restantes : %v", err))
 		return
 	}
 
 	// 4. Run local validation (compilation + tests).
-	w.Status = StatusTesting
+	m.setStatus(w, StatusTesting)
 	m.notify()
 	validationErr := m.runValidation(ctx, w)
 
@@ -123,7 +186,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	attempts := 0
 	for validationErr != nil && attempts < m.config.MaxAttempts {
 		attempts++
-		w.Status = StatusHealing
+		m.setStatus(w, StatusHealing)
 		m.notify()
 		log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, m.config.MaxAttempts)
 
@@ -132,14 +195,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			break
 		}
 
-		w.Status = StatusTesting
+		m.setStatus(w, StatusTesting)
 		m.notify()
 		validationErr = m.runValidation(ctx, w)
 	}
 
 	if validationErr != nil {
 		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
-		m.pauseWorker(w, fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", m.config.MaxAttempts, validationErr))
+		pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", m.config.MaxAttempts, validationErr))
 		return
 	}
 
@@ -153,7 +216,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	done, total := openspec.ParseTaskProgress(tasksPath)
 	if done < total {
 		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
-		m.pauseWorker(w, fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
+		pause(fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
 		return
 	}
 
@@ -163,12 +226,16 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		log.Printf("[worker %d] Full Autonomy: merging change %s\n", w.ID, w.ActiveChange)
 		if err := wt.MergeAndCleanup(w.ActiveChange); err != nil {
 			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
+			outcome, outcomeReason = OutcomePaused, fmt.Sprintf("Échec de la fusion : %v", err)
+		} else {
+			outcome = OutcomeCompleted
 		}
 	} else {
 		// HITL Review
 		log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
 		// State remains "to-review" implicitly as we leave the branch unmerged and worktree intact.
 		// The UI will pick this up from the Kanban status.
+		outcome = OutcomeAwaitingReview
 	}
 }
 
@@ -204,6 +271,7 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	if err != nil {
 		return fmt.Errorf("failed to encode turn: %w", err)
 	}
+	m.logRun(w, "in", data)
 	if _, err := proc.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("failed to write turn to agent subprocess: %w", err)
 	}
@@ -214,13 +282,14 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	var lastNotify time.Time
 	for scanner.Scan() {
 		line := scanner.Bytes()
+		m.logRun(w, "out", line)
 
 		if isTurnCompleteLine(line) {
 			return nil
 		}
 
 		if activity := extractActivity(line); activity != "" {
-			w.Activity = activity
+			m.setActivity(w, activity)
 			if now := time.Now(); lastNotify.IsZero() || now.Sub(lastNotify) >= activityBroadcastInterval {
 				m.notify()
 				lastNotify = now

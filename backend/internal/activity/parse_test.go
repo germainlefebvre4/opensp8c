@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -96,5 +97,38 @@ func TestParseConversationLines_AssistantTurnWithFullContent(t *testing.T) {
 	}
 	if entries[0].Summary != "Direct answer without streaming deltas" {
 		t.Errorf("unexpected summary: %q", entries[0].Summary)
+	}
+}
+
+func TestParseConversationLines_ToolResultKeptAndTruncated(t *testing.T) {
+	long := strings.Repeat("x", 5000)
+	lines := [][]byte{
+		[]byte(`{"ts":"2026-09-24T10:00:01.000Z","dir":"out","data":{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}}`),
+		[]byte(`{"ts":"2026-09-24T10:00:02.000Z","dir":"out","data":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"` + long + `"}]}}}`),
+		[]byte(`{"ts":"2026-09-24T10:00:03.000Z","dir":"out","data":{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a.go"}}]}}}`),
+		[]byte(`{"ts":"2026-09-24T10:00:04.000Z","dir":"out","data":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"hello"}]}]}}}`),
+	}
+	entries, _ := ParseConversationLines(lines)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	r1, _ := entries[0].Meta["result"].(string)
+	if len(r1) < maxToolResultLen || len(r1) > maxToolResultLen+4 {
+		t.Errorf("expected truncated result ~%d bytes, got %d", maxToolResultLen, len(r1))
+	}
+	if r2, _ := entries[1].Meta["result"].(string); r2 != "hello" {
+		t.Errorf("expected block-array result 'hello', got %q", r2)
+	}
+}
+
+func TestParseConversationLines_IgnoresMetaMarkers(t *testing.T) {
+	lines := [][]byte{
+		[]byte(`{"ts":"2026-09-24T10:00:00Z","dir":"meta","data":{"type":"pool_run_start","worker_id":1}}`),
+		[]byte(`{"ts":"2026-09-24T10:00:01Z","dir":"out","data":{"type":"content_block_delta","delta":{"text":"hi"}}}`),
+		[]byte(`{"ts":"2026-09-24T10:00:02Z","dir":"meta","data":{"type":"pool_run_end","outcome":"completed"}}`),
+	}
+	entries, _ := ParseConversationLines(lines)
+	if len(entries) != 1 || entries[0].Summary != "hi" {
+		t.Fatalf("expected only the narration entry, got %+v", entries)
 	}
 }
