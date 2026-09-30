@@ -94,6 +94,7 @@ export interface PoolDraft {
   size: string
   delegationMode: string
   maxAttempts: string
+  validationCommand: string
 }
 
 export function poolDraftFrom(override: PoolOverride | undefined): PoolDraft {
@@ -101,6 +102,7 @@ export function poolDraftFrom(override: PoolOverride | undefined): PoolDraft {
     size: override?.size != null ? String(override.size) : '',
     delegationMode: override?.delegationMode ?? '',
     maxAttempts: override?.maxAttempts != null ? String(override.maxAttempts) : '',
+    validationCommand: override?.validationCommand ?? '',
   }
 }
 
@@ -128,5 +130,7 @@ export function buildPoolPatch(draft: PoolDraft, saved: PoolOverride | undefined
   if (mode !== saved?.delegationMode) patch.delegationMode = mode ?? null
   const attempts = draft.maxAttempts.trim() === '' ? undefined : Number(draft.maxAttempts)
   if (attempts !== saved?.maxAttempts) patch.maxAttempts = attempts ?? null
+  const command = draft.validationCommand.trim()
+  if (command !== (saved?.validationCommand ?? '')) patch.validationCommand = command === '' ? null : command
   return patch
 }

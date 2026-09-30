@@ -72,7 +72,8 @@
       "idleWorkers_one": "{{count}} worker available",
       "idleWorkers_other": "{{count}} workers available",
       "noWorkers": "No worker is currently assigned to a change.",
-      "stop": "Stop Pool"
+      "stop": "Stop Pool",
+      "resume": "Resume"
     }
   }
 }

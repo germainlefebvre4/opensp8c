@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/go-chi/chi/v5"
@@ -52,6 +54,32 @@ func (h *PoolHandler) StopPool(w http.ResponseWriter, r *http.Request) {
 
 	h.reg.For(id).Stop()
 	w.WriteHeader(http.StatusOK)
+}
+
+// ResumeWorker lifts the pause of one worker so its change is redistributed.
+// 404: unknown workspace or no paused worker with that id; 409: pool stopped.
+func (h *PoolHandler) ResumeWorker(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, ok := h.ws.workspacePath(id); !ok {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+	workerID, err := strconv.Atoi(chi.URLParam(r, "workerId"))
+	if err != nil {
+		http.Error(w, "worker not paused", http.StatusNotFound)
+		return
+	}
+
+	switch err := h.reg.For(id).ResumeWorker(workerID); {
+	case errors.Is(err, pool.ErrPoolNotRunning):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, pool.ErrWorkerNotPaused):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func (h *PoolHandler) GetPoolStatus(w http.ResponseWriter, r *http.Request) {

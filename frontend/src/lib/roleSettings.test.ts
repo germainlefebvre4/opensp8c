@@ -58,11 +58,11 @@ describe('effort reconciliation', () => {
 
 describe('pool draft', () => {
   it('validates size 1-5 and attempts, blank meaning inherit', () => {
-    expect(validatePoolDraft({ size: '', delegationMode: '', maxAttempts: '' })).toEqual({})
-    expect(validatePoolDraft({ size: '9', delegationMode: '', maxAttempts: '' }).size).toBe('size')
-    expect(validatePoolDraft({ size: '0', delegationMode: '', maxAttempts: '' }).size).toBe('size')
-    expect(validatePoolDraft({ size: '2.5', delegationMode: '', maxAttempts: '' }).size).toBe('size')
-    expect(validatePoolDraft({ size: '5', delegationMode: '', maxAttempts: '0' }).maxAttempts).toBe('attempts')
+    expect(validatePoolDraft({ size: '', delegationMode: '', maxAttempts: '', validationCommand: '' })).toEqual({})
+    expect(validatePoolDraft({ size: '9', delegationMode: '', maxAttempts: '', validationCommand: '' }).size).toBe('size')
+    expect(validatePoolDraft({ size: '0', delegationMode: '', maxAttempts: '', validationCommand: '' }).size).toBe('size')
+    expect(validatePoolDraft({ size: '2.5', delegationMode: '', maxAttempts: '', validationCommand: '' }).size).toBe('size')
+    expect(validatePoolDraft({ size: '5', delegationMode: '', maxAttempts: '0', validationCommand: '' }).maxAttempts).toBe('attempts')
   })
 
   it('builds a partial patch with null resets', () => {

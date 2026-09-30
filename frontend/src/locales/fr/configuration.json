@@ -119,6 +119,9 @@
     "inherited": "Hérité : {{value}}",
     "override": "Surcharge",
     "reset": "Revenir à l'héritage",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "validationCommand": "Commande de validation",
+    "validationCommandAuto": "auto-détectée",
+    "validationCommandHint": "Exécutée à la racine du worktree (sh -c) après chaque tour de l'agent. Laissez vide pour détecter automatiquement les projets Go et Node."
   }
 }

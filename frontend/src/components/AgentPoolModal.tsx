@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { X, Play, ShieldAlert, Cpu, Square, Loader2 } from 'lucide-react'
+import { X, Play, ShieldAlert, Cpu, Square, Loader2, RotateCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PoolStatus, WorkerStatus } from '../hooks/usePoolStatus'
 import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
+import { resumeWorker } from '../lib/api'
 
 export interface AgentPoolConfig {
   size: number
@@ -43,6 +44,31 @@ export function AgentPoolModal({ workspaceId, isOpen, onClose, onStart, onStop, 
   const setSize = (update: (s: number) => number) => setSizeAdjust(update(size))
   const setMode = setModeAdjust
 
+  // Resume requests in flight (button disabled) and their backend errors.
+  const [resuming, setResuming] = useState<Set<number>>(new Set())
+  const [resumeErrors, setResumeErrors] = useState<Record<number, string>>({})
+
+  const handleResume = async (id: number) => {
+    if (!workspaceId) return
+    setResuming(s => new Set(s).add(id))
+    setResumeErrors(e => {
+      const { [id]: _removed, ...rest } = e
+      return rest
+    })
+    try {
+      // The pool_updated broadcast refreshes the row; no manual refetch.
+      await resumeWorker(workspaceId, id)
+    } catch (err) {
+      setResumeErrors(e => ({ ...e, [id]: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setResuming(s => {
+        const next = new Set(s)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
   useEffect(() => {
     if (!isOpen) {
       setSizeAdjust(null)
@@ -77,22 +103,44 @@ export function AgentPoolModal({ workspaceId, isOpen, onClose, onStart, onStop, 
               <p className="text-sm text-slate-500">{t('agentPool.statusPanel.noWorkers')}</p>
             )}
             {workers.map(w => (
-              <div
-                key={w.id}
-                className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/60"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Loader2 size={14} className="text-violet-500 animate-spin shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-slate-500">
-                      {t('agentPool.statusPanel.workerLabel', { id: w.id })}
+              <div key={w.id} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/60">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Loader2 size={14} className="text-violet-500 animate-spin shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-slate-500">
+                        {t('agentPool.statusPanel.workerLabel', { id: w.id })}
+                      </div>
+                      <div className="text-sm font-semibold text-slate-800 truncate">{w.active_change}</div>
                     </div>
-                    <div className="text-sm font-semibold text-slate-800 truncate">{w.active_change}</div>
                   </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border shrink-0 ${STATUS_BADGE_CLASSES[w.status]}`}>
+                    {t(`agentPool.statusPanel.status.${w.status}`)}
+                  </span>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border shrink-0 ${STATUS_BADGE_CLASSES[w.status]}`}>
-                  {t(`agentPool.statusPanel.status.${w.status}`)}
-                </span>
+                {w.status === 'paused' && (
+                  <div className="mt-2 space-y-2">
+                    {w.blocked_reason && (
+                      <p className="text-xs text-red-600 whitespace-pre-wrap break-words">{w.blocked_reason}</p>
+                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      {resumeErrors[w.id] && (
+                        <span role="alert" className="text-xs text-red-600 mr-auto break-words">
+                          {resumeErrors[w.id]}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleResume(w.id)}
+                        disabled={resuming.has(w.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                      >
+                        <RotateCw size={12} />
+                        {t('agentPool.statusPanel.resume')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             {idleCount > 0 && (

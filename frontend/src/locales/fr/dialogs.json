@@ -72,7 +72,8 @@
       "idleWorkers_one": "{{count}} worker disponible",
       "idleWorkers_other": "{{count}} workers disponibles",
       "noWorkers": "Aucun worker n'est actuellement assigné à un change.",
-      "stop": "Arrêter le Pool"
+      "stop": "Arrêter le Pool",
+      "resume": "Reprendre"
     }
   }
 }

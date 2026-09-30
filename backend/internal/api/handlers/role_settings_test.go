@@ -250,3 +250,28 @@ func TestListAgentModels(t *testing.T) {
 		t.Errorf("gemini: %+v", g)
 	}
 }
+
+func TestValidationCommandExposed(t *testing.T) {
+	h, prefs, idA, _ := wsSettingsFixture(t)
+	ph := NewPreferencesHandler(prefs)
+
+	if rec := patchPrefs(t, ph, `{"poolDefaults":{"validationCommand":"make test"}}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("patch defaults: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := getPrefs(t, ph)["poolDefaults"].(map[string]any)["validationCommand"]; got != "make test" {
+		t.Errorf("GET /api/preferences: %v", got)
+	}
+
+	rec := httptest.NewRecorder()
+	h.Patch(rec, wsReq(http.MethodPatch, idA, `{"pool":{"validationCommand":"cd backend && go test ./..."}}`))
+	out := decodeMap(t, rec)
+	if out["overrides"].(map[string]any)["pool"].(map[string]any)["validationCommand"] != "cd backend && go test ./..." {
+		t.Errorf("override: %v", out["overrides"])
+	}
+	if out["inherited"].(map[string]any)["pool"].(map[string]any)["validationCommand"] != "make test" {
+		t.Errorf("inherited: %v", out["inherited"])
+	}
+	if out["resolved"].(map[string]any)["pool"].(map[string]any)["validationCommand"] != "cd backend && go test ./..." {
+		t.Errorf("resolved: %v", out["resolved"])
+	}
+}

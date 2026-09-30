@@ -6,6 +6,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -186,7 +187,7 @@ func TestSetAgentSettingsValidation(t *testing.T) {
 
 func TestResolvePool(t *testing.T) {
 	var nilP *Preferences
-	if got := nilP.ResolvePool("A"); got != (PoolSettings{3, "hitl-review", 3}) {
+	if got := nilP.ResolvePool("A"); got != (PoolSettings{Size: 3, DelegationMode: "hitl-review", MaxAttempts: 3}) {
 		t.Errorf("builtin: %+v", got)
 	}
 	four, mode := 4, "full-autonomy"
@@ -194,10 +195,10 @@ func TestResolvePool(t *testing.T) {
 		PoolDefaults: &PoolSettings{Size: 2, MaxAttempts: 5},
 		Workspaces:   map[string]*WorkspacePrefs{"A": {Pool: &PoolOverride{Size: &four, DelegationMode: &mode}}},
 	}
-	if got := p.ResolvePool("A"); got != (PoolSettings{4, "full-autonomy", 5}) {
+	if got := p.ResolvePool("A"); got != (PoolSettings{Size: 4, DelegationMode: "full-autonomy", MaxAttempts: 5}) {
 		t.Errorf("A: %+v", got)
 	}
-	if got := p.ResolvePool("B"); got != (PoolSettings{2, "hitl-review", 5}) {
+	if got := p.ResolvePool("B"); got != (PoolSettings{Size: 2, DelegationMode: "hitl-review", MaxAttempts: 5}) {
 		t.Errorf("B: %+v", got)
 	}
 }
@@ -313,4 +314,74 @@ func mustAgent(t *testing.T, id string) agents.AgentConfig {
 		t.Fatalf("no agent %s", id)
 	}
 	return a
+}
+
+func TestValidationCommand(t *testing.T) {
+	svc := newTestService(t)
+	mk := func(j string) PoolPatch {
+		var p PoolPatch
+		if err := json.Unmarshal([]byte(j), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// Default: empty (auto-detect).
+	p, _ := svc.Load()
+	if got := p.ResolvePool("A").ValidationCommand; got != "" {
+		t.Fatalf("default = %q", got)
+	}
+
+	// Global default, persisted in preferences.json.
+	if err := svc.SetPoolDefaults(mk(`{"validationCommand":"  make test "}`)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(svc.Path())
+	if err != nil || !strings.Contains(string(raw), `"validationCommand": "make test"`) {
+		t.Fatalf("not persisted (trimmed): %v %s", err, raw)
+	}
+	p, _ = svc.Load()
+	if got := p.ResolvePool("A").ValidationCommand; got != "make test" {
+		t.Fatalf("global = %q", got)
+	}
+
+	// Workspace override wins, only for that workspace.
+	if err := svc.PatchWorkspace("A", WorkspaceSettingsPatch{Pool: ptr(mk(`{"validationCommand":"cd backend && go test ./..."}`))}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Load()
+	if got := p.ResolvePool("A").ValidationCommand; got != "cd backend && go test ./..." {
+		t.Fatalf("workspace = %q", got)
+	}
+	if got := p.ResolvePool("B").ValidationCommand; got != "make test" {
+		t.Fatalf("B = %q", got)
+	}
+
+	// Reset (null) returns to inheritance; blank resets too.
+	if err := svc.PatchWorkspace("A", WorkspaceSettingsPatch{Pool: ptr(mk(`{"validationCommand":null}`))}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Load()
+	if got := p.ResolvePool("A").ValidationCommand; got != "make test" || len(p.Workspaces) != 0 {
+		t.Fatalf("after reset: %q %+v", got, p.Workspaces)
+	}
+	if err := svc.PatchWorkspace("A", WorkspaceSettingsPatch{Pool: ptr(mk(`{"validationCommand":"x"}`))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.PatchWorkspace("A", WorkspaceSettingsPatch{Pool: ptr(mk(`{"validationCommand":"   "}`))}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Load()
+	if len(p.Workspaces) != 0 {
+		t.Fatalf("blank should reset: %+v", p.Workspaces)
+	}
+
+	// Clearing the global default.
+	if err := svc.SetPoolDefaults(mk(`{"validationCommand":""}`)); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Load()
+	if p.PoolDefaults != nil || p.ResolvePool("A").ValidationCommand != "" {
+		t.Fatalf("global not cleared: %+v", p.PoolDefaults)
+	}
 }

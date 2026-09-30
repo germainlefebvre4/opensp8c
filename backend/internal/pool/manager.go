@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -149,6 +150,29 @@ func (m *Manager) Stop() {
 	m.workspaceName = ""
 }
 
+// Errors returned by ResumeWorker.
+var (
+	ErrPoolNotRunning  = errors.New("pool is not running")
+	ErrWorkerNotPaused = errors.New("worker is not paused")
+)
+
+// ResumeWorker lifts the pause of a worker: its change becomes eligible again
+// and the next tick redistributes it (tick stays the single dispatch point).
+func (m *Manager) ResumeWorker(workerID int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.isRunning {
+		return ErrPoolNotRunning
+	}
+	if _, ok := m.pausedWorkers[workerID]; !ok {
+		return ErrWorkerNotPaused
+	}
+	delete(m.pausedWorkers, workerID)
+	m.broadcastLocked()
+	return nil
+}
+
 // CancelWorkerForChange cancels the active worker assigned to changeName, if any.
 // It returns true if an active worker was found and its cancel function invoked,
 // or false if no worker was active for that change.
@@ -265,6 +289,11 @@ func (m *Manager) tick() {
 	// Filter out changes already being worked on
 	activeChangeSet := make(map[string]bool)
 	for _, w := range m.activeWorkers {
+		activeChangeSet[w.ActiveChange] = true
+	}
+	// A paused change stays excluded until explicitly resumed (or the pool is
+	// stopped), otherwise the dispatcher would relaunch it on the next tick.
+	for _, w := range m.pausedWorkers {
 		activeChangeSet[w.ActiveChange] = true
 	}
 

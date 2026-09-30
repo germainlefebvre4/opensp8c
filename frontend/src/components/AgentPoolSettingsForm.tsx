@@ -46,7 +46,9 @@ export function AgentPoolSettingsForm({ scope, values, inherited, isSaving, onSa
 
   const inheritedText = (field: keyof PoolSettings): string => {
     if (!inherited) return ''
-    return field === 'delegationMode' ? modeLabel(inherited.delegationMode) : String(inherited[field])
+    if (field === 'delegationMode') return modeLabel(inherited.delegationMode)
+    if (field === 'validationCommand') return inherited.validationCommand || t('poolSettings.validationCommandAuto')
+    return String(inherited[field])
   }
 
   const isOverride = (field: keyof PoolSettings) => isWorkspace && values?.[field] !== undefined
@@ -160,6 +162,30 @@ export function AgentPoolSettingsForm({ scope, values, inherited, isSaving, onSa
         )}
         {isWorkspace && !isOverride('maxAttempts') && inherited && (
           <span className="text-[10px] text-slate-400">{t('poolSettings.inherited', { value: inheritedText('maxAttempts') })}</span>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label htmlFor={`pool-validation-${scope}`} className="text-xs font-medium text-slate-700">
+            {t('poolSettings.validationCommand')}
+          </label>
+          {badge('validationCommand')}
+          {resetButton('validationCommand')}
+        </div>
+        <input
+          id={`pool-validation-${scope}`}
+          type="text"
+          value={draft.validationCommand}
+          placeholder={isWorkspace ? inheritedText('validationCommand') : t('poolSettings.validationCommandAuto')}
+          onChange={e => setDraft(d => ({ ...d, validationCommand: e.target.value }))}
+          className={`${INPUT_CLASS} w-full font-mono`}
+        />
+        <span className="text-[10px] text-slate-400">{t('poolSettings.validationCommandHint')}</span>
+        {isWorkspace && !isOverride('validationCommand') && inherited && (
+          <span className="text-[10px] text-slate-400">
+            {t('poolSettings.inherited', { value: inheritedText('validationCommand') })}
+          </span>
         )}
       </div>
 

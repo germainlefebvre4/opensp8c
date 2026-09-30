@@ -203,3 +203,81 @@ func TestListAllPools_TwoWorkspaces(t *testing.T) {
 		t.Errorf("expected workspace B's pool to list its worker on %q, got %+v", changeB, poolB.Workers)
 	}
 }
+
+func resumeRequest(workspaceID, workerID string) *http.Request {
+	req := poolRequest(http.MethodPost, "/workspaces/"+workspaceID+"/pool/workers/"+workerID+"/resume", workspaceID, "")
+	rctx := chi.RouteContext(req.Context())
+	rctx.URLParams.Add("workerId", workerID)
+	return req
+}
+
+func TestResumeWorker(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// A workspace that is not a git repository: Provision fails, so the
+	// worker of its launched change pauses.
+	wsPath := t.TempDir()
+	changeDir := filepath.Join(wsPath, "openspec", "changes", "change-a")
+	if err := os.MkdirAll(changeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("- [ ] x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(changeDir, ".openspec.yaml"), []byte("schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h, reg, id, _ := twoWorkspaceHandler(t, wsPath, t.TempDir())
+
+	// Unknown workspace -> 404.
+	rec := httptest.NewRecorder()
+	h.ResumeWorker(rec, resumeRequest("nope", "1"))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown workspace: expected 404, got %d", rec.Code)
+	}
+
+	// Pool stopped -> 409.
+	rec = httptest.NewRecorder()
+	h.ResumeWorker(rec, resumeRequest(id, "1"))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stopped pool: expected 409, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.StartPool(rec, poolRequest(http.MethodPost, "/", id, `{"size":1,"delegation_mode":"hitl-review","max_attempts":1}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: %d", rec.Code)
+	}
+	defer reg.For(id).Stop()
+
+	// Wait for the first tick to pause the worker.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		_, _, workers := reg.For(id).Status(id)
+		if len(workers) == 1 && workers[0].Status == pool.StatusPaused {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("worker never paused: %+v", workers)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Unknown worker -> 404.
+	rec = httptest.NewRecorder()
+	h.ResumeWorker(rec, resumeRequest(id, "42"))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown worker: expected 404, got %d", rec.Code)
+	}
+
+	// Paused worker -> 200 and no longer paused.
+	rec = httptest.NewRecorder()
+	h.ResumeWorker(rec, resumeRequest(id, "1"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resume: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.ResumeWorker(rec, resumeRequest(id, "1"))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("second resume: expected 404, got %d", rec.Code)
+	}
+}

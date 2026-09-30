@@ -119,6 +119,9 @@
     "inherited": "Inherited: {{value}}",
     "override": "Override",
     "reset": "Reset to inherited",
-    "save": "Save"
+    "save": "Save",
+    "validationCommand": "Validation command",
+    "validationCommandAuto": "auto-detected",
+    "validationCommandHint": "Run at the worktree root (sh -c) after each agent turn. Leave empty to auto-detect Go and Node projects."
   }
 }

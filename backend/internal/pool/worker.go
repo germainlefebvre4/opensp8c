@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -88,6 +88,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	worktreePath, err := wt.Provision(w.ActiveChange)
 	if err != nil {
 		log.Printf("[worker %d] failed to provision worktree: %v\n", w.ID, err)
+		m.pauseWorker(w, fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
 		return
 	}
 	m.setWorktree(w, worktreePath, "feature/"+w.ActiveChange)
@@ -180,6 +181,12 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	m.setStatus(w, StatusTesting)
 	m.notify()
 	validationErr := m.runValidation(ctx, w)
+	var envErr *ValidationEnvError
+	if errors.As(validationErr, &envErr) {
+		// No heal turn can fix the environment: pause at once, no attempt used.
+		pause(envErr.Reason)
+		return
+	}
 
 	// 5. Self-healing loop: re-inject validation errors into the same
 	// subprocess's context until it passes or attempts are exhausted.
@@ -198,6 +205,10 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		m.setStatus(w, StatusTesting)
 		m.notify()
 		validationErr = m.runValidation(ctx, w)
+		if errors.As(validationErr, &envErr) {
+			pause(envErr.Reason)
+			return
+		}
 	}
 
 	if validationErr != nil {
@@ -379,16 +390,4 @@ func extractActivity(line []byte) string {
 		return trimmed[:maxActivityLen]
 	}
 	return trimmed
-}
-
-func (m *Manager) runValidation(ctx context.Context, w *Worker) error {
-	// Stub for running project tests.
-	// We could run `make test` or `go test ./...` based on project detection.
-	cmd := exec.CommandContext(ctx, "go", "test", "./...")
-	cmd.Dir = w.WorktreePath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tests failed: %v\nOutput:\n%s", err, string(out))
-	}
-	return nil
 }

@@ -107,6 +107,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 		r.Route("/workspaces/{id}/pool", func(r chi.Router) {
 			r.Post("/start", poolHandler.StartPool)
 			r.Post("/stop", poolHandler.StopPool)
+			r.Post("/workers/{workerId}/resume", poolHandler.ResumeWorker)
 			r.Get("/status", poolHandler.GetPoolStatus)
 			r.Get("/runs", poolRunsHandler.ListRuns)
 			r.Get("/runs/{change}/{ts}", poolRunsHandler.GetRun)

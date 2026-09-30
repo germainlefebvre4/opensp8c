@@ -179,4 +179,53 @@ describe('AgentPoolSettingsForm', () => {
     fireEvent.click(screen.getByLabelText('Reset to inherited'))
     expect(onSave).toHaveBeenCalledWith({ size: null })
   })
+
+  it('shows the validation command as auto-detected when empty', () => {
+    render(<AgentPoolSettingsForm scope="global" values={{ size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }} onSave={vi.fn()} />)
+    const input = screen.getByLabelText('Validation command') as HTMLInputElement
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('auto-detected')
+  })
+
+  it('saves, then clears, the global validation command', () => {
+    const onSave = vi.fn()
+    const { rerender } = render(
+      <AgentPoolSettingsForm scope="global" values={{ size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }} onSave={onSave} />,
+    )
+    fireEvent.change(screen.getByLabelText('Validation command'), { target: { value: '  make test ' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(onSave).toHaveBeenCalledWith({ validationCommand: 'make test' })
+
+    rerender(
+      <AgentPoolSettingsForm
+        scope="global"
+        values={{ size: 3, delegationMode: 'hitl-review', maxAttempts: 3, validationCommand: 'make test' }}
+        onSave={onSave}
+      />,
+    )
+    expect((screen.getByLabelText('Validation command') as HTMLInputElement).value).toBe('make test')
+    fireEvent.change(screen.getByLabelText('Validation command'), { target: { value: '' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(onSave).toHaveBeenLastCalledWith({ validationCommand: null })
+  })
+
+  it('distinguishes an inherited validation command from an override and resets it', () => {
+    const onSave = vi.fn()
+    const inherited = { size: 3, delegationMode: 'hitl-review' as const, maxAttempts: 3, validationCommand: 'make test' }
+    const { rerender } = render(<AgentPoolSettingsForm scope="workspace" values={{}} inherited={inherited} onSave={onSave} />)
+    expect(screen.getByText('Inherited: make test', { exact: false })).toBeTruthy()
+    expect(screen.queryByText('Override')).toBeNull()
+
+    rerender(
+      <AgentPoolSettingsForm
+        scope="workspace"
+        values={{ validationCommand: 'cd backend && go test ./...' }}
+        inherited={inherited}
+        onSave={onSave}
+      />,
+    )
+    expect(screen.getAllByText('Override')).toHaveLength(1)
+    fireEvent.click(screen.getByLabelText('Reset to inherited'))
+    expect(onSave).toHaveBeenCalledWith({ validationCommand: null })
+  })
 })

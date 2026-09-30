@@ -87,6 +87,8 @@ export interface PoolSettings {
   size: number
   delegationMode: DelegationMode
   maxAttempts: number
+  // Shell command run after each agent turn; absent/empty = auto-detected.
+  validationCommand?: string
 }
 
 // Partial per-workspace pool override; absent field = inherit.
@@ -108,6 +110,7 @@ export interface PoolPatch {
   size?: number | null
   delegationMode?: DelegationMode | null
   maxAttempts?: number | null
+  validationCommand?: string | null
 }
 
 export interface GlobalSettingsPatch {
@@ -251,6 +254,9 @@ export const startPool = (workspaceId: string, config: AgentPoolConfig) =>
 
 export const stopPool = (workspaceId: string) =>
   api.post(`/api/workspaces/${workspaceId}/pool/stop`)
+
+export const resumeWorker = (workspaceId: string, workerId: number) =>
+  api.post(`/api/workspaces/${workspaceId}/pool/workers/${workerId}/resume`)
 
 export interface DraftTask {
   id: string

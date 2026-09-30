@@ -1,0 +1,31 @@
+# Tasks
+
+## 1. Provision idempotent et échec de provisionnement visible
+
+- [x] 1.1 Dans `backend/internal/pool/worktree.go`, déterminer l'existence de la branche par le code de sortie de `git show-ref --verify --quiet` (0 existe, 1 absent, autre : erreur), puis réutiliser le worktree existant, ou ajouter un worktree sur la branche existante (après `git worktree prune`), ou créer branche et worktree avec `-b`, sans jamais nettoyer l'arbre de travail ; vérifier par des tests de `Provision` dans un dépôt temporaire couvrant première prise en charge, branche existante sans worktree, worktree existant avec fichier non commité conservé, et échec git remonté (`go test ./internal/pool -run Provision`)
+- [x] 1.2 Dans `runWorker` (`backend/internal/pool/worker.go`), appeler `pauseWorker` avec la raison « Échec du provisionnement du worktree : … » quand `Provision` échoue ; vérifier par un test du manager dont `Provision` échoue et qui observe un worker `paused` avec une raison non vide, exposée par `Status()`
+
+## 2. Pause stable et reprise explicite côté backend
+
+- [x] 2.1 Dans `Manager.tick` (`backend/internal/pool/manager.go`), exclure de la distribution les changes présentes dans `pausedWorkers`, et vérifier par un test où un worker pause sur la change A éligible : aucun nouveau worker n'est assigné à A aux ticks suivants, la change B éligible est distribuée, et un `Stop()` puis `Start()` rend A de nouveau éligible
+- [x] 2.2 Ajouter `Manager.ResumeWorker(workerID)` qui retire l'entrée de `pausedWorkers` sous verrou, notifie, et retourne les erreurs `ErrPoolNotRunning` et `ErrWorkerNotPaused` ; vérifier par des tests unitaires : reprise nominale (la change redevient distribuable au tick suivant, les autres workers actifs ne sont pas touchés), worker non en pause ou identifiant inconnu, pool arrêté
+- [x] 2.3 Ajouter `PoolHandler.ResumeWorker` et la route `POST /api/workspaces/{id}/pool/workers/{workerId}/resume` dans `backend/internal/api/router.go`, avec `404` pour workspace inconnu ou worker non en pause et `409` pour pool arrêté ; vérifier par des tests de handler couvrant les trois codes de retour et le succès (`go test ./internal/api/handlers -run ResumeWorker`)
+
+## 3. Commande de validation résolue et erreurs d'environnement
+
+- [x] 3.1 Ajouter `ValidationCommand` à `PoolSettings`, `PoolOverride` et `PoolPatch` dans `backend/internal/preferences/roles.go` (résolution workspace > défaut global > vide, patch avec réinitialisation, valeur blanche normalisée en vide) et vérifier par des tests de `ResolvePool` et d'application de patch, y compris persistance dans `preferences.json` et exposition par `GET /api/preferences` et l'API de settings du workspace
+- [x] 3.2 Créer le détecteur de commandes (`backend/internal/pool/validation.go`) : `go test ./...` pour un `go.mod`, `npm test` pour un `package.json` avec `scripts.test` et un `node_modules` présent, à la racine puis dans les sous-répertoires directs (hors cachés et `node_modules`, ordre alphabétique) ; vérifier par des tests sur des arborescences temporaires : module Go à la racine, `backend/` + `frontend/` avec et sans `node_modules`, aucun projet reconnu
+- [x] 3.3 Réécrire `runValidation` pour résoudre la commande à l'exécution (commande configurée via `sh -c` à la racine du worktree, sinon détection avec exécution dans le répertoire de chaque commande et arrêt à la première en échec) et retourner une `ValidationEnvError` lisible pour : aucune commande, exécutable introuvable (`exec.ErrNotFound` ou code 127), répertoire absent ; vérifier par des tests couvrant commande configurée prioritaire, échec de test (erreur ordinaire), commande introuvable et absence de commande
+- [x] 3.4 Dans `runWorker`, appeler `pauseWorker` immédiatement sur une `ValidationEnvError`, avant comme pendant la boucle de guérison, sans tour de guérison ni incrément de `attempts`, en conservant la boucle actuelle pour les échecs de test ; vérifier par un test avec `startSubprocessFn` factice : une erreur d'environnement ne déclenche aucun `invokeAgentHeal` et donne un worker `paused` avec la raison, tandis qu'un test rouge déclenche bien la guérison jusqu'à `max_attempts`
+- [x] 3.5 Documenter la validation et la reprise dans `docs/opensp8c` (architecture du pool, modèle de domaine) et vérifier que la description mentionne la résolution de la commande, l'auto-détection, la pause immédiate et la reprise explicite
+
+## 4. Interface : commande de validation et bouton Reprendre
+
+- [x] 4.1 Ajouter le champ `validationCommand` au type `PoolSettings` de `frontend/src/lib/api.ts` et à `AgentPoolSettingsForm.tsx` (valeur héritée ou libellé « auto-détectée », distinction surcharge/héritage, réinitialisation), avec les clés de traduction `fr` et `en` de `configuration.json` et `settings.json` ; vérifier par des tests de `ConfigurationPage` et `SettingsPage` couvrant affichage, enregistrement, réinitialisation et effacement (`npm test -- ConfigurationPage SettingsPage`)
+- [x] 4.2 Ajouter `resumeWorker(workspaceId, workerId)` dans `frontend/src/lib/api.ts` et le bouton « Reprendre » avec la raison de blocage sur chaque worker `paused` de `AgentPoolModal.tsx` (bouton désactivé pendant la requête, message d'erreur du backend affiché en cas d'échec, absent hors pause), avec les clés `fr` et `en` ; vérifier par des tests de `AgentPoolModal.test.tsx` couvrant la présence du bouton en pause, son absence dans les autres statuts, l'appel de reprise, l'état désactivé et l'affichage d'erreur
+- [x] 4.3 Brancher l'action dans `KanbanPage.tsx` pour que le panneau passe le `workspaceId` et se mette à jour par la diffusion d'état existante après reprise ; vérifier par un test de page ou de hook où la reprise met à jour la ligne sans rechargement
+
+## 5. Vérification d'intégration
+
+- [x] 5.1 Vérifier la suite complète : `cd backend && go test ./...` et `cd frontend && npm test && npm run build` réussissent sans régression
+- [x] 5.2 Vérifier le scénario observé de bout en bout sur un dépôt de test à module Go dans `backend/` : une Task dont la validation était bloquée passe désormais la validation, une pause volontaire n'est pas relancée aux ticks suivants, et « Reprendre » la relance dans le worktree existant sans erreur de branche (test d'intégration du manager avec dépôt git temporaire, dans `backend/internal/pool`)

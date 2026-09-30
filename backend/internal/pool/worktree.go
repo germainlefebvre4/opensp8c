@@ -2,6 +2,7 @@ package pool
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,8 +26,10 @@ func (wc *WorktreeController) worktreesDir() string {
 	return filepath.Join(homeDir, ".opensp8c", "worktrees")
 }
 
-// Provision creates a new branch (if needed) and a git worktree for the given change.
-// It returns the absolute path to the provisioned worktree.
+// Provision makes sure the branch and the git worktree of the given change
+// exist and returns the absolute path of the worktree. It is idempotent: an
+// existing branch and worktree are reused as-is, and the working tree is never
+// reset or cleaned so uncommitted agent changes survive a resume.
 func (wc *WorktreeController) Provision(changeName string) (string, error) {
 	err := os.MkdirAll(wc.worktreesDir(), 0755)
 	if err != nil {
@@ -36,34 +39,77 @@ func (wc *WorktreeController) Provision(changeName string) (string, error) {
 	branchName := "feature/" + changeName
 	worktreePath := filepath.Join(wc.worktreesDir(), "wt-"+changeName)
 
-	// Clean up any existing dirty worktree/branch state if it exists locally,
-	// but for simplicity, let's just attempt to create or reuse.
-	// 1. Check if branch exists
-	branchExists, err := wc.runGit("show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
-	if err != nil && !strings.Contains(err.Error(), "exit status 1") { // usually exit 1 means doesn't exist
-		// Some other error
+	exists, err := wc.branchExists(branchName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check branch %s: %w", branchName, err)
 	}
 
-	if branchExists == "" {
-		// Branch doesn't exist, create worktree with new branch (-b)
-		_, err = wc.runGit("worktree", "add", "-b", branchName, worktreePath)
-		if err != nil {
+	if !exists {
+		// First time: create the branch together with its worktree.
+		if _, err := wc.runGit("worktree", "add", "-b", branchName, worktreePath); err != nil {
 			return "", fmt.Errorf("failed to create worktree with new branch: %w", err)
 		}
-	} else {
-		// Branch exists, just add worktree for existing branch
-		_, err = wc.runGit("worktree", "add", worktreePath, branchName)
-		if err != nil {
-			// If worktree already exists, it might fail. Check if the directory is already a worktree.
-			if stat, statErr := os.Stat(worktreePath); statErr == nil && stat.IsDir() {
-				// We assume it's valid.
-			} else {
-				return "", fmt.Errorf("failed to checkout existing branch to worktree: %w", err)
-			}
+		return worktreePath, nil
+	}
+
+	if wc.isWorktreeOnBranch(worktreePath, branchName) {
+		if stat, statErr := os.Stat(worktreePath); statErr == nil && stat.IsDir() {
+			return worktreePath, nil
 		}
 	}
 
+	// Branch exists without a usable worktree: drop stale entries, then check
+	// the existing branch out into a new worktree.
+	_, _ = wc.runGit("worktree", "prune")
+	if _, err := wc.runGit("worktree", "add", worktreePath, branchName); err != nil {
+		return "", fmt.Errorf("failed to checkout existing branch to worktree: %w", err)
+	}
 	return worktreePath, nil
+}
+
+// branchExists interprets the exit code of git show-ref: 0 exists, 1 absent,
+// anything else is an error.
+func (wc *WorktreeController) branchExists(branchName string) (bool, error) {
+	_, code, err := wc.runGitCode("show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	switch {
+	case err != nil:
+		return false, err
+	case code == 0:
+		return true, nil
+	case code == 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("git show-ref exited with status %d", code)
+	}
+}
+
+// isWorktreeOnBranch reports whether git lists path as a worktree on branch.
+func (wc *WorktreeController) isWorktreeOnBranch(path, branchName string) bool {
+	out, err := wc.runGit("worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	wantPath, wantBranch := filepath.Clean(path), "branch refs/heads/"+branchName
+	current := ""
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			current = filepath.Clean(strings.TrimPrefix(line, "worktree "))
+		case line == wantBranch && sameFile(current, wantPath):
+			return true
+		}
+	}
+	return false
+}
+
+func sameFile(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
 }
 
 // Remove cleanly removes a worktree.
@@ -128,4 +174,22 @@ func (wc *WorktreeController) runGit(args ...string) (string, error) {
 		return "", fmt.Errorf("git %v failed: %w, stderr: %s", args, err, errOut.String())
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+// runGitCode runs git and returns its exit code. err is non-nil only when git
+// could not be run at all; a non-zero exit is reported through the code.
+func (wc *WorktreeController) runGitCode(args ...string) (string, int, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = wc.repoRoot
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return strings.TrimSpace(out.String()), exitErr.ExitCode(), nil
+		}
+		return "", -1, fmt.Errorf("git %v failed: %w", args, err)
+	}
+	return strings.TrimSpace(out.String()), 0, nil
 }

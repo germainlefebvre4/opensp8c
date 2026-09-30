@@ -12,7 +12,7 @@
 - **Session** — a live agent subprocess: *named* (bound to a change), *anonymous* (bound to a ghost UUID) or *fast-forward* (isolated namespace). Locked to one **Agent** at creation.
 - **Agent** — a supported CLI (Claude, Codex, Gemini, Antigravity, Copilot) with installed/version status and its own environment dictionary.
 - **Conversation run / Activity entry** — persisted JSONL logs: agent messages per run (`ConversationStore`) and non-agent events (`ActivityStore`); merged into the change's *Conversation* feed.
-- **Agent Pool, Worker, Worktree** — a per-workspace pool (`size` 1–5, `delegation_mode`) of workers, each assigned one change, working in its own git branch/worktree, with a status (`idle`, `working`, `testing`, `healing`, `paused`) and a block reason when paused.
+- **Agent Pool, Worker, Worktree** — a per-workspace pool (`size` 1–5, `delegation_mode`) of workers, each assigned one change, working in its own git branch/worktree, with a status (`idle`, `working`, `testing`, `healing`, `paused`) and a block reason when paused. A paused worker stays paused (its change is not redistributed) until explicitly resumed; resuming reuses the existing branch and worktree. Validation uses the resolved `validationCommand` pool setting, or auto-detects Go/Node projects when it is empty; an environment error pauses the worker at once.
 - **Preferences** — global settings: default agent, env vars, native question mode, agent languages (`chat`, `documentation`, `code`), custom specializations, ghosts, session-agent map.
 - **Generated documentation** — pages under `docs/opensp8c/` produced by an agent run, with a freshness flag.
 

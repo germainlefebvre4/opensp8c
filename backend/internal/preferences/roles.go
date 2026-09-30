@@ -96,17 +96,21 @@ type PoolSettings struct {
 	Size           int    `json:"size,omitempty"`
 	DelegationMode string `json:"delegationMode,omitempty"`
 	MaxAttempts    int    `json:"maxAttempts,omitempty"`
+	// ValidationCommand is run by `sh -c` at the worktree root after each
+	// agent turn; empty means "auto-detect".
+	ValidationCommand string `json:"validationCommand,omitempty"`
 }
 
 // PoolOverride is a partial per-workspace pool configuration; nil means inherit.
 type PoolOverride struct {
-	Size           *int    `json:"size,omitempty"`
-	DelegationMode *string `json:"delegationMode,omitempty"`
-	MaxAttempts    *int    `json:"maxAttempts,omitempty"`
+	Size              *int    `json:"size,omitempty"`
+	DelegationMode    *string `json:"delegationMode,omitempty"`
+	MaxAttempts       *int    `json:"maxAttempts,omitempty"`
+	ValidationCommand *string `json:"validationCommand,omitempty"`
 }
 
 func (o *PoolOverride) isEmpty() bool {
-	return o == nil || (o.Size == nil && o.DelegationMode == nil && o.MaxAttempts == nil)
+	return o == nil || (o.Size == nil && o.DelegationMode == nil && o.MaxAttempts == nil && o.ValidationCommand == nil)
 }
 
 // WorkspacePrefs are the overrides of one workspace, keyed by its stable id.
@@ -288,6 +292,7 @@ func (p *Preferences) ResolvePool(workspaceID string) PoolSettings {
 		if d.MaxAttempts != 0 {
 			out.MaxAttempts = d.MaxAttempts
 		}
+		out.ValidationCommand = strings.TrimSpace(d.ValidationCommand)
 	}
 	if ws := p.Workspaces[workspaceID]; ws != nil && ws.Pool != nil {
 		if ws.Pool.Size != nil {
@@ -298,6 +303,9 @@ func (p *Preferences) ResolvePool(workspaceID string) PoolSettings {
 		}
 		if ws.Pool.MaxAttempts != nil {
 			out.MaxAttempts = *ws.Pool.MaxAttempts
+		}
+		if ws.Pool.ValidationCommand != nil {
+			out.ValidationCommand = strings.TrimSpace(*ws.Pool.ValidationCommand)
 		}
 	}
 	return out
@@ -389,6 +397,8 @@ type PoolPatch struct {
 	Size           IntPatch    `json:"size"`
 	DelegationMode StringPatch `json:"delegationMode"`
 	MaxAttempts    IntPatch    `json:"maxAttempts"`
+	// ValidationCommand: null or blank resets to inheritance.
+	ValidationCommand StringPatch `json:"validationCommand"`
 }
 
 func (r RoleSettingPatch) apply(s RoleSetting) RoleSetting {
@@ -540,6 +550,13 @@ func applyPoolPatch(cur *PoolOverride, patch PoolPatch) (*PoolOverride, error) {
 			out.MaxAttempts = &v
 		}
 	}
+	if patch.ValidationCommand.Set {
+		if v := strings.TrimSpace(patch.ValidationCommand.Value); v == "" {
+			out.ValidationCommand = nil
+		} else {
+			out.ValidationCommand = &v
+		}
+	}
 	if out.isEmpty() {
 		return nil, nil
 	}
@@ -589,6 +606,10 @@ func (s *Service) SetPoolDefaults(patch PoolPatch) error {
 			v := d.MaxAttempts
 			cur.MaxAttempts = &v
 		}
+		if d.ValidationCommand != "" {
+			v := d.ValidationCommand
+			cur.ValidationCommand = &v
+		}
 	}
 	next, err := applyPoolPatch(cur, patch)
 	if err != nil {
@@ -606,6 +627,9 @@ func (s *Service) SetPoolDefaults(patch PoolPatch) error {
 		}
 		if next.MaxAttempts != nil {
 			d.MaxAttempts = *next.MaxAttempts
+		}
+		if next.ValidationCommand != nil {
+			d.ValidationCommand = *next.ValidationCommand
 		}
 		p.PoolDefaults = d
 	}
