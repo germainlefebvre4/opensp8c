@@ -60,6 +60,45 @@ tags:
 	}
 }
 
+func TestListChangesNormalizesMissingTagsType(t *testing.T) {
+	cases := map[string]string{
+		"missing-type": `
+schema: spec-driven
+tags:
+  complexity: 2
+  components:
+    - kanban
+`,
+		"empty-type": `
+schema: spec-driven
+tags:
+  type:
+  complexity: 2
+  components:
+    - kanban
+`,
+	}
+
+	for name, meta := range cases {
+		t.Run(name, func(t *testing.T) {
+			workspacePath := t.TempDir()
+			changesDir := filepath.Join(workspacePath, "openspec", "changes")
+			writeChangeFixture(t, changesDir, name, meta, "- [x] done\n")
+
+			changes, err := ListChanges(workspacePath)
+			if err != nil {
+				t.Fatalf("ListChanges: %v", err)
+			}
+			if len(changes) != 1 || changes[0].Tags == nil {
+				t.Fatalf("expected 1 change with tags, got %+v", changes)
+			}
+			if got := changes[0].Tags.Type; got == nil || len(got) != 0 {
+				t.Errorf("expected type to be an empty slice, got %#v", got)
+			}
+		})
+	}
+}
+
 func TestDeriveStatus_ReadyWhenNotLaunched(t *testing.T) {
 	if got := deriveStatus(0, 3, false); got != "ready" {
 		t.Errorf("expected \"ready\", got %q", got)

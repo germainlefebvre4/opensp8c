@@ -40,7 +40,7 @@ export function TimelineChangeCard({ change: c, specChips, extraComps, onFilterC
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-800">{c.name}</span>
-          {c.tags?.type.map(t => (
+          {c.tags?.type?.map(t => (
             <button
               key={t}
               onClick={() => onFilterClick(t)}

@@ -161,6 +161,9 @@ func loadChange(changesDir, name string, threshold int) (*Change, error) {
 	if err == nil {
 		_ = yaml.Unmarshal(data, &meta)
 	}
+	if meta.Tags != nil && meta.Tags.Type == nil {
+		meta.Tags.Type = []string{}
+	}
 	if meta.Tags != nil && meta.Tags.AgentSpecialization == nil {
 		meta.Tags.AgentSpecialization = []string{}
 	}
