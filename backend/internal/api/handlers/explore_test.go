@@ -519,21 +519,37 @@ func TestServeWSWritesToolResultOnNativeQuestionResponse(t *testing.T) {
 }
 
 // TestServeWSDeliversLiveMessagesPastBufferCapacity reproduces a long Explore
-// session: a connected client must keep receiving every event, in order, well
-// beyond the 500-entry buffer window (regression: the client used to stall
-// once the buffer saturated, leaving the final result undelivered).
+// session: a connected client that keeps up must receive every event, in
+// order, well beyond the 500-entry buffer window (regression: the client used
+// to stall once the buffer saturated, leaving the final result undelivered).
+// See the "Livraison en direct après saturation du buffer" scenario of the
+// explore-session spec.
+//
+// The producer is paced by the reader through a credit channel, so the lag
+// never reaches the window size whatever the machine load. A client that falls
+// more than 500 entries behind resumes at the oldest entry; that case is not
+// covered here.
 func TestServeWSDeliversLiveMessagesPastBufferCapacity(t *testing.T) {
 	sess := session.NewTestSession(nil)
 	conn, ctx := dialExploreWS(t, sess)
 
 	const total = 1500
+	// Window is 500 entries; a 300 lag leaves a 200-entry margin while the
+	// 1500 messages still exceed the window three times.
+	const maxLag = 300
+	credits := make(chan struct{}, maxLag)
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		for i := 0; i < total; i++ {
-			sess.InjectMessage([]byte(fmt.Sprintf(`{"type":"assistant","n":%d}`, i)))
-			if i%20 == 0 {
-				time.Sleep(time.Millisecond)
+			select {
+			case credits <- struct{}{}:
+			case <-done:
+				return
 			}
+			sess.InjectMessage([]byte(fmt.Sprintf(`{"type":"assistant","n":%d}`, i)))
 		}
+		// Uncredited: not counted in total, ends the read loop.
 		sess.InjectMessage([]byte(`{"type":"result","n":-1}`))
 	}()
 
@@ -560,6 +576,7 @@ func TestServeWSDeliversLiveMessagesPastBufferCapacity(t *testing.T) {
 			t.Fatalf("out of order or lost: got n=%d, want %d", evt.N, next)
 		}
 		next++
+		<-credits
 	}
 	if next != total {
 		t.Fatalf("received %d events, want %d", next, total)
