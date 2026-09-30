@@ -9,6 +9,7 @@ import type { AgentLanguageLevel, AgentLanguages, SupportedLanguage } from '../l
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { RoleSettingsTable } from '../components/RoleSettingsTable'
 import { AgentPoolSettingsForm } from '../components/AgentPoolSettingsForm'
+import { availableWorkers } from '../hooks/usePoolStatus'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
 import type { WorkerStatus } from '../hooks/usePoolStatus'
@@ -52,7 +53,9 @@ export function AgentPoolTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {pools.map(pool => (
+      {pools.map(pool => {
+        const available = availableWorkers(pool.size, pool.workers.length)
+        return (
         <div key={pool.workspace_id} className="flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-sm font-semibold text-slate-800">{pool.workspace_name}</h2>
@@ -62,6 +65,9 @@ export function AgentPoolTab() {
             <span className="text-[11px] text-slate-500">{delegationLabel(pool.delegation_mode)}</span>
           </div>
 
+          {pool.workers.length === 0 ? (
+            <p className="text-sm text-slate-400">{t('agentPoolTab.available', { count: available })}</p>
+          ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200">
@@ -93,8 +99,13 @@ export function AgentPoolTab() {
               ))}
             </tbody>
           </table>
+          )}
+          {pool.workers.length > 0 && available > 0 && (
+            <p className="text-sm text-slate-400">{t('agentPoolTab.available', { count: available })}</p>
+          )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

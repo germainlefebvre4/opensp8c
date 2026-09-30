@@ -283,6 +283,50 @@ describe('AgentPoolTab', () => {
     expect(html).toContain('Tentatives de réparation épuisées après 3 essai(s)')
   })
 
+  it('shows available workers instead of an empty table when the pool has no worker', () => {
+    mockAllPools({
+      pools: [
+        { workspace_id: 'workspace-a', workspace_name: 'Workspace A', size: 3, delegation_mode: 'full-autonomy', workers: [] },
+      ],
+    })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AgentPoolTab />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('0/3 workers actifs')
+    expect(html).toContain('3 workers disponibles')
+    expect(html).not.toContain('<table')
+  })
+
+  it('shows the remaining available workers under the table when partially used', () => {
+    mockAllPools({
+      pools: [
+        {
+          workspace_id: 'workspace-a',
+          workspace_name: 'Workspace A',
+          size: 3,
+          delegation_mode: 'full-autonomy',
+          workers: [
+            { id: 1, workspace_id: 'workspace-a', workspace_name: 'Workspace A', active_change: 'change-1', status: 'working', delegation_mode: 'full-autonomy', started_at: new Date().toISOString() },
+            { id: 2, workspace_id: 'workspace-a', workspace_name: 'Workspace A', active_change: 'change-2', status: 'working', delegation_mode: 'full-autonomy', started_at: new Date().toISOString() },
+          ],
+        },
+      ],
+    })
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AgentPoolTab />
+      </MemoryRouter>
+    )
+
+    expect(html).toContain('2/3 workers actifs')
+    expect(html).toContain('1 worker disponible')
+  })
+
   it('shows the empty state when no pool is active', () => {
     mockAllPools({ pools: [] })
 

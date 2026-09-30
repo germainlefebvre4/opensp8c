@@ -62,6 +62,39 @@ describe('AgentsPage', () => {
     expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
   })
 
+  it('shows capacity and available workers when the pool runs without worker', () => {
+    mockPoolStatus({
+      is_running: true,
+      config: { size: 3, delegation_mode: 'hitl-review', max_attempts: 3 },
+      workers: [],
+    })
+
+    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+
+    expect(html).toContain('0/3 workers actifs')
+    expect(html).toContain("3 workers disponibles, en attente d&#x27;un change prêt")
+    expect(html).not.toContain('Aucun agent')
+  })
+
+  it('shows the remaining available workers under the table when partially used', () => {
+    const startedAt = new Date().toISOString()
+    mockPoolStatus({
+      is_running: true,
+      config: { size: 3, delegation_mode: 'full-autonomy', max_attempts: 3 },
+      workers: [
+        { id: 1, active_change: 'change-1', status: 'working', started_at: startedAt },
+        { id: 2, active_change: 'change-2', status: 'testing', started_at: startedAt },
+      ],
+    })
+
+    const html = renderToStaticMarkup(<AgentsPage workspaceId="workspace-a" />)
+
+    expect(html).toContain('2/3 workers actifs')
+    expect(html).toContain('change-2')
+    expect(html).toContain('1 worker disponible')
+    expect(html).not.toContain('en attente')
+  })
+
   it('shows the blocked reason for a paused worker', () => {
     mockPoolStatus({
       is_running: true,

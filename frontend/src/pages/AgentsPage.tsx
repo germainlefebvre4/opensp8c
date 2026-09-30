@@ -1,6 +1,6 @@
 import { Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { usePoolStatus } from '../hooks/usePoolStatus'
+import { usePoolStatus, availableWorkers } from '../hooks/usePoolStatus'
 import type { PoolWorker, WorkerStatus } from '../hooks/usePoolStatus'
 
 interface Props {
@@ -32,6 +32,10 @@ export function AgentsPage({ workspaceId }: Props) {
   const { data } = usePoolStatus(workspaceId)
   const workers = data?.workers ?? []
 
+  const isRunning = data?.is_running ?? false
+  const size = data?.config.size ?? 0
+  const available = availableWorkers(size, workers.length)
+
   const delegationLabel = data?.config.delegation_mode === 'full-autonomy'
     ? tDialogs('agentPool.fullAutonomy.label')
     : tDialogs('agentPool.hitlReview.label')
@@ -44,8 +48,18 @@ export function AgentsPage({ workspaceId }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {isRunning && (
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <span className="text-[11px] text-slate-500">
+              {t('activeWorkers', { active: workers.length, size })}
+            </span>
+            <span className="text-[11px] text-slate-500">{delegationLabel}</span>
+          </div>
+        )}
         {workers.length === 0 ? (
-          <p className="text-sm text-slate-400">{t('emptyState')}</p>
+          <p className="text-sm text-slate-400">
+            {isRunning ? t('availableWaiting', { count: available }) : t('emptyState')}
+          </p>
         ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -75,6 +89,9 @@ export function AgentsPage({ workspaceId }: Props) {
               ))}
             </tbody>
           </table>
+        )}
+        {isRunning && workers.length > 0 && available > 0 && (
+          <p className="text-sm text-slate-400 mt-3">{t('available', { count: available })}</p>
         )}
       </div>
     </div>

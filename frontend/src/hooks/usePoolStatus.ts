@@ -28,5 +28,10 @@ export function usePoolStatus(workspaceId: string | null) {
     queryFn: () =>
       api.get(`/api/workspaces/${workspaceId}/pool/status`).then(r => r.data),
     enabled: !!workspaceId,
+    refetchInterval: 3000,
   })
+}
+
+export function availableWorkers(size: number, workerCount: number): number {
+  return Math.max(0, size - workerCount)
 }

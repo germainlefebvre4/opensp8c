@@ -12,6 +12,7 @@ import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBotto
 import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
 import { AgentPoolModal } from '../components/AgentPoolModal'
+import { PoolCapacity } from '../components/PoolCapacity'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { createClampToRectModifier } from '../lib/clampToRect'
 import { useChanges } from '../hooks/useChanges'
@@ -374,6 +375,7 @@ export function KanbanPage({ workspaceId }: Props) {
               >
                 <Cpu size={16} className={isPoolRunning ? "animate-pulse" : ""} />
                 {isPoolRunning ? t('agentPoolButton.stop') : t('agentPoolButton.start')}
+                <PoolCapacity status={poolStatus} />
               </button>
             </div>
 

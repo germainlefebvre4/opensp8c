@@ -8,5 +8,10 @@
     "duration": "Durée",
     "blockedReason": "Raison du blocage"
   },
-  "emptyState": "Aucun agent n'est actuellement actif."
+  "emptyState": "Aucun agent n'est actuellement actif.",
+  "activeWorkers": "{{active}}/{{size}} workers actifs",
+  "available_one": "{{count}} worker disponible",
+  "available_other": "{{count}} workers disponibles",
+  "availableWaiting_one": "{{count}} worker disponible, en attente d'un change prêt",
+  "availableWaiting_other": "{{count}} workers disponibles, en attente d'un change prêt"
 }

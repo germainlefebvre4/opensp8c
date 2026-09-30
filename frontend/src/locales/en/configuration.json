@@ -27,7 +27,9 @@
       "blockedReason": "Blocked reason"
     },
     "rowTooltip": "Go to {{workspace}}'s Kanban",
-    "emptyState": "No agent is currently active."
+    "emptyState": "No agent is currently active.",
+    "available_one": "{{count}} worker available",
+    "available_other": "{{count}} workers available"
   },
   "agentView": {
     "back": "Back to registry",
