@@ -55,6 +55,13 @@ func activityPath(cfgPath string) string {
 }
 
 func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
+	r, _ := NewRouterWithPools(cfg, cfgPath)
+	return r
+}
+
+// NewRouterWithPools builds the router and also returns the pool registry so
+// the server can stop every pool (and its process groups) on shutdown.
+func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool.Registry) {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
@@ -167,7 +174,7 @@ func NewRouter(cfg *config.Config, cfgPath string) http.Handler {
 
 	r.Handle("/*", staticHandler(ui.FS()))
 
-	return r
+	return r, poolRegistry
 }
 
 // staticHandler serves a SPA: exact files first, index.html fallback for unknown paths.

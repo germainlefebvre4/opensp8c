@@ -12,6 +12,10 @@
     "8b4a8cb8/fix-gemini-ide-warning-loop": {
       "agent": "gemini",
       "claudeSessionId": "4021548b-ef0a-4f12-b302-0b0b9e3f4244"
+    },
+    "8b4a8cb8/pool-safe-finalization": {
+      "agent": "claude",
+      "claudeSessionId": "97d4e7a6-86b8-4c07-a2da-9f3d42921ad9"
     }
   },
   "explorations": [
@@ -38,38 +42,6 @@
       "sessionId": "44e9ff388934fbf8c61bb02235c2196c",
       "createdAt": "2026-09-22T21:26:46Z",
       "lastActivityAt": "2026-09-22T21:26:46Z"
-    },
-    {
-      "id": "14de638f47a0d325a55007951eaf4909",
-      "workspaceId": "8b4a8cb8",
-      "name": "explore-14de63",
-      "sessionId": "14de638f47a0d325a55007951eaf4909",
-      "createdAt": "2026-09-25T06:24:43Z",
-      "lastActivityAt": "2026-09-25T06:54:22Z"
-    },
-    {
-      "id": "f549513d3b6567ae370421d8e5dece6b",
-      "workspaceId": "8b4a8cb8",
-      "name": "echo-openspec-test-var",
-      "sessionId": "f549513d3b6567ae370421d8e5dece6b",
-      "createdAt": "2026-09-29T08:15:50Z",
-      "lastActivityAt": "2026-09-29T15:11:09Z"
-    },
-    {
-      "id": "c7ca065baa900ea9067c6954dc5e963c",
-      "workspaceId": "8b4a8cb8",
-      "name": "color-palette-primary-success-distinction",
-      "sessionId": "c7ca065baa900ea9067c6954dc5e963c",
-      "createdAt": "2026-09-29T15:12:59Z",
-      "lastActivityAt": "2026-09-29T15:51:03Z"
-    },
-    {
-      "id": "5e9517518a78314e947b9bf0d6433b01",
-      "workspaceId": "8b4a8cb8",
-      "name": "improve-kanban-card-display",
-      "sessionId": "5e9517518a78314e947b9bf0d6433b01",
-      "createdAt": "2026-09-29T19:24:20Z",
-      "lastActivityAt": "2026-09-29T19:24:48Z"
     }
   ],
   "agentEnv": {
@@ -85,5 +57,12 @@
     "chat": "fr",
     "documentation": "en"
   },
-  "uiLocale": "en"
+  "uiLocale": "en",
+  "workspaces": {
+    "8b4a8cb8": {
+      "pool": {
+        "size": 1
+      }
+    }
+  }
 }

@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"sync"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
@@ -101,4 +102,24 @@ func (reg *Registry) AllPools() []PoolSummary {
 		})
 	}
 	return pools
+}
+
+// StopAll stops every pool and waits for their workers to terminate, within ctx.
+func (reg *Registry) StopAll(ctx context.Context) {
+	reg.mu.Lock()
+	managers := make([]*Manager, 0, len(reg.managers))
+	for _, m := range reg.managers {
+		managers = append(managers, m)
+	}
+	reg.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, m := range managers {
+		wg.Add(1)
+		go func(m *Manager) {
+			defer wg.Done()
+			_ = m.StopAndWait(ctx)
+		}(m)
+	}
+	wg.Wait()
 }

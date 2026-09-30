@@ -24,8 +24,12 @@ type GitWatcher struct {
 
 func NewGitWatcher(store *Store, cfg *config.Config, worktreesDir string) *GitWatcher {
 	if worktreesDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		worktreesDir = filepath.Join(homeDir, ".opensp8c", "worktrees")
+		if dir := os.Getenv("OPENSP8C_WORKTREES_DIR"); dir != "" {
+			worktreesDir = dir
+		} else {
+			homeDir, _ := os.UserHomeDir()
+			worktreesDir = filepath.Join(homeDir, ".opensp8c", "worktrees")
+		}
 	}
 	return &GitWatcher{
 		store:        store,
@@ -64,9 +68,13 @@ func (w *GitWatcher) PollOnce(ctx context.Context) {
 
 		for _, ch := range changes {
 			key := wsID + "/" + ch.Name
-			wtPath := filepath.Join(w.worktreesDir, "wt-"+ch.Name)
-
+			// Per-workspace location first, then the legacy one.
+			wtPath := filepath.Join(w.worktreesDir, wsID, "wt-"+ch.Name)
 			stat, err := os.Stat(wtPath)
+			if err != nil || !stat.IsDir() {
+				wtPath = filepath.Join(w.worktreesDir, "wt-"+ch.Name)
+				stat, err = os.Stat(wtPath)
+			}
 			if err != nil || !stat.IsDir() {
 				// Worktree inactive or removed
 				delete(w.lastHEADs, key)

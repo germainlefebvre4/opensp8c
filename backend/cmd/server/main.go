@@ -51,7 +51,7 @@ func main() {
 		host = "0.0.0.0"
 	}
 
-	router := api.NewRouter(cfg, cfgPath)
+	router, poolRegistry := api.NewRouterWithPools(cfg, cfgPath)
 
 	// Background batch: tag all untagged changes in each workspace
 	go func() {
@@ -89,6 +89,9 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// Stop the agent pools first so no agent or validation process group
+	// outlives the server.
+	poolRegistry.StopAll(ctx)
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("forced shutdown: %v", err)
 	}

@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,9 +37,15 @@ func newTestRepo(t *testing.T) string {
 	return repo
 }
 
+// newTestWC builds a controller whose worktrees live in a temp directory.
+func newTestWC(t *testing.T, repo string) *WorktreeController {
+	t.Helper()
+	return NewWorktreeController(repo, "ws-a", t.TempDir())
+}
+
 func TestProvisionFirstTime(t *testing.T) {
 	repo := newTestRepo(t)
-	wc := NewWorktreeController(repo)
+	wc := newTestWC(t, repo)
 	path, err := wc.Provision("add-auth")
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +61,7 @@ func TestProvisionFirstTime(t *testing.T) {
 func TestProvisionBranchExistsWithoutWorktree(t *testing.T) {
 	repo := newTestRepo(t)
 	gitIn(t, repo, "branch", "feature/add-auth")
-	wc := NewWorktreeController(repo)
+	wc := newTestWC(t, repo)
 	path, err := wc.Provision("add-auth")
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +73,7 @@ func TestProvisionBranchExistsWithoutWorktree(t *testing.T) {
 
 func TestProvisionStaleWorktreeEntry(t *testing.T) {
 	repo := newTestRepo(t)
-	wc := NewWorktreeController(repo)
+	wc := newTestWC(t, repo)
 	path, err := wc.Provision("add-auth")
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +88,7 @@ func TestProvisionStaleWorktreeEntry(t *testing.T) {
 
 func TestProvisionReusesExistingWorktreeKeepingUncommitted(t *testing.T) {
 	repo := newTestRepo(t)
-	wc := NewWorktreeController(repo)
+	wc := newTestWC(t, repo)
 	path, err := wc.Provision("add-auth")
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +112,235 @@ func TestProvisionReusesExistingWorktreeKeepingUncommitted(t *testing.T) {
 func TestProvisionGitFailureIsReported(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	notRepo := t.TempDir()
-	if _, err := NewWorktreeController(notRepo).Provision("add-auth"); err == nil {
+	if _, err := NewWorktreeController(notRepo, "ws", t.TempDir()).Provision("add-auth"); err == nil {
 		t.Fatal("expected an error outside a git repository")
+	}
+}
+
+func TestProvisionIsolatesWorkspaces(t *testing.T) {
+	repoA, repoB := newTestRepo(t), newTestRepo(t)
+	root := t.TempDir()
+	pathA, err := NewWorktreeController(repoA, "ws-a", root).Provision("shared-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathB, err := NewWorktreeController(repoB, "ws-b", root).Provision("shared-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pathA == pathB {
+		t.Fatalf("both workspaces share %s", pathA)
+	}
+	if want := filepath.Join(root, "ws-a", "wt-shared-change"); pathA != want {
+		t.Fatalf("path = %s, want %s", pathA, want)
+	}
+	// Cleaning one workspace never touches the other.
+	if err := NewWorktreeController(repoA, "ws-a", root).Remove("shared-change"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(pathB); err != nil {
+		t.Fatalf("workspace B worktree affected: %v", err)
+	}
+}
+
+func TestProvisionReusesLegacyWorktree(t *testing.T) {
+	repo := newTestRepo(t)
+	root := t.TempDir()
+	legacy := filepath.Join(root, "wt-add-auth")
+	gitIn(t, repo, "worktree", "add", "-b", "feature/add-auth", legacy)
+	writeFile(t, filepath.Join(legacy, "wip.txt"), "wip")
+
+	wc := NewWorktreeController(repo, "ws-a", root)
+	got, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != legacy {
+		t.Fatalf("legacy worktree not reused: %s", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(legacy, "wip.txt")); err != nil || string(b) != "wip" {
+		t.Fatalf("uncommitted file lost: %v %q", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(root, "ws-a", "wt-add-auth")); err == nil {
+		t.Fatal("a second worktree was created")
+	}
+}
+
+func TestRemoveRefusesDirtyWorktree(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(path, "wip.txt"), "wip")
+	if err := wc.Remove("add-auth"); err == nil {
+		t.Fatal("Remove must fail on a dirty worktree")
+	}
+	if _, err := os.Stat(filepath.Join(path, "wip.txt")); err != nil {
+		t.Fatalf("uncommitted file lost: %v", err)
+	}
+}
+
+func TestRemoveCleanAndVanishedWorktrees(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, err := wc.Provision("clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Remove("clean"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("worktree still there: %v", err)
+	}
+	path, err = wc.Provision("vanished")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Remove("vanished"); err != nil {
+		t.Fatalf("vanished worktree should just be pruned: %v", err)
+	}
+}
+
+func TestDiscard(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+
+	// An unregistered directory at the expected path is never deleted.
+	stray := wc.worktreePath("stray")
+	writeFile(t, filepath.Join(stray, "precious.txt"), "x")
+	if err := wc.Discard("stray"); err == nil {
+		t.Fatal("Discard must refuse a path that is not a registered worktree")
+	}
+	if _, err := os.Stat(filepath.Join(stray, "precious.txt")); err != nil {
+		t.Fatalf("stray directory was touched: %v", err)
+	}
+
+	// An explicit Discard removes a dirty worktree and its branch.
+	path, err := wc.Provision("dirty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(path, "wip.txt"), "wip")
+	if err := wc.Discard("dirty"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("worktree still there: %v", err)
+	}
+	if exists, _ := wc.branchExists("feature/dirty"); exists {
+		t.Fatal("branch still there")
+	}
+}
+
+func TestCommitAllAndHasWork(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has, err := wc.HasWork("add-auth"); err != nil || has {
+		t.Fatalf("HasWork on an empty branch = %v, %v", has, err)
+	}
+	if files, err := wc.CommitAll("add-auth"); err != nil || len(files) != 0 {
+		t.Fatalf("CommitAll on a clean worktree = %v, %v", files, err)
+	}
+
+	writeFile(t, filepath.Join(path, "new.txt"), "n")
+	if has, _ := wc.HasWork("add-auth"); !has {
+		t.Fatal("dirty worktree counts as work")
+	}
+	files, err := wc.CommitAll("add-auth")
+	if err != nil || len(files) != 1 || files[0] != "new.txt" {
+		t.Fatalf("CommitAll = %v, %v", files, err)
+	}
+	if gitIn(t, path, "status", "--porcelain") != "" {
+		t.Fatal("worktree still dirty after commit")
+	}
+	if has, _ := wc.HasWork("add-auth"); !has {
+		t.Fatal("a branch-only commit counts as work")
+	}
+
+	// An agent that already committed leaves nothing to commit: no empty commit.
+	before := gitIn(t, path, "rev-parse", "HEAD")
+	if files, err := wc.CommitAll("add-auth"); err != nil || len(files) != 0 {
+		t.Fatalf("CommitAll = %v, %v", files, err)
+	}
+	if gitIn(t, path, "rev-parse", "HEAD") != before {
+		t.Fatal("an empty commit was created")
+	}
+}
+
+func TestMergeInto(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("ok-change")
+	writeFile(t, filepath.Join(path, "ok.txt"), "ok")
+	if _, err := wc.CommitAll("ok-change"); err != nil {
+		t.Fatal(err)
+	}
+	target, err := wc.MergeInto("ok-change")
+	if err != nil || target != "main" {
+		t.Fatalf("MergeInto = %s, %v", target, err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "ok.txt")); err != nil {
+		t.Fatalf("merged file missing: %v", err)
+	}
+	if err := wc.Remove("ok-change"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.DeleteBranch("ok-change"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMergeIntoConflictIsAborted(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("conflict")
+	writeFile(t, filepath.Join(path, "README.md"), "from branch")
+	if _, err := wc.CommitAll("conflict"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "README.md"), "from main")
+	gitIn(t, repo, "commit", "-q", "-am", "main change")
+
+	if _, err := wc.MergeInto("conflict"); err == nil {
+		t.Fatal("expected a conflict")
+	}
+	if wc.mergeInProgress() {
+		t.Fatal("the failed merge must be aborted")
+	}
+	if gitIn(t, repo, "status", "--porcelain") != "" {
+		t.Fatal("main tree left dirty")
+	}
+	if exists, _ := wc.branchExists("feature/conflict"); !exists {
+		t.Fatal("branch must be kept")
+	}
+}
+
+func TestMergeIntoRefusesExistingMerge(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("blocked")
+	writeFile(t, filepath.Join(path, "b.txt"), "b")
+	if _, err := wc.CommitAll("blocked"); err != nil {
+		t.Fatal(err)
+	}
+	// A merge started by the user.
+	mergeHead := filepath.Join(repo, ".git", "MERGE_HEAD")
+	writeFile(t, mergeHead, gitIn(t, repo, "rev-parse", "HEAD")+"\n")
+
+	if _, err := wc.MergeInto("blocked"); !errors.Is(err, ErrMergeInProgress) {
+		t.Fatalf("err = %v, want ErrMergeInProgress", err)
+	}
+	if _, err := os.Stat(mergeHead); err != nil {
+		t.Fatalf("the user's merge state was touched: %v", err)
 	}
 }

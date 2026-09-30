@@ -75,7 +75,7 @@ func assertEndMarker(t *testing.T, lines []journalLine, wantOutcome string) (rea
 type startFn = func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error)
 
 func autoStub(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
-	return fakeAutoRespondingSubprocess(), nil
+	return workingAgentStub()(ctx, workspacePath, agentCfg, extraSystemPrompt, claudeSessionID, resume, sessionLog, customEnv, nativeQuestionMode, languageDirective)
 }
 
 func newJournalManager(t *testing.T, repoDir string, mode DelegationMode, stub startFn) (*Manager, *conversation.Store, *mockBroadcaster) {

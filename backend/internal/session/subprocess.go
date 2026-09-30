@@ -261,6 +261,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 		// Use a dummy process to satisfy Cmd and Wait requirements of Subprocess.
 		// "cat" is lightweight and will run indefinitely until its stdin is closed.
 		dummyCmd := exec.CommandContext(ctx, "cat")
+		ApplyProcessGroup(dummyCmd)
 		dummyStdin, err := dummyCmd.StdinPipe()
 		if err != nil {
 			return nil, err
@@ -335,6 +336,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 				// Start the real gemini subprocess
 				subCtx, subCancel := context.WithCancel(ctx)
 				cmd := exec.CommandContext(subCtx, agentCfg.CLI, args...)
+				ApplyProcessGroup(cmd)
 				cmd.Dir = workspacePath
 				cmd.Env = buildEnv(customEnv)
 
@@ -433,6 +435,7 @@ func StartSubprocess(ctx context.Context, workspacePath string, agentCfg agents.
 
 	args := buildSubprocessArgs(agentCfg, basePrompt, joinPrompts(extraSystemPrompt, languageDirective), claudeSessionID, resume)
 	cmd := exec.CommandContext(ctx, agentCfg.CLI, args...)
+	ApplyProcessGroup(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -1,2 +1,22 @@
 schema: spec-driven
-created: 2026-09-30
+created: "2026-09-30"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 4
+    components:
+        - agent-pool-real-execution
+        - agent-pool-status-visibility
+        - workspace-agent-pool-tab
+        - workspace-settings
+        - platform-configuration-menu
+        - api-router
+        - kanban-board
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-09-30"

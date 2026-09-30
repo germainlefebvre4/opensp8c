@@ -23,13 +23,16 @@ type Broadcaster interface {
 
 // Manager orchestrates the agent pool.
 type Manager struct {
-	mu               sync.Mutex
-	workspaceID      string
-	workspaceName    string
-	workspacePath    string
-	config           AgentPoolConfig
-	activeWorkers    map[int]*Worker
-	pausedWorkers    map[int]*Worker
+	mu            sync.Mutex
+	workspaceID   string
+	workspaceName string
+	workspacePath string
+	config        AgentPoolConfig
+	activeWorkers map[int]*Worker
+	pausedWorkers map[int]*Worker
+	// reviewChanges holds the changes handed to review (hitl-review): the
+	// dispatcher skips them while the pool stays up. In memory on purpose.
+	reviewChanges    map[string]bool
 	lastWorkerStatus map[int]WorkerStatus
 	cancelLoop       context.CancelFunc
 	isRunning        bool
@@ -38,6 +41,12 @@ type Manager struct {
 	prefs            *preferences.Service
 	activityStore    *activity.Store
 	convStore        *conversation.Store
+
+	// worktreesRoot is the root directory of the worktrees, read once from
+	// OPENSP8C_WORKTREES_DIR (or the default) at construction.
+	worktreesRoot string
+	// mergeMu serializes the merges into the workspace repository.
+	mergeMu sync.Mutex
 
 	// workers tracks running runWorker goroutines so tests can wait for them
 	// after Stop (which only cancels them).
@@ -59,6 +68,8 @@ func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *pre
 	return &Manager{
 		activeWorkers:    make(map[int]*Worker),
 		pausedWorkers:    make(map[int]*Worker),
+		reviewChanges:    make(map[string]bool),
+		worktreesRoot:    DefaultWorktreesRoot(),
 		lastWorkerStatus: make(map[int]WorkerStatus),
 		broadcaster:      broadcaster,
 		sessionMgr:       sessionMgr,
@@ -102,6 +113,9 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 		cfg.MaxAttempts = 3
 	}
 
+	m.pausedWorkers = make(map[int]*Worker)
+	m.reviewChanges = make(map[string]bool)
+
 	m.config = cfg
 	m.workspaceID = workspaceID
 	m.workspaceName = workspaceName
@@ -120,6 +134,23 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 
 // waitWorkers blocks until every started worker goroutine has returned.
 func (m *Manager) waitWorkers() { m.workers.Wait() }
+
+// StopAndWait stops the pool and waits for every worker goroutine (and so
+// their process groups) to finish, within ctx.
+func (m *Manager) StopAndWait(ctx context.Context) error {
+	m.Stop()
+	done := make(chan struct{})
+	go func() {
+		m.waitWorkers()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // Stop halts the orchestration loop and cancels all active workers.
 func (m *Manager) Stop() {
@@ -142,6 +173,7 @@ func (m *Manager) Stop() {
 	}
 	m.activeWorkers = make(map[int]*Worker)
 	m.pausedWorkers = make(map[int]*Worker)
+	m.reviewChanges = make(map[string]bool)
 	m.isRunning = false
 
 	m.broadcastLocked()
@@ -295,6 +327,10 @@ func (m *Manager) tick() {
 	// stopped), otherwise the dispatcher would relaunch it on the next tick.
 	for _, w := range m.pausedWorkers {
 		activeChangeSet[w.ActiveChange] = true
+	}
+	// A change handed to review stays excluded until the pool restarts.
+	for changeName := range m.reviewChanges {
+		activeChangeSet[changeName] = true
 	}
 
 	for _, changeName := range runnable {

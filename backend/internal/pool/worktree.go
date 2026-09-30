@@ -10,34 +10,96 @@ import (
 	"strings"
 )
 
-// WorktreeController manages isolated git worktrees for workers.
-type WorktreeController struct {
-	repoRoot string
-}
+// worktreesEnv overrides the root directory of all worktrees.
+const worktreesEnv = "OPENSP8C_WORKTREES_DIR"
 
-func NewWorktreeController(repoRoot string) *WorktreeController {
-	return &WorktreeController{
-		repoRoot: repoRoot,
+// ErrMergeInProgress reports that the repository already has a merge in
+// progress (typically started by the user), which the pool must never touch.
+var ErrMergeInProgress = errors.New("un merge est déjà en cours dans le dépôt")
+
+// DefaultWorktreesRoot returns the root directory of the worktrees: the
+// OPENSP8C_WORKTREES_DIR environment variable when set, else
+// ~/.opensp8c/worktrees.
+func DefaultWorktreesRoot() string {
+	if dir := strings.TrimSpace(os.Getenv(worktreesEnv)); dir != "" {
+		return dir
 	}
-}
-
-func (wc *WorktreeController) worktreesDir() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".opensp8c", "worktrees")
 }
 
+// WorktreeController manages isolated git worktrees for workers.
+type WorktreeController struct {
+	repoRoot    string
+	workspaceID string
+	root        string
+}
+
+// NewWorktreeController builds a controller for repoRoot whose worktrees live
+// under <worktreesRoot>/<workspaceID>/wt-<change>. An empty worktreesRoot
+// selects DefaultWorktreesRoot.
+func NewWorktreeController(repoRoot, workspaceID, worktreesRoot string) *WorktreeController {
+	if worktreesRoot == "" {
+		worktreesRoot = DefaultWorktreesRoot()
+	}
+	return &WorktreeController{
+		repoRoot:    repoRoot,
+		workspaceID: workspaceID,
+		root:        worktreesRoot,
+	}
+}
+
+// workspaceDir is the directory holding this workspace's worktrees.
+func (wc *WorktreeController) workspaceDir() string {
+	id := wc.workspaceID
+	if id == "" {
+		id = "default"
+	}
+	return filepath.Join(wc.root, id)
+}
+
+// worktreePath is the current location of the worktree of a change.
+func (wc *WorktreeController) worktreePath(changeName string) string {
+	return filepath.Join(wc.workspaceDir(), "wt-"+changeName)
+}
+
+// legacyWorktreePath is the location used before worktrees were isolated per
+// workspace.
+func (wc *WorktreeController) legacyWorktreePath(changeName string) string {
+	return filepath.Join(wc.root, "wt-"+changeName)
+}
+
+// resolvePath returns where the worktree of a change lives: the legacy
+// location when a worktree of this repository on the change's branch is
+// registered there, the per-workspace location otherwise.
+func (wc *WorktreeController) resolvePath(changeName string) string {
+	branchName := "feature/" + changeName
+	legacy := wc.legacyWorktreePath(changeName)
+	current := wc.worktreePath(changeName)
+	if wc.isWorktreeOnBranch(current, branchName) {
+		return current
+	}
+	if wc.isWorktreeOnBranch(legacy, branchName) {
+		if stat, err := os.Stat(legacy); err == nil && stat.IsDir() {
+			return legacy
+		}
+	}
+	return current
+}
+
 // Provision makes sure the branch and the git worktree of the given change
 // exist and returns the absolute path of the worktree. It is idempotent: an
-// existing branch and worktree are reused as-is, and the working tree is never
-// reset or cleaned so uncommitted agent changes survive a resume.
+// existing branch and worktree (including one at the legacy, non-workspace
+// location) are reused as-is, and the working tree is never reset or cleaned
+// so uncommitted agent changes survive a resume.
 func (wc *WorktreeController) Provision(changeName string) (string, error) {
-	err := os.MkdirAll(wc.worktreesDir(), 0755)
+	err := os.MkdirAll(wc.workspaceDir(), 0755)
 	if err != nil {
 		return "", fmt.Errorf("failed to create worktrees directory: %w", err)
 	}
 
 	branchName := "feature/" + changeName
-	worktreePath := filepath.Join(wc.worktreesDir(), "wt-"+changeName)
+	worktreePath := wc.worktreePath(changeName)
 
 	exists, err := wc.branchExists(branchName)
 	if err != nil {
@@ -52,9 +114,9 @@ func (wc *WorktreeController) Provision(changeName string) (string, error) {
 		return worktreePath, nil
 	}
 
-	if wc.isWorktreeOnBranch(worktreePath, branchName) {
-		if stat, statErr := os.Stat(worktreePath); statErr == nil && stat.IsDir() {
-			return worktreePath, nil
+	if resolved := wc.resolvePath(changeName); wc.isWorktreeOnBranch(resolved, branchName) {
+		if stat, statErr := os.Stat(resolved); statErr == nil && stat.IsDir() {
+			return resolved, nil
 		}
 	}
 
@@ -112,58 +174,150 @@ func sameFile(a, b string) bool {
 	return errA == nil && errB == nil && ra == rb
 }
 
-// Remove cleanly removes a worktree.
+// Remove removes the worktree of a change without ever forcing: a worktree
+// holding uncommitted changes (or locked) is kept and the error is returned.
+// Only a worktree whose directory already vanished is pruned.
 func (wc *WorktreeController) Remove(changeName string) error {
-	worktreePath := filepath.Join(wc.worktreesDir(), "wt-"+changeName)
+	worktreePath := wc.resolvePath(changeName)
 
-	// Force remove the worktree
-	_, err := wc.runGit("worktree", "remove", "--force", worktreePath)
-	if err != nil {
-		// Fallback to manual removal and prune if `git worktree remove` fails
-		os.RemoveAll(worktreePath)
-		wc.runGit("worktree", "prune")
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		if _, perr := wc.runGit("worktree", "prune"); perr != nil {
+			return fmt.Errorf("failed to prune worktrees: %w", perr)
+		}
+		return nil
+	}
+	if _, err := wc.runGit("worktree", "remove", worktreePath); err != nil {
 		return fmt.Errorf("failed to remove worktree safely: %w", err)
 	}
 	return nil
 }
 
-// MergeAndCleanup merges the change branch into the main branch and deletes the feature branch.
-func (wc *WorktreeController) MergeAndCleanup(changeName string) error {
+// Discard removes the worktree and the branch of a change, uncommitted work
+// included. It is the only forced removal and is reserved for an explicit
+// user cancellation; it refuses any path that is not a registered worktree of
+// the repository.
+func (wc *WorktreeController) Discard(changeName string) error {
+	worktreePath := wc.resolvePath(changeName)
+	if !wc.isRegisteredWorktree(worktreePath) {
+		return fmt.Errorf("%s is not a registered worktree of %s: nothing removed", worktreePath, wc.repoRoot)
+	}
+	if _, err := wc.runGit("worktree", "remove", "--force", worktreePath); err != nil {
+		return fmt.Errorf("failed to discard worktree: %w", err)
+	}
 	branchName := "feature/" + changeName
-
-	// 1. Ensure worktree is removed first, so we aren't blocked by checked out branch.
-	wc.Remove(changeName)
-
-	// 2. Merge branch into current (presumably main)
-	// We use the main repo workspace for this
-	_, err := wc.runGit("merge", "--no-ff", "-m", "Merge change "+changeName, branchName)
-	if err != nil {
-		// Merge conflict or failure
-		// We could abort the merge
-		wc.runGit("merge", "--abort")
-		return fmt.Errorf("merge failed (aborted): %w", err)
+	if exists, err := wc.branchExists(branchName); err == nil && exists {
+		if _, err := wc.runGit("branch", "-D", branchName); err != nil {
+			return err
+		}
 	}
-
-	// 3. Delete the feature branch
-	_, err = wc.runGit("branch", "-D", branchName)
-	if err != nil {
-		return fmt.Errorf("failed to delete branch after merge: %w", err)
-	}
-
 	return nil
 }
 
-// CleanupDiscard removes the worktree and deletes the branch without merging.
-func (wc *WorktreeController) CleanupDiscard(changeName string) error {
-	branchName := "feature/" + changeName
-	wc.Remove(changeName)
-	_, err := wc.runGit("branch", "-D", branchName)
+// isRegisteredWorktree reports whether git lists path as a worktree of the repository.
+func (wc *WorktreeController) isRegisteredWorktree(path string) bool {
+	out, err := wc.runGit("worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	want := filepath.Clean(path)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "worktree ") && sameFile(filepath.Clean(strings.TrimPrefix(line, "worktree ")), want) {
+			return true
+		}
+	}
+	return false
+}
+
+// CommitAll commits every uncommitted change of the worktree of changeName
+// into its branch. It only commits when the worktree is dirty and returns the
+// committed files (nil when there was nothing to commit).
+func (wc *WorktreeController) CommitAll(changeName string) ([]string, error) {
+	path := wc.resolvePath(changeName)
+	status, err := wc.runGitIn(path, "status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	if status == "" {
+		return nil, nil
+	}
+	if _, err := wc.runGitIn(path, "add", "-A"); err != nil {
+		return nil, err
+	}
+	files, err := wc.runGitIn(path, "diff", "--cached", "--name-only")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := wc.runGitIn(path, "commit", "-q", "-m", "feat("+changeName+"): apply OpenSpec change"); err != nil {
+		return nil, err
+	}
+	return strings.Split(files, "\n"), nil
+}
+
+// HasWork reports whether the change produced anything: a dirty worktree or
+// commits on its branch that the repository's current branch does not have.
+func (wc *WorktreeController) HasWork(changeName string) (bool, error) {
+	status, err := wc.runGitIn(wc.resolvePath(changeName), "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	if status != "" {
+		return true, nil
+	}
+	count, err := wc.runGit("rev-list", "--count", "HEAD..feature/"+changeName)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(count) != "0", nil
+}
+
+// CurrentBranch returns the branch currently checked out in the repository.
+func (wc *WorktreeController) CurrentBranch() string {
+	out, err := wc.runGit("symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return "HEAD"
+	}
+	return out
+}
+
+// MergeInto merges the change branch into the repository's current branch and
+// returns that target branch. It refuses to run while a merge is already in
+// progress and only aborts a merge that it started itself.
+func (wc *WorktreeController) MergeInto(changeName string) (string, error) {
+	target := wc.CurrentBranch()
+	if wc.mergeInProgress() {
+		return target, ErrMergeInProgress
+	}
+	_, err := wc.runGit("merge", "--no-ff", "-m", "Merge change "+changeName, "feature/"+changeName)
+	if err != nil {
+		if wc.mergeInProgress() {
+			_, _ = wc.runGit("merge", "--abort")
+		}
+		return target, fmt.Errorf("merge failed (aborted): %w", err)
+	}
+	return target, nil
+}
+
+func (wc *WorktreeController) mergeInProgress() bool {
+	_, code, err := wc.runGitCode("rev-parse", "-q", "--verify", "MERGE_HEAD")
+	return err == nil && code == 0
+}
+
+// DeleteBranch deletes the merged change branch; git refuses when it is not
+// fully merged.
+func (wc *WorktreeController) DeleteBranch(changeName string) error {
+	_, err := wc.runGit("branch", "-d", "feature/"+changeName)
 	return err
 }
 
 func (wc *WorktreeController) runGit(args ...string) (string, error) {
+	return wc.runGitIn(wc.repoRoot, args...)
+}
+
+// runGitIn runs git in dir (the repository or one of its worktrees).
+func (wc *WorktreeController) runGitIn(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
-	cmd.Dir = wc.repoRoot
+	cmd.Dir = dir
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	cmd.Stdout = &out

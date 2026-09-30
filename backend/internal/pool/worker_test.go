@@ -52,6 +52,30 @@ func fakeAutoRespondingSubprocess() *session.Subprocess {
 	return session.NewTestSubprocess(inW, outR, "claude")
 }
 
+// workingAgentStub returns a startSubprocessFn stub whose agent writes an
+// uncommitted file in its worktree on every turn, then answers with a result:
+// the way a real agent leaves its work behind without committing it.
+func workingAgentStub() func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
+	return func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
+		inR, inW := io.Pipe()
+		outR, outW := io.Pipe()
+		go func() {
+			r := bufio.NewReader(inR)
+			for {
+				if _, err := r.ReadString('\n'); err != nil {
+					_ = outW.Close()
+					return
+				}
+				_ = os.WriteFile(filepath.Join(workspacePath, "agent-output.txt"), []byte("work"), 0644)
+				if _, err := outW.Write([]byte(`{"type":"result"}` + "\n")); err != nil {
+					return
+				}
+			}
+		}()
+		return session.NewTestSubprocess(inW, outR, "claude"), nil
+	}
+}
+
 // TestRunTurn_WritesTurnAndReturnsOnResult verifies that runTurn writes the
 // expected stream-json user turn to the subprocess's stdin, extracts
 // activity from content_block_delta lines into w.Activity as they stream in,
@@ -289,11 +313,6 @@ func newGoFixtureRepo(t *testing.T, changeName, tasksMd string) string {
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
 
-	t.Cleanup(func() {
-		home, _ := os.UserHomeDir()
-		_ = os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
-	})
-
 	return repoDir
 }
 
@@ -308,6 +327,9 @@ func newWorkerTestManager(t *testing.T, repoDir string, cfg AgentPoolConfig, stu
 
 	m := NewManager(nil, nil, nil, nil, nil)
 	m.workspacePath = repoDir
+	// Outside t.TempDir(): a background worker may still provision after the
+	// test returns and must not race the temp dir cleanup.
+	m.worktreesRoot = filepath.Join(os.Getenv("OPENSP8C_WORKTREES_DIR"), filepath.Base(repoDir))
 	m.config = cfg
 	return m
 }
@@ -523,11 +545,6 @@ func TestRunWorker_PausesWithReason_HealExhausted(t *testing.T) {
 	runGit("init", "-q")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A")
 	runGit("-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
-	t.Cleanup(func() {
-		home, _ := os.UserHomeDir()
-		_ = os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
-	})
-
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
 		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
 			return fakeAutoRespondingSubprocess(), nil
@@ -562,9 +579,7 @@ func TestRunWorker_FinalizesWhenTasksComplete(t *testing.T) {
 	repoDir := newGoFixtureRepo(t, changeName, "- [x] one\n- [x] two\n")
 
 	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeFullAutonomy, MaxAttempts: 1},
-		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
-			return fakeAutoRespondingSubprocess(), nil
-		})
+		workingAgentStub())
 
 	w := &Worker{ID: 1, ActiveChange: changeName}
 	m.activeWorkers[1] = w

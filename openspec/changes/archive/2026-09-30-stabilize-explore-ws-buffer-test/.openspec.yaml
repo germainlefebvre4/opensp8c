@@ -1,3 +1,14 @@
 schema: spec-driven
-created: 2026-09-30
-skip_specs: true
+created: "2026-09-30"
+tags:
+    type:
+        - backend
+    complexity: 1
+    components:
+        - explore-session
+        - websocket-tests
+    agent_specialization:
+        - testing
+        - backend
+    _auto: true
+    _tagged_at: "2026-09-30"

@@ -9,6 +9,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/glefebvre/opensp8c/internal/agents"
@@ -33,8 +34,15 @@ var startSubprocessFn = session.StartSubprocess
 // pauseWorker marks w as paused with a human-readable reason and snapshots it
 // into m.pausedWorkers, so it stays visible via Status()/AllPools() even
 // after runWorker's own deferred cleanup removes it from m.activeWorkers.
-func (m *Manager) pauseWorker(w *Worker, reason string) {
+// A worker whose ctx is already cancelled (pool stopped, change unlaunched) is
+// not paused: it reports false and leaves no ghost pause behind. The check
+// runs under m.mu, like the cancellation in Stop, so it cannot interleave.
+func (m *Manager) pauseWorker(ctx context.Context, w *Worker, reason string) bool {
 	m.mu.Lock()
+	if ctx.Err() != nil {
+		m.mu.Unlock()
+		return false
+	}
 	w.Status = StatusPaused
 	w.BlockedReason = reason
 	snapshot := *w
@@ -42,6 +50,7 @@ func (m *Manager) pauseWorker(w *Worker, reason string) {
 	m.mu.Unlock()
 
 	m.notify()
+	return true
 }
 
 // setStatus, setActivity and setRun mutate w under m.mu so that Status()
@@ -76,19 +85,28 @@ func (m *Manager) setWorktree(w *Worker, path, branch string) {
 func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.activeWorkers, w.ID)
-		delete(m.lastWorkerStatus, w.ID)
+		// Only remove our own entry: after Stop/Start a newer worker may
+		// have reused this ID.
+		if m.activeWorkers[w.ID] == w {
+			delete(m.activeWorkers, w.ID)
+			delete(m.lastWorkerStatus, w.ID)
+		}
 		m.mu.Unlock()
 		m.notify()
 	}()
 
-	wt := NewWorktreeController(m.workspacePath)
+	// Snapshot the pool settings: Stop/Start may rewrite them while this
+	// worker is still winding down.
+	m.mu.Lock()
+	cfg, repoPath, worktreesRoot := m.config, m.workspacePath, m.worktreesRoot
+	m.mu.Unlock()
+	wt := NewWorktreeController(repoPath, w.WorkspaceID, worktreesRoot)
 
 	// 1. Provision Environment
 	worktreePath, err := wt.Provision(w.ActiveChange)
 	if err != nil {
 		log.Printf("[worker %d] failed to provision worktree: %v\n", w.ID, err)
-		m.pauseWorker(w, fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+		m.pauseWorker(ctx, w, fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
 		return
 	}
 	m.setWorktree(w, worktreePath, "feature/"+w.ActiveChange)
@@ -108,6 +126,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// exit path (success, paused, or cancellation).
 	procCtx, procCancel := context.WithCancel(ctx)
 	defer procCancel()
+	w.procCancel = procCancel
 
 	var agentCfg agents.AgentConfig
 	if m.sessionMgr != nil {
@@ -129,7 +148,11 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// worker is removed from activeWorkers.
 	outcome, outcomeReason := "", ""
 	pause := func(reason string) {
-		m.pauseWorker(w, reason)
+		if !m.pauseWorker(ctx, w, reason) {
+			// Cancelled worker: recorded as stopped, never as a ghost pause.
+			outcome, outcomeReason = OutcomeStopped, ""
+			return
+		}
 		outcome, outcomeReason = OutcomePaused, reason
 	}
 	runLog, runTS := m.openRunLog(w)
@@ -155,6 +178,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		}()
 	}
 
+	// The worktree starts from the last commit: an uncommitted change is not
+	// in it, and no agent could apply it.
+	tasksPath := filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md")
+	if !fileExists(tasksPath) {
+		pause(fmt.Sprintf("Le changement « %s » doit être committé dans le dépôt avant d'être lancé (openspec/changes/%s/tasks.md est absent du worktree).", w.ActiveChange, w.ActiveChange))
+		return
+	}
+
 	var stderrLog *conversation.SessionLog
 	if runLog != nil {
 		stderrLog = runLog.sess
@@ -165,15 +196,28 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
 		return
 	}
+	// Ordered teardown: close stdin, give the agent a bounded time to exit,
+	// then kill its whole process group and reap it.
 	defer func() {
 		_ = proc.CloseStdin()
-		_ = proc.Wait()
+		exited := make(chan struct{})
+		go func() {
+			_ = proc.Wait()
+			close(exited)
+		}()
+		select {
+		case <-exited:
+		case <-time.After(teardownGrace):
+			procCancel()
+			<-exited
+		}
+		procCancel()
 	}()
 
 	// 3. Invoke the agent CLI to implement the remaining tasks.
 	if err := m.invokeAgentApply(w, proc); err != nil {
 		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-		pause(fmt.Sprintf("Échec de l'invocation de l'agent pour appliquer les tâches restantes : %v", err))
+		pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour appliquer les tâches restantes"))
 		return
 	}
 
@@ -191,14 +235,18 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// 5. Self-healing loop: re-inject validation errors into the same
 	// subprocess's context until it passes or attempts are exhausted.
 	attempts := 0
-	for validationErr != nil && attempts < m.config.MaxAttempts {
+	for validationErr != nil && attempts < cfg.MaxAttempts {
 		attempts++
 		m.setStatus(w, StatusHealing)
 		m.notify()
-		log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, m.config.MaxAttempts)
+		log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, cfg.MaxAttempts)
 
 		if err := m.invokeAgentHeal(w, proc, validationErr); err != nil {
 			log.Printf("[worker %d] agent heal error: %v\n", w.ID, err)
+			if isAgentStop(err) {
+				pause(agentTurnPauseReason(err, ""))
+				return
+			}
 			break
 		}
 
@@ -212,42 +260,131 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	}
 
 	if validationErr != nil {
-		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, m.config.MaxAttempts)
-		pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", m.config.MaxAttempts, validationErr))
+		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, cfg.MaxAttempts)
+		pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", cfg.MaxAttempts, validationErr))
 		return
 	}
 
 	// 6. Completion check: don't finalize (merge or transition) unless the
-	// worktree's tasks.md has no task left unchecked, even though validation
-	// passed - the agent may have declared victory without actually doing
-	// the remaining work. The worktree mirrors the whole workspace (see
-	// WorktreeController.Provision), so the change's tasks.md lives at its
-	// normal nested path within it, not at the worktree root.
-	tasksPath := filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md")
+	// worktree's tasks.md lists at least one task and none is left unchecked,
+	// even though validation passed - the agent may have declared victory
+	// without actually doing the work. A missing or empty list is not "done".
 	done, total := openspec.ParseTaskProgress(tasksPath)
+	if total == 0 {
+		log.Printf("[worker %d] validation passed but tasks.md is absent or empty; pausing without finalizing\n", w.ID)
+		pause("Validation réussie mais la liste des tâches (tasks.md) est absente ou vide")
+		return
+	}
 	if done < total {
 		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
 		pause(fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
 		return
 	}
 
-	// 7. State Transitions based on Delegation Mode
-	if m.config.DelegationMode == ModeFullAutonomy {
-		// Merge and cleanup
-		log.Printf("[worker %d] Full Autonomy: merging change %s\n", w.ID, w.ActiveChange)
-		if err := wt.MergeAndCleanup(w.ActiveChange); err != nil {
-			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
-			outcome, outcomeReason = OutcomePaused, fmt.Sprintf("Échec de la fusion : %v", err)
-		} else {
-			outcome = OutcomeCompleted
-		}
-	} else {
-		// HITL Review
-		log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
-		// State remains "to-review" implicitly as we leave the branch unmerged and worktree intact.
-		// The UI will pick this up from the Kanban status.
-		outcome = OutcomeAwaitingReview
+	// 7. Commit the agent's work into feature/<change> before anything that
+	// could discard the worktree.
+	files, err := wt.CommitAll(w.ActiveChange)
+	if err != nil {
+		pause(fmt.Sprintf("Impossible de committer le travail de l'agent : %s", truncateReason(err)))
+		return
 	}
+	if len(files) > 0 {
+		log.Printf("[worker %d] committed %d file(s) for %s\n", w.ID, len(files), w.ActiveChange)
+		m.logRunMarker(w, map[string]any{"type": "pool_commit", "change": w.ActiveChange, "files": files})
+	}
+	hasWork, err := wt.HasWork(w.ActiveChange)
+	if err != nil {
+		pause(fmt.Sprintf("Impossible de vérifier le travail produit : %s", truncateReason(err)))
+		return
+	}
+	if !hasWork {
+		pause("Aucun travail produit : la branche ne contient ni modification ni commit par rapport à la branche courante")
+		return
+	}
+
+	// 8. State transitions based on delegation mode.
+	if cfg.DelegationMode == ModeFullAutonomy {
+		m.mergeMu.Lock()
+		target, err := wt.MergeInto(w.ActiveChange)
+		m.mergeMu.Unlock()
+		if err != nil {
+			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
+			if errors.Is(err, ErrMergeInProgress) {
+				pause("Un merge est déjà en cours dans le dépôt : terminez-le ou annulez-le, puis reprenez le worker")
+			} else {
+				pause(fmt.Sprintf("Échec de la fusion dans %s (merge annulé, branche et worktree conservés) : %s", target, truncateReason(err)))
+			}
+			return
+		}
+		log.Printf("[worker %d] Full Autonomy: merged %s into %s\n", w.ID, w.ActiveChange, target)
+		if err := wt.Remove(w.ActiveChange); err != nil {
+			pause(fmt.Sprintf("Fusion réussie dans %s mais le worktree n'a pas pu être supprimé : %s", target, truncateReason(err)))
+			return
+		}
+		if err := wt.DeleteBranch(w.ActiveChange); err != nil {
+			pause(fmt.Sprintf("Fusion réussie dans %s mais la branche n'a pas pu être supprimée : %s", target, truncateReason(err)))
+			return
+		}
+		outcome = OutcomeCompleted
+		return
+	}
+
+	// HITL review: branch and worktree stay in place; the dispatcher must not
+	// hand the change out again while it awaits review.
+	log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
+	m.mu.Lock()
+	m.reviewChanges[w.ActiveChange] = true
+	m.mu.Unlock()
+	outcome = OutcomeAwaitingReview
+}
+
+// maxReasonLen bounds the git/command output embedded in a pause reason.
+const maxReasonLen = 400
+
+func truncateReason(err error) string {
+	msg := strings.TrimSpace(err.Error())
+	if len(msg) > maxReasonLen {
+		msg = msg[:maxReasonLen] + "…"
+	}
+	return msg
+}
+
+// teardownGrace is how long an agent gets to exit after its stdin is closed
+// before its process group is killed.
+var teardownGrace = 5 * time.Second
+
+// agentIdleTimeout bounds a turn without any agent output.
+var agentIdleTimeout = 30 * time.Minute
+
+// agentTurnError is an agent turn that ended with an error result.
+type agentTurnError struct{ reason string }
+
+func (e *agentTurnError) Error() string { return "agent turn failed: " + e.reason }
+
+// agentIdleError is an agent turn cut after agentIdleTimeout without output.
+type agentIdleError struct{ after time.Duration }
+
+func (e *agentIdleError) Error() string {
+	return fmt.Sprintf("agent inactif depuis %s", e.after)
+}
+
+func isAgentStop(err error) bool {
+	var te *agentTurnError
+	var ie *agentIdleError
+	return errors.As(err, &te) || errors.As(err, &ie)
+}
+
+// agentTurnPauseReason turns a turn error into a pause reason.
+func agentTurnPauseReason(err error, fallback string) string {
+	var te *agentTurnError
+	var ie *agentIdleError
+	switch {
+	case errors.As(err, &te):
+		return fmt.Sprintf("L'agent a terminé son tour en erreur : %s", te.reason)
+	case errors.As(err, &ie):
+		return fmt.Sprintf("Agent inactif depuis %s : processus arrêté", ie.after)
+	}
+	return fmt.Sprintf("%s : %v", fallback, err)
 }
 
 // invokeAgentApply writes the initial turn instructing the agent to work
@@ -290,13 +427,29 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	scanner := bufio.NewScanner(proc.Stdout())
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
+	// Idle watchdog, re-armed on every line read: on expiry the agent's
+	// process group is killed and stdout closed to unblock the scan.
+	var idled atomic.Bool
+	idle := time.AfterFunc(agentIdleTimeout, func() {
+		idled.Store(true)
+		if w.procCancel != nil {
+			w.procCancel()
+		}
+		_ = proc.Stdout().Close()
+	})
+	defer idle.Stop()
+
 	var lastNotify time.Time
 	for scanner.Scan() {
+		idle.Reset(agentIdleTimeout)
 		line := scanner.Bytes()
 		m.logRun(w, "out", line)
 
-		if isTurnCompleteLine(line) {
+		switch kind, reason := classifyTurnLine(line); kind {
+		case turnOK:
 			return nil
+		case turnError:
+			return &agentTurnError{reason: reason}
 		}
 
 		if activity := extractActivity(line); activity != "" {
@@ -307,25 +460,67 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 			}
 		}
 	}
+	if idled.Load() {
+		return &agentIdleError{after: agentIdleTimeout}
+	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("agent subprocess stdout error before completion: %w", err)
 	}
 	return fmt.Errorf("agent subprocess ended before returning a result")
 }
 
-// isTurnCompleteLine reports whether a stdout line signals the end of an
-// agent turn: a native stream-json "result" event, the "message_complete"
-// event that translateGeminiLine and translateAntigravityLine produce, or
-// raw Antigravity event: "result".
-func isTurnCompleteLine(line []byte) bool {
+// turnKind classifies a stdout line with respect to the end of a turn.
+type turnKind int
+
+const (
+	turnNone  turnKind = iota // not an end-of-turn line
+	turnOK                    // the turn ended successfully
+	turnError                 // the turn ended with an error result
+)
+
+// classifyTurnLine reports whether a stdout line ends an agent turn and how:
+// a native stream-json "result" event (an error when is_error is set or its
+// subtype starts with "error"), the "message_complete" event that
+// translateGeminiLine and translateAntigravityLine produce, or raw
+// Antigravity event: "result". For an error it also returns the reason.
+func classifyTurnLine(line []byte) (turnKind, string) {
 	var data struct {
-		Type  string `json:"type"`
-		Event string `json:"event"`
+		Type    string          `json:"type"`
+		Event   string          `json:"event"`
+		Subtype string          `json:"subtype"`
+		IsError bool            `json:"is_error"`
+		Result  json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(line, &data); err != nil {
-		return false
+		return turnNone, ""
 	}
-	return data.Type == "result" || data.Type == "message_complete" || data.Event == "result"
+	if data.Type == "result" {
+		if data.IsError || strings.HasPrefix(data.Subtype, "error") {
+			reason := data.Subtype
+			var text string
+			if json.Unmarshal(data.Result, &text) == nil && strings.TrimSpace(text) != "" {
+				if reason != "" {
+					reason += " : "
+				}
+				reason += strings.TrimSpace(text)
+			}
+			if reason == "" {
+				reason = "résultat en erreur"
+			}
+			return turnError, reason
+		}
+		return turnOK, ""
+	}
+	if data.Type == "message_complete" || data.Event == "result" {
+		return turnOK, ""
+	}
+	return turnNone, ""
+}
+
+// isTurnCompleteLine reports whether a stdout line ends a turn, successfully or not.
+func isTurnCompleteLine(line []byte) bool {
+	kind, _ := classifyTurnLine(line)
+	return kind != turnNone
 }
 
 // extractActivity best-effort extracts human-readable text from a single

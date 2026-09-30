@@ -53,6 +53,8 @@ type Worker struct {
 	// runLog journals the worker's run; only the worker's own goroutine
 	// dereferences it. Nil when no conversation store is configured.
 	runLog *poolRunLog
+	// procCancel terminates the worker's agent process group (set by runWorker).
+	procCancel context.CancelFunc
 }
 
 // role returns the effective role of the worker.

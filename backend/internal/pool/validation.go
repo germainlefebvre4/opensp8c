@@ -10,6 +10,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/glefebvre/opensp8c/internal/session"
+)
+
+// validationTimeout bounds one validation command; validationWaitDelay is how
+// long Wait may block on inherited pipes after the command is killed. Variables
+// so tests can shorten them.
+var (
+	validationTimeout   = 20 * time.Minute
+	validationWaitDelay = 5 * time.Second
 )
 
 // ValidationEnvError reports that validation could not run for an
@@ -131,11 +142,20 @@ func runValidationCommand(ctx context.Context, dir, name string, args []string, 
 	if !dirExists(dir) {
 		return "", &ValidationEnvError{Reason: fmt.Sprintf("Répertoire d'exécution de la validation introuvable : %s", dir)}
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
+	tctx, cancel := context.WithTimeout(ctx, validationTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(tctx, name, args...)
 	cmd.Dir = dir
+	// Own process group, killed whole on cancellation or timeout; WaitDelay
+	// unblocks Wait when a grandchild keeps the output pipe open.
+	session.ApplyProcessGroup(cmd)
+	cmd.WaitDelay = validationWaitDelay
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return string(out), nil
+	}
+	if ctx.Err() == nil && errors.Is(tctx.Err(), context.DeadlineExceeded) {
+		return string(out), &ValidationEnvError{Reason: fmt.Sprintf("Validation trop longue : la commande « %s » a dépassé le délai de %s et a été arrêtée.", display, validationTimeout)}
 	}
 	if ctx.Err() == nil {
 		if errors.Is(err, exec.ErrNotFound) {
