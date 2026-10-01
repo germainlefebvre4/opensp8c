@@ -242,47 +242,54 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		return
 	}
 
-	// 4. Run local validation (compilation + tests).
-	m.setStatus(w, StatusTesting)
-	m.notify()
-	validationErr := m.runValidation(ctx, w)
-	var envErr *ValidationEnvError
-	if errors.As(validationErr, &envErr) {
-		// No heal turn can fix the environment: pause at once, no attempt used.
-		pause(envErr.Reason)
-		return
-	}
-
-	// 5. Self-healing loop: re-inject validation errors into the same
-	// subprocess's context until it passes or attempts are exhausted.
+	// 4-5. Local validation (compilation + tests) and self-healing loop:
+	// re-inject validation errors into the same subprocess's context until it
+	// passes or attempts are exhausted. The attempts budget is shared by every
+	// call (initial validation, then the revalidation after an integration).
 	attempts := 0
-	for validationErr != nil && attempts < cfg.MaxAttempts {
-		attempts++
-		m.setStatus(w, StatusHealing)
-		m.notify()
-		log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, cfg.MaxAttempts)
-
-		if err := m.invokeAgentHeal(w, proc, validationErr); err != nil {
-			log.Printf("[worker %d] agent heal error: %v\n", w.ID, err)
-			if isAgentStop(err) {
-				pause(agentTurnPauseReason(err, ""))
-				return
-			}
-			break
-		}
-
+	validateAndHeal := func() bool {
 		m.setStatus(w, StatusTesting)
 		m.notify()
-		validationErr = m.runValidation(ctx, w)
+		validationErr := m.runValidation(ctx, w)
+		var envErr *ValidationEnvError
 		if errors.As(validationErr, &envErr) {
+			// No heal turn can fix the environment: pause at once, no attempt used.
 			pause(envErr.Reason)
-			return
+			return false
 		}
-	}
 
-	if validationErr != nil {
-		log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, cfg.MaxAttempts)
-		pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", cfg.MaxAttempts, validationErr))
+		for validationErr != nil && attempts < cfg.MaxAttempts {
+			attempts++
+			m.setStatus(w, StatusHealing)
+			m.notify()
+			log.Printf("[worker %d] Validation failed. Attempt %d/%d to heal.\n", w.ID, attempts, cfg.MaxAttempts)
+
+			if err := m.invokeAgentHeal(w, proc, validationErr); err != nil {
+				log.Printf("[worker %d] agent heal error: %v\n", w.ID, err)
+				if isAgentStop(err) {
+					pause(agentTurnPauseReason(err, ""))
+					return false
+				}
+				break
+			}
+
+			m.setStatus(w, StatusTesting)
+			m.notify()
+			validationErr = m.runValidation(ctx, w)
+			if errors.As(validationErr, &envErr) {
+				pause(envErr.Reason)
+				return false
+			}
+		}
+
+		if validationErr != nil {
+			log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, cfg.MaxAttempts)
+			pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", cfg.MaxAttempts, validationErr))
+			return false
+		}
+		return true
+	}
+	if !validateAndHeal() {
 		return
 	}
 
@@ -332,14 +339,64 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 	// 8. State transitions based on delegation mode.
 	if cfg.DelegationMode == ModeFullAutonomy {
-		m.mergeMu.Lock()
-		// Point of no return: checked right after the lock, which may have
-		// been waited on for a long time. A merge that has started is never
-		// interrupted.
-		if ctx.Err() != nil {
+		// Integrate what landed on the target meanwhile, outside the merge
+		// lock, and revalidate that result: the final merge then carries an
+		// already validated state. When the target moves again before the lock
+		// is held (typically another worker merging), the lock is released and
+		// the round restarts, a bounded number of times.
+		for round := 1; ; round++ {
+			// Fail fast when the repository left the base branch: no point in
+			// integrating and revalidating for a merge that will be refused.
+			if err := wt.CheckBase(w.ActiveChange); err != nil {
+				pause("Fusion refusée : " + err.Error())
+				return
+			}
+			ahead, err := wt.TargetAhead(w.ActiveChange)
+			if err != nil {
+				pause(fmt.Sprintf("Impossible de comparer la branche cible au changement : %s", truncateReason(err)))
+				return
+			}
+			if ahead {
+				if round > maxIntegrationRounds {
+					pause(fmt.Sprintf("La branche cible a continué d'avancer pendant la finalisation (%d intégrations successives) : reprenez le worker pour réessayer", maxIntegrationRounds))
+					return
+				}
+				integrationTarget := wt.CurrentBranch()
+				log.Printf("[worker %d] %s advanced: integrating it into %s before merging\n", w.ID, integrationTarget, w.ActiveChange)
+				if err := wt.IntegrateTarget(w.ActiveChange, integrationTarget); err != nil {
+					pause(fmt.Sprintf("Intégration de %s impossible (annulée, branche et worktree conservés) : %s", integrationTarget, truncateReason(err)))
+					return
+				}
+				if !validateAndHeal() {
+					return
+				}
+				if _, err := wt.CommitAll(w.ActiveChange); err != nil {
+					pause(fmt.Sprintf("Impossible de committer les corrections après intégration : %s", truncateReason(err)))
+					return
+				}
+			}
+
+			m.mergeMu.Lock()
+			// Point of no return: checked right after the lock, which may have
+			// been waited on for a long time. A merge that has started is never
+			// interrupted.
+			if ctx.Err() != nil {
+				m.mergeMu.Unlock()
+				outcome = OutcomeStopped
+				return
+			}
+			// Revalidating under the lock would block the other workers: if the
+			// target moved since the integration, start another round instead.
+			ahead, err = wt.TargetAhead(w.ActiveChange)
+			if err != nil {
+				m.mergeMu.Unlock()
+				pause(fmt.Sprintf("Impossible de comparer la branche cible au changement : %s", truncateReason(err)))
+				return
+			}
+			if !ahead {
+				break
+			}
 			m.mergeMu.Unlock()
-			outcome = OutcomeStopped
-			return
 		}
 		target, err := wt.MergeInto(w.ActiveChange)
 		m.mergeMu.Unlock()
@@ -347,6 +404,8 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
 			if errors.Is(err, ErrMergeInProgress) {
 				pause("Un merge est déjà en cours dans le dépôt : terminez-le ou annulez-le, puis reprenez le worker")
+			} else if errors.Is(err, ErrBaseBranchMismatch) {
+				pause("Fusion refusée : " + err.Error())
 			} else {
 				pause(fmt.Sprintf("Échec de la fusion dans %s (merge annulé, branche et worktree conservés) : %s", target, truncateReason(err)))
 			}
@@ -374,6 +433,10 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	m.mu.Unlock()
 	outcome = OutcomeAwaitingReview
 }
+
+// maxIntegrationRounds bounds the integrate-and-revalidate rounds before a
+// full-autonomy merge when the target branch keeps advancing.
+const maxIntegrationRounds = 3
 
 // maxReasonLen bounds the git/command output embedded in a pause reason.
 const maxReasonLen = 400

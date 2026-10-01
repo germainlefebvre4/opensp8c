@@ -56,12 +56,15 @@ func TestDetectValidationCommands(t *testing.T) {
 			t.Fatalf("got %v", got)
 		}
 	})
-	t.Run("frontend without node_modules is ignored", func(t *testing.T) {
+	t.Run("frontend without node_modules is reported as unvalidable", func(t *testing.T) {
 		root := t.TempDir()
 		writeFile(t, filepath.Join(root, "frontend", "package.json"), pkgWithTest)
 		writeFile(t, filepath.Join(root, "backend", "go.mod"), "module x\n")
 		if got := cmdStrings(root); len(got) != 1 || got[0] != "backend: go test ./..." {
 			t.Fatalf("got %v", got)
+		}
+		if _, unvalidable := detectValidation(root); len(unvalidable) != 1 || unvalidable[0] != "frontend" {
+			t.Fatalf("expected frontend as unvalidable, got %v", unvalidable)
 		}
 	})
 	t.Run("hidden and node_modules dirs skipped, no test script", func(t *testing.T) {
@@ -145,6 +148,44 @@ func TestRunValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("unvalidable node project pauses before running anything", func(t *testing.T) {
+		wt := t.TempDir()
+		writeFile(t, filepath.Join(wt, "backend", "go.mod"), "module x\n\ngo 1.21\n")
+		writeFile(t, filepath.Join(wt, "backend", "x.go"), "package x\n")
+		writeFile(t, filepath.Join(wt, "frontend", "package.json"), `{"scripts":{"test":"touch ../ran-npm"}}`)
+		err := validationManager(t, "").runValidation(ctx, &Worker{WorktreePath: wt})
+		var envErr *ValidationEnvError
+		if !errors.As(err, &envErr) || !strings.Contains(envErr.Reason, "frontend") || !strings.Contains(envErr.Reason, "npm ci && npm test") {
+			t.Fatalf("expected env error naming frontend, got %v", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(wt, "ran-npm")); statErr == nil {
+			t.Fatal("no validation command may run when a project is unvalidable")
+		}
+	})
+
+	t.Run("unvalidable node project with configured command runs normally", func(t *testing.T) {
+		wt := t.TempDir()
+		writeFile(t, filepath.Join(wt, "backend", "go.mod"), "module x\n")
+		writeFile(t, filepath.Join(wt, "frontend", "package.json"), pkgWithTest)
+		if err := validationManager(t, "touch ran-configured").runValidation(ctx, &Worker{WorktreePath: wt}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(wt, "ran-configured")); err != nil {
+			t.Fatalf("configured command did not run: %v", err)
+		}
+	})
+
+	t.Run("node project with node_modules keeps both commands", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, filepath.Join(root, "backend", "go.mod"), "module x\n")
+		writeFile(t, filepath.Join(root, "frontend", "package.json"), pkgWithTest)
+		writeFile(t, filepath.Join(root, "frontend", "node_modules", ".keep"), "")
+		cmds, unvalidable := detectValidation(root)
+		if len(cmds) != 2 || len(unvalidable) != 0 {
+			t.Fatalf("got %v / %v", cmds, unvalidable)
+		}
+	})
+
 	t.Run("detected go module in subdirectory", func(t *testing.T) {
 		wt := t.TempDir()
 		writeFile(t, filepath.Join(wt, "backend", "go.mod"), "module x\n\ngo 1.21\n")
@@ -199,6 +240,30 @@ func TestRunWorker_EnvErrorPausesWithoutHealing(t *testing.T) {
 	}
 	if got := turns.Load(); got != 1 {
 		t.Fatalf("an environment error must not trigger a heal turn (only the apply turn), got %d turns", got)
+	}
+}
+
+func TestRunWorker_UnvalidableProjectPausesWithoutHealing(t *testing.T) {
+	changeName := "unvalidable-change"
+	repoDir := newGoFixtureRepo(t, changeName, "- [x] done\n")
+
+	var turns atomic.Int32
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 3}, countingSubprocess(&turns))
+	m.prefs = preferences.NewService(filepath.Join(t.TempDir(), "preferences.json"))
+
+	w := &Worker{ID: 1, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	// The worktree is created from the repo HEAD, so commit the frontend first.
+	writeFile(t, filepath.Join(repoDir, "frontend", "package.json"), pkgWithTest)
+	gitIn(t, repoDir, "add", "-A")
+	gitIn(t, repoDir, "-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "add frontend")
+	m.runWorker(context.Background(), w)
+
+	if w.Status != StatusPaused || !strings.Contains(w.BlockedReason, "frontend") {
+		t.Fatalf("expected paused naming frontend, got %q / %q", w.Status, w.BlockedReason)
+	}
+	if got := turns.Load(); got != 1 {
+		t.Fatalf("no heal turn expected (only the apply turn), got %d turns", got)
 	}
 }
 

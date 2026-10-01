@@ -83,7 +83,7 @@ CommitAll -> HasWork -> [controle base] -> [cible avance ?]
                                                               v
                                                          mergeMu.Lock
                                                               v
-                                          [cible contient-elle un commit absent ?] -> oui: pause
+                                          [cible contient-elle un commit absent ?] -> oui: liberer le verrou, nouveau tour (max 3), puis pause
                                                               v
                                                           MergeInto
 ```
@@ -94,7 +94,7 @@ Intégration : `git merge --no-edit <cible>` exécuté dans le worktree (propre 
 
 Revalidation : l'actuel enchaînement « `runValidation` → boucle de guérison » du worker est extrait en une fonction locale à `runWorker` qui partage le compteur `attempts`, de sorte que le budget `max_attempts` couvre la validation initiale **et** la validation après intégration (un agent ne dispose pas d'un budget neuf à chaque revalidation). Cette fonction renvoie « ok » ou la cause de la pause, avec les mêmes `pause(...)` qu'aujourd'hui, et les messages de pause existants sont conservés tels quels. L'extraction est un refactoring sans changement de comportement pour le chemin existant, protégé par les tests actuels (`worker_test.go`, `finalize_test.go`), qui doivent passer inchangés avant d'ajouter l'étape d'intégration.
 
-Après le verrou, un dernier test d'ascendance (dans le worker, avant `MergeInto`) couvre l'avancée de la cible pendant l'intégration. Si elle a avancé, pause explicite plutôt qu'une boucle d'intégration à l'intérieur du verrou : l'utilisateur qui commite pile pendant la fenêtre est rare, et tenir `mergeMu` pendant une validation de 20 minutes bloquerait les autres workers.
+Après le verrou, un dernier test d'ascendance (dans le worker, avant `MergeInto`) couvre l'avancée de la cible pendant l'intégration, typiquement le merge d'un autre worker. Si elle a avancé, le worker libère le verrou et **recommence un tour** (contrôle de base, intégration, revalidation, reprise du verrou), au plus `maxIntegrationRounds` (3) intégrations ; au-delà, pause explicite. On ne revalide jamais sous `mergeMu` : tenir le verrou pendant une validation de 20 minutes bloquerait les autres workers. Ce rejeu hors verrou conserve l'exigence existante « Deux workers qui finalisent en même temps » : les workers simultanés finissent par fusionner chacun leur tour sans pause.
 
 *Alternatives écartées :*
 - **Refuser la fusion dès que la cible a avancé** : simple, mais contredit l'exigence existante « Deux workers qui finalisent en même temps » (le second worker verrait toujours la cible avancée par le premier et se mettrait en pause à chaque fois).

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,23 @@ const worktreesEnv = "OPENSP8C_WORKTREES_DIR"
 // ErrMergeInProgress reports that the repository already has a merge in
 // progress (typically started by the user), which the pool must never touch.
 var ErrMergeInProgress = errors.New("un merge est déjà en cours dans le dépôt")
+
+// BaseBranchMismatchError reports that the repository is not on the branch the
+// change branch was created from, so merging would land the work elsewhere.
+// Current is empty when HEAD is detached.
+type BaseBranchMismatchError struct{ Base, Current string }
+
+func (e *BaseBranchMismatchError) Error() string {
+	if e.Current == "" {
+		return fmt.Sprintf("le dépôt n'est sur aucune branche (HEAD détaché) alors que le changement est issu de « %s » : revenez sur « %s » puis reprenez le worker", e.Base, e.Base)
+	}
+	return fmt.Sprintf("le dépôt est sur la branche « %s » alors que le changement est issu de « %s » : revenez sur « %s » puis reprenez le worker", e.Current, e.Base, e.Base)
+}
+
+// ErrBaseBranchMismatch is matched with errors.Is against *BaseBranchMismatchError.
+var ErrBaseBranchMismatch = errors.New("branche de base différente de la branche courante")
+
+func (e *BaseBranchMismatchError) Is(target error) bool { return target == ErrBaseBranchMismatch }
 
 // DefaultWorktreesRoot returns the root directory of the worktrees: the
 // OPENSP8C_WORKTREES_DIR environment variable when set, else
@@ -107,10 +125,13 @@ func (wc *WorktreeController) Provision(changeName string) (string, error) {
 	}
 
 	if !exists {
-		// First time: create the branch together with its worktree.
+		// First time: create the branch together with its worktree, remembering
+		// the branch it starts from (empty when HEAD is detached).
+		base := wc.currentBranchName()
 		if _, err := wc.runGit("worktree", "add", "-b", branchName, worktreePath); err != nil {
 			return "", fmt.Errorf("failed to create worktree with new branch: %w", err)
 		}
+		wc.recordBase(changeName, base)
 		return worktreePath, nil
 	}
 
@@ -271,6 +292,54 @@ func (wc *WorktreeController) HasWork(changeName string) (bool, error) {
 	return strings.TrimSpace(count) != "0", nil
 }
 
+func baseConfigKey(changeName string) string {
+	return "branch.feature/" + changeName + ".opensp8c-base"
+}
+
+// currentBranchName returns the checked-out branch, or "" when HEAD is detached.
+func (wc *WorktreeController) currentBranchName() string {
+	out, err := wc.runGit("symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+// recordBase stores the base branch of a change in the repository's git
+// configuration (it is dropped by git together with the branch). Best effort:
+// a failure leaves the branch without base, as before.
+func (wc *WorktreeController) recordBase(changeName, base string) {
+	if base == "" {
+		return
+	}
+	if _, err := wc.runGit("config", baseConfigKey(changeName), base); err != nil {
+		log.Printf("[worktree] cannot record base branch of %s: %v\n", changeName, err)
+	}
+}
+
+// BaseBranch returns the recorded base branch of a change; ok is false when
+// none was recorded.
+func (wc *WorktreeController) BaseBranch(changeName string) (string, bool) {
+	out, code, err := wc.runGitCode("config", "--get", baseConfigKey(changeName))
+	if err != nil || code != 0 || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
+// CheckBase returns a *BaseBranchMismatchError when a base is recorded and the
+// repository is not on it (or HEAD is detached); nil otherwise.
+func (wc *WorktreeController) CheckBase(changeName string) error {
+	base, ok := wc.BaseBranch(changeName)
+	if !ok {
+		return nil
+	}
+	if current := wc.currentBranchName(); current != base {
+		return &BaseBranchMismatchError{Base: base, Current: current}
+	}
+	return nil
+}
+
 // CurrentBranch returns the branch currently checked out in the repository.
 func (wc *WorktreeController) CurrentBranch() string {
 	out, err := wc.runGit("symbolic-ref", "--short", "HEAD")
@@ -288,6 +357,9 @@ func (wc *WorktreeController) MergeInto(changeName string) (string, error) {
 	if wc.mergeInProgress() {
 		return target, ErrMergeInProgress
 	}
+	if err := wc.CheckBase(changeName); err != nil {
+		return target, err
+	}
 	_, err := wc.runGit("merge", "--no-ff", "-m", "Merge change "+changeName, "feature/"+changeName)
 	if err != nil {
 		if wc.mergeInProgress() {
@@ -296,6 +368,43 @@ func (wc *WorktreeController) MergeInto(changeName string) (string, error) {
 		return target, fmt.Errorf("merge failed (aborted): %w", err)
 	}
 	return target, nil
+}
+
+// TargetAhead reports whether the repository's current branch (the merge
+// target) holds a commit that feature/<change> does not have. It needs no
+// recorded state, so it stays true-to-date after a manual integration.
+func (wc *WorktreeController) TargetAhead(changeName string) (bool, error) {
+	_, code, err := wc.runGitCode("merge-base", "--is-ancestor", wc.CurrentBranch(), "feature/"+changeName)
+	switch {
+	case err != nil:
+		return false, err
+	case code == 0:
+		return false, nil
+	case code == 1:
+		return true, nil
+	default:
+		return false, fmt.Errorf("git merge-base --is-ancestor exited with status %d", code)
+	}
+}
+
+// IntegrateTarget merges the target branch into the change branch, inside the
+// worktree (which must be clean). A failed merge is aborted so the branch and
+// the worktree are left as they were.
+func (wc *WorktreeController) IntegrateTarget(changeName, target string) error {
+	path := wc.resolvePath(changeName)
+	if _, err := wc.runGitIn(path, "merge", "--no-edit", target); err != nil {
+		if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+			_, _ = wc.runGitIn(path, "merge", "--abort")
+		}
+		return fmt.Errorf("conflit lors de l'intégration de %s : %w", target, err)
+	}
+	return nil
+}
+
+// runGitInCode reports whether a git command in dir succeeded.
+func (wc *WorktreeController) runGitInCode(dir string, args ...string) (string, bool) {
+	out, err := wc.runGitIn(dir, args...)
+	return out, err == nil
 }
 
 func (wc *WorktreeController) mergeInProgress() bool {

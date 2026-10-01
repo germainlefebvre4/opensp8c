@@ -122,6 +122,6 @@
     "save": "Enregistrer",
     "validationCommand": "Commande de validation",
     "validationCommandAuto": "auto-détectée",
-    "validationCommandHint": "Exécutée à la racine du worktree (sh -c) après chaque tour de l'agent. Laissez vide pour détecter automatiquement les projets Go et Node."
+    "validationCommandHint": "Exécutée à la racine du worktree (sh -c) après chaque tour de l'agent. Laissez vide pour détecter automatiquement les projets Go et Node ; un projet Node sans dépendances installées met le worker en pause (utilisez par exemple npm ci && npm test)."
   }
 }

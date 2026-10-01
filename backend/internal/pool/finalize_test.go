@@ -159,7 +159,8 @@ func TestFinalize_MergeConflictPausesAndKeepsBranch(t *testing.T) {
 	w := runOnce(t, m, change)
 
 	reason, ok := pausedReason(m, w.ID)
-	if !ok || !strings.Contains(reason, "Échec de la fusion") {
+	// The conflict is now detected by the integration step, before any merge.
+	if !ok || !strings.Contains(reason, "Intégration de") {
 		t.Fatalf("paused=%v reason=%q", ok, reason)
 	}
 	if !branchExistsIn(t, repo, "feature/"+change) {

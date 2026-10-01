@@ -344,3 +344,188 @@ func TestMergeIntoRefusesExistingMerge(t *testing.T) {
 		t.Fatalf("the user's merge state was touched: %v", err)
 	}
 }
+
+func baseOf(wc *WorktreeController, change string) string {
+	b, _ := wc.BaseBranch(change)
+	return b
+}
+
+func TestProvisionRecordsBase(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseOf(wc, "add-auth"); got != "main" {
+		t.Fatalf("base = %q, want main", got)
+	}
+}
+
+func TestProvisionResumeKeepsBase(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("resume"); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "checkout", "-q", "-b", "other")
+	if _, err := wc.Provision("resume"); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseOf(wc, "resume"); got != "main" {
+		t.Fatalf("base = %q, want main", got)
+	}
+}
+
+func TestProvisionDetachedHeadRecordsNoBase(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	gitIn(t, repo, "checkout", "-q", "--detach")
+	if _, err := wc.Provision("detached"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := wc.BaseBranch("detached"); ok {
+		t.Fatalf("unexpected base %q", got)
+	}
+}
+
+func TestBaseDroppedWithBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("gone")
+	writeFile(t, filepath.Join(path, "g.txt"), "g")
+	if _, err := wc.CommitAll("gone"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wc.MergeInto("gone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Remove("gone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.DeleteBranch("gone"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := wc.BaseBranch("gone"); ok {
+		t.Fatalf("base %q survived branch deletion", got)
+	}
+}
+
+func TestMergeIntoRefusesOtherBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("wrong-base")
+	writeFile(t, filepath.Join(path, "w.txt"), "w")
+	if _, err := wc.CommitAll("wrong-base"); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "checkout", "-q", "-b", "feature/other")
+	head := gitIn(t, repo, "rev-parse", "HEAD")
+
+	_, err := wc.MergeInto("wrong-base")
+	var mm *BaseBranchMismatchError
+	if !errors.Is(err, ErrBaseBranchMismatch) || !errors.As(err, &mm) || mm.Base != "main" || mm.Current != "feature/other" {
+		t.Fatalf("err = %v", err)
+	}
+	if gitIn(t, repo, "rev-parse", "HEAD") != head || wc.mergeInProgress() {
+		t.Fatal("the target must be untouched")
+	}
+	if !strings.Contains(err.Error(), "main") || !strings.Contains(err.Error(), "feature/other") {
+		t.Fatalf("reason must name both branches: %v", err)
+	}
+
+	// Detached HEAD is refused too.
+	gitIn(t, repo, "checkout", "-q", "--detach")
+	if _, err := wc.MergeInto("wrong-base"); !errors.As(err, &mm) || mm.Current != "" {
+		t.Fatalf("detached err = %v", err)
+	}
+
+	// Back on the base: the merge goes through.
+	gitIn(t, repo, "checkout", "-q", "main")
+	if _, err := wc.MergeInto("wrong-base"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMergeIntoWithoutRecordedBase(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("legacy")
+	gitIn(t, repo, "config", "--unset", baseConfigKey("legacy"))
+	writeFile(t, filepath.Join(path, "l.txt"), "l")
+	if _, err := wc.CommitAll("legacy"); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "checkout", "-q", "-b", "elsewhere")
+	if target, err := wc.MergeInto("legacy"); err != nil || target != "elsewhere" {
+		t.Fatalf("MergeInto = %s, %v", target, err)
+	}
+}
+
+func commitFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, name), content)
+	gitIn(t, dir, "add", name)
+	gitIn(t, dir, "commit", "-q", "-m", "add "+name)
+}
+
+func TestTargetAheadAndIntegrate(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("integ")
+	commitFile(t, path, "feat.txt", "f")
+
+	if ahead, err := wc.TargetAhead("integ"); err != nil || ahead {
+		t.Fatalf("unchanged target: ahead=%v err=%v", ahead, err)
+	}
+
+	commitFile(t, repo, "user.txt", "u")
+	if ahead, err := wc.TargetAhead("integ"); err != nil || !ahead {
+		t.Fatalf("advanced target: ahead=%v err=%v", ahead, err)
+	}
+	if err := wc.IntegrateTarget("integ", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "user.txt")); err != nil {
+		t.Fatalf("target commit not integrated: %v", err)
+	}
+	if n := gitIn(t, path, "rev-list", "--merges", "--count", "HEAD"); n != "1" {
+		t.Fatalf("expected one merge commit in the worktree, got %s", n)
+	}
+	if ahead, _ := wc.TargetAhead("integ"); ahead {
+		t.Fatal("target must no longer be ahead after integration")
+	}
+}
+
+func TestTargetAheadFalseAfterManualIntegration(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("manual")
+	commitFile(t, path, "feat.txt", "f")
+	commitFile(t, repo, "user.txt", "u")
+	gitIn(t, path, "merge", "--no-edit", "main")
+	if ahead, err := wc.TargetAhead("manual"); err != nil || ahead {
+		t.Fatalf("ahead=%v err=%v", ahead, err)
+	}
+}
+
+func TestIntegrateTargetConflictIsAborted(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("clash")
+	commitFile(t, path, "README.md", "from branch")
+	commitFile(t, repo, "README.md", "from main")
+	head := gitIn(t, path, "rev-parse", "HEAD")
+
+	if err := wc.IntegrateTarget("clash", "main"); err == nil {
+		t.Fatal("expected a conflict")
+	}
+	if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+		t.Fatal("MERGE_HEAD left behind")
+	}
+	if gitIn(t, path, "rev-parse", "HEAD") != head || gitIn(t, path, "status", "--porcelain") != "" {
+		t.Fatal("worktree not restored")
+	}
+	if b, _ := os.ReadFile(filepath.Join(path, "README.md")); string(b) != "from branch" {
+		t.Fatalf("README = %q", b)
+	}
+}

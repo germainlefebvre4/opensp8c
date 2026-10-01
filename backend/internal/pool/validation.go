@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +48,14 @@ func (c validationCommand) String() string {
 // `go test ./...` for each go.mod and `npm test` for each package.json that
 // declares a test script and has its dependencies installed (node_modules).
 func DetectValidationCommands(root string) []validationCommand {
+	cmds, _ := detectValidation(root)
+	return cmds
+}
+
+// detectValidation is DetectValidationCommands plus the directories (relative
+// to root, "." for the root itself) holding a package.json test script whose
+// dependencies are not installed: detected but not validable.
+func detectValidation(root string) ([]validationCommand, []string) {
 	dirs := []string{root}
 	if entries, err := os.ReadDir(root); err == nil {
 		for _, e := range entries {
@@ -61,6 +68,7 @@ func DetectValidationCommands(root string) []validationCommand {
 	}
 
 	var cmds []validationCommand
+	var unvalidable []string
 	for _, dir := range dirs {
 		if fileExists(filepath.Join(dir, "go.mod")) {
 			cmds = append(cmds, validationCommand{Dir: dir, Name: "go", Args: []string{"test", "./..."}})
@@ -69,11 +77,15 @@ func DetectValidationCommands(root string) []validationCommand {
 			if dirExists(filepath.Join(dir, "node_modules")) {
 				cmds = append(cmds, validationCommand{Dir: dir, Name: "npm", Args: []string{"test"}})
 			} else {
-				log.Printf("[validation] %s has a test script but no node_modules: skipped (configure a validation command to install dependencies)\n", dir)
+				rel, err := filepath.Rel(root, dir)
+				if err != nil {
+					rel = dir
+				}
+				unvalidable = append(unvalidable, rel)
 			}
 		}
 	}
-	return cmds
+	return cmds, unvalidable
 }
 
 func fileExists(p string) bool {
@@ -117,7 +129,10 @@ func (m *Manager) runValidation(ctx context.Context, w *Worker) error {
 		return err
 	}
 
-	cmds := DetectValidationCommands(w.WorktreePath)
+	cmds, unvalidable := detectValidation(w.WorktreePath)
+	if len(unvalidable) > 0 {
+		return &ValidationEnvError{Reason: fmt.Sprintf("Projet détecté mais non validable faute de dépendances installées (script « test » sans node_modules) : %s. Configurez une commande de validation dans les réglages du pool qui installe les dépendances (par exemple « npm ci && npm test »).", strings.Join(unvalidable, ", "))}
+	}
 	if len(cmds) == 0 {
 		return &ValidationEnvError{Reason: noValidationReason}
 	}

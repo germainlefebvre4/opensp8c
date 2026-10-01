@@ -7,14 +7,11 @@ tags:
     complexity: 4
     components:
         - agent-pool-real-execution
-        - kanban-ready-column
-        - api-router
-        - workspace-agent-pool-tab
         - agent-pool-status-visibility
+        - developer-tooling
     agent_specialization:
         - backend
-        - frontend
         - testing
-        - api-design
+        - documentation
     _auto: true
     _tagged_at: "2026-10-01"

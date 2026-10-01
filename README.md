@@ -43,3 +43,17 @@ When validation passes and every task of `tasks.md` is checked, the worker commi
 * `hitl-review`: keeps the branch and the worktree and does not dispatch the change again until the pool is restarted.
 
 A worker also pauses, with a readable reason, when the agent ends a turn with an error result, stays silent for 30 minutes, or when the validation command runs for more than 20 minutes. Agent and validation processes run in their own process group, which is killed as a whole on cancellation, pool stop and server shutdown.
+
+### Using `full-autonomy` safely
+
+In `full-autonomy` the validation command is the only barrier before the work reaches your branch:
+
+* **Node projects need an explicit validation command.** A fresh worktree has no `node_modules`. When the auto-detection finds a `package.json` with a `test` script but no installed dependencies, the worker pauses immediately (no command runs, no heal turn) and names the directory. Set a validation command in the pool settings that installs the dependencies, for example for a Go backend plus a Node frontend (run with `sh -c` at the worktree root):
+
+  ```
+  cd backend && go test ./... && cd ../frontend && npm ci && npm test
+  ```
+
+* **The merge only happens in the branch the change started from.** The branch is recorded when `feature/<change>` is created. If the repository is on another branch (or on a detached HEAD) when the worker is ready to merge, it pauses and names both branches; check the base branch out again and resume the worker.
+* **Commits that landed on the target meanwhile are integrated and revalidated.** If the current branch received commits since the change started, the worker merges them into `feature/<change>`, runs the validation again (with the same `max_attempts` heal budget) and only then merges. An integration conflict is aborted and pauses the worker. If the target keeps moving, the worker retries up to 3 integrations before pausing.
+* **Avoid modifying the repository during a run.** Commits, branch switches and merges in the repository while a worker finishes only cause pauses or extra revalidations.
