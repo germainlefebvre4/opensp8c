@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { useDocPage, useDocs } from '../hooks/useDocs'
 import { triggerDocsGenerate } from '../lib/api'
 import { Markdown } from './Markdown'
+import { TableOfContents } from './TableOfContents'
+import { useRenderedHeadings } from '../hooks/useRenderedHeadings'
 
 interface Props {
   workspaceId: string
@@ -23,6 +25,15 @@ export function DocumentationPanel({ workspaceId, generating }: Props) {
 
   const [selectedPage, setSelectedPage] = useState<string | null>(null)
   const { data: pageDetail } = useDocPage(workspaceId, selectedPage)
+
+  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null)
+  const articleRef = useRef<HTMLDivElement>(null)
+  const content = pageDetail?.content ?? ''
+  const headings = useRenderedHeadings(articleRef, content)
+
+  useEffect(() => {
+    viewportEl?.scrollTo({ top: 0 })
+  }, [selectedPage, viewportEl])
 
   useEffect(() => {
     if (pages.length === 0) {
@@ -64,7 +75,7 @@ export function DocumentationPanel({ workspaceId, generating }: Props) {
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="@container flex-1 flex overflow-hidden">
       <aside className="w-44 shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col">
         <div className="px-4 pt-4 pb-2 shrink-0">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
@@ -111,9 +122,9 @@ export function DocumentationPanel({ workspaceId, generating }: Props) {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <ScrollArea.Root className="flex-1 overflow-hidden">
-          <ScrollArea.Viewport className="h-full w-full">
-            <div className="px-8 py-4 max-w-3xl text-left">
-              <Markdown mermaid size="sm">{pageDetail?.content ?? ''}</Markdown>
+          <ScrollArea.Viewport ref={setViewportEl} className="h-full w-full">
+            <div ref={articleRef} className="px-8 py-4 max-w-5xl mx-auto text-left">
+              <Markdown mermaid size="sm">{content}</Markdown>
             </div>
           </ScrollArea.Viewport>
           <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">
@@ -121,6 +132,15 @@ export function DocumentationPanel({ workspaceId, generating }: Props) {
           </ScrollArea.Scrollbar>
         </ScrollArea.Root>
       </div>
+
+      {headings.length > 0 && (
+        <aside
+          className="hidden @[66rem]:block shrink-0 overflow-y-auto border-l border-slate-200 px-3 py-4"
+          style={{ width: 'clamp(11rem, 18cqw, 16rem)' }}
+        >
+          <TableOfContents headings={headings} contentEl={viewportEl} />
+        </aside>
+      )}
     </div>
   )
 }

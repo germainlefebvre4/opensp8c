@@ -42,6 +42,15 @@
       "sessionId": "44e9ff388934fbf8c61bb02235c2196c",
       "createdAt": "2026-09-22T21:26:46Z",
       "lastActivityAt": "2026-09-22T21:26:46Z"
+    },
+    {
+      "id": "0a752a9c3508be81e4f6622f3781336d",
+      "workspaceId": "8b4a8cb8",
+      "name": "timeline-change-matrix-subtab",
+      "sessionId": "0a752a9c3508be81e4f6622f3781336d",
+      "createdAt": "2026-10-01T15:46:34Z",
+      "lastActivityAt": "2026-10-01T15:46:34Z",
+      "claudeSessionId": "f1b37442-a7ac-456e-813d-e53f8586d9d7"
     }
   ],
   "agentEnv": {
@@ -57,7 +66,7 @@
     "chat": "fr",
     "documentation": "en"
   },
-  "uiLocale": "fr",
+  "uiLocale": "en",
   "poolDefaults": {
     "size": 1
   }

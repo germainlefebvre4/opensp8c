@@ -3,16 +3,14 @@ created: "2026-10-01"
 tags:
     type:
         - frontend
-    complexity: 3
+    complexity: 2
     components:
-        - markdown-renderer
         - spec-documentation-view
         - specs-view
-        - kanban-change-detail
-        - explore-session
-        - agent-run-detail
+        - markdown-renderer
     agent_specialization:
         - frontend
+        - ux-design
         - testing
     _auto: true
     _tagged_at: "2026-10-01"
