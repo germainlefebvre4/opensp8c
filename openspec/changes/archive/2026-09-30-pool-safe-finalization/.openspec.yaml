@@ -1,2 +1,19 @@
 schema: spec-driven
-created: 2026-09-30
+created: "2026-09-30"
+tags:
+    type:
+        - batch
+    complexity: 4
+    components:
+        - agent-pool-real-execution
+        - agent-pool-status-visibility
+        - workspace-agent-pool-tab
+        - explore-session
+        - workspace-management
+        - developer-tooling
+    agent_specialization:
+        - backend
+        - devops
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-01"

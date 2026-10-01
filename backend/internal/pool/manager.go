@@ -223,6 +223,55 @@ func (m *Manager) CancelWorkerForChange(changeName string) bool {
 	return false
 }
 
+// defaultCancelWaitTimeout bounds how long CancelAndWaitForChange waits.
+var defaultCancelWaitTimeout = 30 * time.Second
+
+// SetCancelWaitTimeout overrides the maximum wait of CancelAndWaitForChange and
+// returns a function restoring the previous value. For tests.
+func SetCancelWaitTimeout(d time.Duration) (restore func()) {
+	prev := defaultCancelWaitTimeout
+	defaultCancelWaitTimeout = d
+	return func() { defaultCancelWaitTimeout = prev }
+}
+
+// CancelAndWaitForChange cancels the active worker assigned to changeName and
+// waits for it to really finish, until ctx is done or the wait timeout
+// elapses. found is false when no worker was active; timedOut is true when the
+// worker was still running at the deadline (result is then zero).
+func (m *Manager) CancelAndWaitForChange(ctx context.Context, changeName string) (found bool, result WorkerResult, timedOut bool) {
+	m.mu.Lock()
+	var target *Worker
+	for _, w := range m.activeWorkers {
+		if w.ActiveChange == changeName {
+			target = w
+			break
+		}
+	}
+	if target == nil {
+		m.mu.Unlock()
+		return false, WorkerResult{}, false
+	}
+	if target.CancelFunc != nil {
+		target.CancelFunc()
+	}
+	done := target.done
+	m.mu.Unlock()
+
+	if done == nil {
+		return true, WorkerResult{}, false
+	}
+	timer := time.NewTimer(defaultCancelWaitTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true, target.result, false
+	case <-ctx.Done():
+		return true, WorkerResult{}, true
+	case <-timer.C:
+		return true, WorkerResult{}, true
+	}
+}
+
 // Status returns the current status of the pool and its workers, as seen by
 // workspaceID. If the pool is running on behalf of a different workspace, it
 // is reported as not running rather than leaking that workspace's state.
@@ -368,6 +417,7 @@ func (m *Manager) startWorker(changeName string) {
 		DelegationMode: m.config.DelegationMode,
 		StartedAt:      time.Now(),
 		CancelFunc:     cancel,
+		done:           make(chan struct{}),
 	}
 	m.activeWorkers[id] = worker
 

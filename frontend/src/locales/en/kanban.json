@@ -32,7 +32,9 @@
   },
   "errors": {
     "unlaunchWorkerActive": "Cannot demote: an Agent Pool worker is active on this change.",
-    "unlaunchFailed": "Failed to demote change."
+    "unlaunchFailed": "Failed to demote change.",
+    "unlaunchAlreadyMerged": "The change was merged into {{target}} before the interruption: it was not demoted.",
+    "unlaunchWorkerStillRunning": "The worker is still running: please try again in a moment."
   },
   "columnActions": {
     "newExploration": "New exploration",

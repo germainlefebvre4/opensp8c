@@ -3,12 +3,14 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -478,5 +480,123 @@ func TestDeleteChange_WorkerActive(t *testing.T) {
 	}
 	if _, err := os.Stat(changeDir); err != nil {
 		t.Fatalf("expected change dir to survive a blocked deletion, stat err: %v", err)
+	}
+}
+
+func newUnlaunchForceFixture(t *testing.T, answer func() (bool, pool.WorkerResult, bool)) (*KanbanHandler, string, string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	changeName := "my-change"
+	writeChangeWithMeta(t, changesDir, changeName, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"-c", "user.email=test@test.com", "-c", "user.name=test", "add", "-A"},
+		{"-c", "user.email=test@test.com", "-c", "user.name=test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	poolReg := pool.NewRegistry(nil, nil, nil, nil, nil)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
+	poolMgr := poolReg.For(workspaceID)
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	t.Cleanup(func() {
+		poolMgr.Stop()
+		home, _ := os.UserHomeDir()
+		os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
+	})
+	deadline := time.Now().Add(15 * time.Second)
+	for !h.activeWorkerChanges(workspaceID)[changeName] {
+		if time.Now().After(deadline) {
+			t.Fatal("worker never became active")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.cancelAndWait = func(context.Context, string, string) (bool, pool.WorkerResult, bool) { return answer() }
+	return h, workspaceID, tmpDir
+}
+
+func unlaunchedStatus(t *testing.T, dir string) string {
+	t.Helper()
+	changes, err := openspec.ListChanges(dir)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("ListChanges: %v %+v", err, changes)
+	}
+	return changes[0].KanbanStatus
+}
+
+func TestKanbanHandler_Unlaunch_Force_StoppedWithoutMerge(t *testing.T) {
+	h, id, dir := newUnlaunchForceFixture(t, func() (bool, pool.WorkerResult, bool) {
+		return true, pool.WorkerResult{Outcome: pool.OutcomeStopped}, false
+	})
+	rec, req := launchRequest("PATCH", id, "my-change", "unlaunch", nil)
+	req.URL.RawQuery = "force=true"
+	h.Unlaunch(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := unlaunchedStatus(t, dir); got != "ready" {
+		t.Errorf("status = %s, want ready", got)
+	}
+}
+
+func TestKanbanHandler_Unlaunch_Force_AlreadyMerged(t *testing.T) {
+	h, id, dir := newUnlaunchForceFixture(t, func() (bool, pool.WorkerResult, bool) {
+		return true, pool.WorkerResult{Outcome: pool.OutcomeCompleted, Merged: true, Target: "main"}, false
+	})
+	rec, req := launchRequest("PATCH", id, "my-change", "unlaunch", nil)
+	req.URL.RawQuery = "force=true"
+	h.Unlaunch(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != "change_already_merged" || body["target"] != "main" {
+		t.Errorf("body = %s (%v)", rec.Body.String(), err)
+	}
+	if got := unlaunchedStatus(t, dir); got == "ready" {
+		t.Error("launched must stay true")
+	}
+}
+
+func TestKanbanHandler_Unlaunch_Force_TimedOut(t *testing.T) {
+	h, id, dir := newUnlaunchForceFixture(t, func() (bool, pool.WorkerResult, bool) {
+		return true, pool.WorkerResult{}, true
+	})
+	rec, req := launchRequest("PATCH", id, "my-change", "unlaunch", nil)
+	req.URL.RawQuery = "force=true"
+	h.Unlaunch(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("expected 503 + Retry-After, got %d %v", rec.Code, rec.Header())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != "worker_still_running" {
+		t.Errorf("body = %s (%v)", rec.Body.String(), err)
+	}
+	if got := unlaunchedStatus(t, dir); got == "ready" {
+		t.Error("launched must stay true")
+	}
+}
+
+func TestKanbanHandler_Unlaunch_NoForce_StillConflicts(t *testing.T) {
+	called := false
+	h, id, _ := newUnlaunchForceFixture(t, func() (bool, pool.WorkerResult, bool) { called = true; return true, pool.WorkerResult{}, false })
+	rec, req := launchRequest("PATCH", id, "my-change", "unlaunch", nil)
+	h.Unlaunch(rec, req)
+	if rec.Code != http.StatusConflict || called {
+		t.Fatalf("expected plain 409 without cancelling, got %d called=%v", rec.Code, called)
+	}
+	if strings.Contains(rec.Body.String(), "change_already_merged") {
+		t.Error("the no-force 409 must keep its own message")
 	}
 }

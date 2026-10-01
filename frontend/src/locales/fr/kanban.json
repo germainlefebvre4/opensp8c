@@ -32,7 +32,9 @@
   },
   "errors": {
     "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change.",
-    "unlaunchFailed": "Échec de la rétrogradation du change."
+    "unlaunchFailed": "Échec de la rétrogradation du change.",
+    "unlaunchAlreadyMerged": "Le change a été fusionné dans {{target}} avant l'interruption : il n'a pas été rétrogradé.",
+    "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants."
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",

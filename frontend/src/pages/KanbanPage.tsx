@@ -20,7 +20,7 @@ import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, ApiError } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import { useToast } from '../hooks/useToast'
 import type { Change } from '../hooks/useChanges'
@@ -312,8 +312,11 @@ export function KanbanPage({ workspaceId }: Props) {
       await unlaunchChange(workspaceId, change.name, true)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
       qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
-    } catch {
-      toast({ title: t('errors.unlaunchFailed'), variant: 'error' })
+    } catch (err) {
+      // The state may have changed (e.g. the change got merged): refresh anyway.
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
+      toast({ title: t(unlaunchErrorKey(err), { target: err instanceof ApiError ? err.target : undefined }), variant: 'error' })
     }
   }
 

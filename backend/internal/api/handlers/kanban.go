@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -23,10 +24,14 @@ type KanbanHandler struct {
 	convStore *conversation.Store
 	watcher   *watcher.WatcherService
 	draftsDir string
+
+	// cancelAndWait cancels the worker of a change and waits for its end;
+	// a seam over the pool manager so handler tests can script its answer.
+	cancelAndWait func(ctx context.Context, workspaceID, change string) (bool, pool.WorkerResult, bool)
 }
 
 func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg *pool.Registry, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
-	return &KanbanHandler{
+	h := &KanbanHandler{
 		ws:        ws,
 		prefs:     prefs,
 		poolReg:   poolReg,
@@ -35,6 +40,13 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg 
 		watcher:   watcherSvc,
 		draftsDir: draftsDir,
 	}
+	h.cancelAndWait = func(ctx context.Context, workspaceID, change string) (bool, pool.WorkerResult, bool) {
+		if h.poolReg == nil {
+			return false, pool.WorkerResult{}, false
+		}
+		return h.poolReg.For(workspaceID).CancelAndWaitForChange(ctx, change)
+	}
+	return h
 }
 
 // activeWorkerChanges returns the set of change names currently claimed by an
@@ -253,8 +265,17 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "a worker is active on this change", http.StatusConflict)
 			return
 		}
-		if h.poolReg != nil {
-			h.poolReg.For(id).CancelWorkerForChange(name)
+		// Wait for the worker's real end: the answer depends on whether it
+		// merged the change before honoring the cancellation.
+		_, result, timedOut := h.cancelAndWait(r.Context(), id, name)
+		switch {
+		case timedOut:
+			w.Header().Set("Retry-After", "5")
+			writeUnlaunchError(w, http.StatusServiceUnavailable, map[string]string{"code": "worker_still_running"})
+			return
+		case result.Merged:
+			writeUnlaunchError(w, http.StatusConflict, map[string]string{"code": "change_already_merged", "target": result.Target})
+			return
 		}
 	}
 
@@ -264,6 +285,12 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeUnlaunchError(w http.ResponseWriter, status int, body map[string]string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // ReorderReady persists the priority rank of the Ready column's changes,

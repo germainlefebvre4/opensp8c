@@ -1,2 +1,4 @@
 /conversations/
-/backend/preferences.json
+/preferences.json
+/server
+/activity/*.jsonl

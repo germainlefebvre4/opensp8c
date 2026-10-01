@@ -5,6 +5,22 @@ const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 export const api = axios.create({ baseURL })
 
+// ApiError keeps the HTTP status and the machine-readable `code` (and `target`)
+// that some endpoints put in their JSON error body, so callers can branch on
+// them instead of parsing the message.
+export class ApiError extends Error {
+  status?: number
+  code?: string
+  target?: string
+  constructor(message: string, status?: number, code?: string, target?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.target = target
+  }
+}
+
 api.interceptors.response.use(
   r => r,
   err => {
@@ -20,7 +36,13 @@ api.interceptors.response.use(
       } else {
         message = err.message
       }
-      return Promise.reject(new Error(message))
+      const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+      return Promise.reject(new ApiError(
+        message,
+        err.response.status,
+        typeof body.code === 'string' ? body.code : undefined,
+        typeof body.target === 'string' ? body.target : undefined,
+      ))
     }
     return Promise.reject(err)
   }
@@ -214,6 +236,15 @@ export const launchChange = (workspaceId: string, changeName: string) =>
 
 export const unlaunchChange = (workspaceId: string, changeName: string, force?: boolean) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/unlaunch${force ? '?force=true' : ''}`)
+
+// Translation key (kanban namespace) of the toast shown when a forced
+// demotion fails, from the error code the backend reports.
+export const unlaunchErrorKey = (err: unknown): string => {
+  const code = err instanceof ApiError ? err.code : undefined
+  if (code === 'change_already_merged') return 'errors.unlaunchAlreadyMerged'
+  if (code === 'worker_still_running') return 'errors.unlaunchWorkerStillRunning'
+  return 'errors.unlaunchFailed'
+}
 
 export const reorderReady = (workspaceId: string, order: string[]) =>
   api.put(`/api/workspaces/${workspaceId}/ready-order`, { order })

@@ -55,6 +55,20 @@ type Worker struct {
 	runLog *poolRunLog
 	// procCancel terminates the worker's agent process group (set by runWorker).
 	procCancel context.CancelFunc
+	// done is closed by runWorker as its very last act, once the worker has
+	// left activeWorkers; result is written before it. Nil for workers not
+	// created by startWorker (tests), in which case nothing is signalled.
+	done   chan struct{}
+	result WorkerResult
+}
+
+// WorkerResult is how a worker's run ended. Merged reports that the change
+// was merged into Target, whatever happened afterwards (cleanup failure,
+// cancellation).
+type WorkerResult struct {
+	Outcome string
+	Merged  bool
+	Target  string
 }
 
 // role returns the effective role of the worker.

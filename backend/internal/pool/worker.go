@@ -31,6 +31,11 @@ const maxActivityLen = 200
 // subprocess creation without spawning a real agent CLI.
 var startSubprocessFn = session.StartSubprocess
 
+// beforeCommitHook is a test seam called once validation and the completion
+// check have passed, right before the cancellation check that precedes the
+// commit of the agent's work.
+var beforeCommitHook func()
+
 // pauseWorker marks w as paused with a human-readable reason and snapshots it
 // into m.pausedWorkers, so it stays visible via Status()/AllPools() even
 // after runWorker's own deferred cleanup removes it from m.activeWorkers.
@@ -83,7 +88,21 @@ func (m *Manager) setWorktree(w *Worker, path, branch string) {
 
 // runWorker coordinates the lifecycle of a worker on a specific change.
 func (m *Manager) runWorker(ctx context.Context, w *Worker) {
+	outcome, outcomeReason := "", ""
+	merged, mergeTarget := false, ""
+
+	// normalizeOutcome records a cancelled or outcome-less run as stopped,
+	// except when the change was merged: its real outcome is then kept.
+	normalizeOutcome := func() {
+		if !merged && (outcome == "" || ctx.Err() != nil) {
+			outcome = OutcomeStopped
+		}
+	}
+
+	// First deferred, so last to run: removes the worker from activeWorkers,
+	// notifies, then publishes the result and signals done.
 	defer func() {
+		normalizeOutcome()
 		m.mu.Lock()
 		// Only remove our own entry: after Stop/Start a newer worker may
 		// have reused this ID.
@@ -93,7 +112,20 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		}
 		m.mu.Unlock()
 		m.notify()
+		if w.done != nil {
+			w.result = WorkerResult{Outcome: outcome, Merged: merged, Target: mergeTarget}
+			close(w.done)
+		}
 	}()
+
+	pause := func(reason string) {
+		if !m.pauseWorker(ctx, w, reason) && !merged {
+			// Cancelled worker: recorded as stopped, never as a ghost pause.
+			outcome, outcomeReason = OutcomeStopped, ""
+			return
+		}
+		outcome, outcomeReason = OutcomePaused, reason
+	}
 
 	// Snapshot the pool settings: Stop/Start may rewrite them while this
 	// worker is still winding down.
@@ -106,7 +138,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	worktreePath, err := wt.Provision(w.ActiveChange)
 	if err != nil {
 		log.Printf("[worker %d] failed to provision worktree: %v\n", w.ID, err)
-		m.pauseWorker(ctx, w, fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+		pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
 		return
 	}
 	m.setWorktree(w, worktreePath, "feature/"+w.ActiveChange)
@@ -146,15 +178,6 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// marker is written by a single defer, registered before any subprocess
 	// cleanup so it runs after the subprocess has exited, and before the
 	// worker is removed from activeWorkers.
-	outcome, outcomeReason := "", ""
-	pause := func(reason string) {
-		if !m.pauseWorker(ctx, w, reason) {
-			// Cancelled worker: recorded as stopped, never as a ghost pause.
-			outcome, outcomeReason = OutcomeStopped, ""
-			return
-		}
-		outcome, outcomeReason = OutcomePaused, reason
-	}
 	runLog, runTS := m.openRunLog(w)
 	m.setRun(w, runTS, runLog)
 	if runLog != nil {
@@ -165,9 +188,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			"delegation_mode": string(w.DelegationMode),
 		})
 		defer func() {
-			if outcome == "" || ctx.Err() != nil {
-				outcome = OutcomeStopped
-			}
+			normalizeOutcome()
 			m.logRunMarker(w, map[string]any{
 				"type":    "pool_run_end",
 				"outcome": outcome,
@@ -282,7 +303,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	}
 
 	// 7. Commit the agent's work into feature/<change> before anything that
-	// could discard the worktree.
+	// could discard the worktree. A cancelled worker commits nothing.
+	if beforeCommitHook != nil {
+		beforeCommitHook()
+	}
+	if ctx.Err() != nil {
+		outcome = OutcomeStopped
+		return
+	}
 	files, err := wt.CommitAll(w.ActiveChange)
 	if err != nil {
 		pause(fmt.Sprintf("Impossible de committer le travail de l'agent : %s", truncateReason(err)))
@@ -305,6 +333,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// 8. State transitions based on delegation mode.
 	if cfg.DelegationMode == ModeFullAutonomy {
 		m.mergeMu.Lock()
+		// Point of no return: checked right after the lock, which may have
+		// been waited on for a long time. A merge that has started is never
+		// interrupted.
+		if ctx.Err() != nil {
+			m.mergeMu.Unlock()
+			outcome = OutcomeStopped
+			return
+		}
 		target, err := wt.MergeInto(w.ActiveChange)
 		m.mergeMu.Unlock()
 		if err != nil {
@@ -316,6 +352,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			}
 			return
 		}
+		merged, mergeTarget = true, target
 		log.Printf("[worker %d] Full Autonomy: merged %s into %s\n", w.ID, w.ActiveChange, target)
 		if err := wt.Remove(w.ActiveChange); err != nil {
 			pause(fmt.Sprintf("Fusion réussie dans %s mais le worktree n'a pas pu être supprimé : %s", target, truncateReason(err)))
