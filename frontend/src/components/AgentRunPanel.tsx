@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from './Markdown'
 import { useTranslation } from 'react-i18next'
 import { usePoolRun, usePoolRuns } from '../hooks/usePoolRuns'
 import { ActivityTimelineBar } from './ActivityTimelineBar'
@@ -121,9 +121,7 @@ export function AgentRunPanel({ workspaceId, change, ts, onSelectRun, onClose }:
                   <span className="text-[10px] text-slate-400">{entry.ts ? new Date(entry.ts).toLocaleTimeString() : ''}</span>
                 </div>
                 {entry.category === 'agent' ? (
-                  <article className="prose prose-slate prose-xs max-w-none text-left">
-                    <ReactMarkdown>{entry.summary}</ReactMarkdown>
-                  </article>
+                  <Markdown size="xs" className="text-left">{entry.summary}</Markdown>
                 ) : (
                   <p className="text-[11px] text-slate-700 break-words whitespace-pre-wrap leading-relaxed">{entry.summary}</p>
                 )}

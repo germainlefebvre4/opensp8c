@@ -57,12 +57,8 @@
     "chat": "fr",
     "documentation": "en"
   },
-  "uiLocale": "en",
-  "workspaces": {
-    "8b4a8cb8": {
-      "pool": {
-        "size": 1
-      }
-    }
+  "uiLocale": "fr",
+  "poolDefaults": {
+    "size": 1
   }
 }

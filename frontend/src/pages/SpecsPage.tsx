@@ -1,5 +1,4 @@
 import { useMemo, useState, useEffect } from 'react'
-import ReactMarkdown from 'react-markdown'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -7,6 +6,7 @@ import { useSpec, useSpecs } from '../hooks/useSpecs'
 import { useDocsLiveState } from '../hooks/useWorkspaceLiveState'
 import { TableOfContents, type Heading } from '../components/TableOfContents'
 import { SpecEditor } from '../components/SpecEditor'
+import { Markdown } from '../components/Markdown'
 import { DocumentationPanel } from '../components/DocumentationPanel'
 
 interface Props {
@@ -220,11 +220,7 @@ export function SpecsPage({ workspaceId }: Props) {
                   <ScrollArea.Root className="flex-1 overflow-hidden">
                     <ScrollArea.Viewport className="h-full w-full" ref={setContentEl}>
                       <div className="px-8 py-4 max-w-3xl text-left">
-                        <article className="prose prose-slate prose-sm max-w-none">
-                          <ReactMarkdown components={markdownComponents}>
-                            {specDetail.content ?? ''}
-                          </ReactMarkdown>
-                        </article>
+                        <Markdown components={markdownComponents}>{specDetail.content ?? ''}</Markdown>
                       </div>
                     </ScrollArea.Viewport>
                     <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">

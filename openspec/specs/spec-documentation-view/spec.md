@@ -29,7 +29,7 @@ Le sous-onglet "Documentation" SHALL afficher la liste des pages existantes sous
 - **THEN** le sous-onglet "Documentation" affiche un état vide invitant à générer la documentation, avec le bouton "Générer" visible
 
 ### Requirement: Rendu Markdown avec diagrammes Mermaid
-Le contenu d'une page de documentation sélectionnée SHALL être rendu en Markdown, et tout bloc de code de langage `mermaid` qu'il contient SHALL être rendu comme un diagramme visuel plutôt que comme un bloc de code brut.
+Le contenu d'une page de documentation sélectionnée SHALL être rendu en Markdown, y compris les tableaux et le code inline conformément à la capacité `markdown-rendering`, et tout bloc de code de langage `mermaid` qu'il contient SHALL être rendu comme un diagramme visuel plutôt que comme un bloc de code brut.
 
 #### Scenario: Page contenant un diagramme Mermaid valide
 - **WHEN** l'utilisateur sélectionne une page de documentation contenant un bloc ```mermaid``` valide
@@ -38,6 +38,10 @@ Le contenu d'une page de documentation sélectionnée SHALL être rendu en Markd
 #### Scenario: Bloc Mermaid invalide
 - **WHEN** un bloc ```mermaid``` présent dans une page ne peut pas être interprété
 - **THEN** la vue affiche le bloc de code brut en repli, sans interrompre l'affichage du reste de la page
+
+#### Scenario: Page contenant un tableau et du code inline
+- **WHEN** l'utilisateur sélectionne une page de documentation contenant un tableau Markdown et du code inline
+- **THEN** le tableau est affiché comme un tableau visuel et le code inline est affiché stylé, sans pipes ni backticks visibles
 
 ### Requirement: Déclenchement de la génération via un bouton
 L'utilisateur SHALL pouvoir déclencher la génération de la documentation depuis le sous-onglet "Documentation" via un bouton "Générer", qui lance un run unique produisant l'ensemble des pages. Pendant l'exécution, l'interface SHALL afficher un état "en cours" et désactiver un nouveau déclenchement concurrent pour le même workspace.

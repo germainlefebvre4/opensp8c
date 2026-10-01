@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye, Trash2, Maximize2, Minimize2, Sparkles, ArrowDown } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from './Markdown'
 import { useTranslation } from 'react-i18next'
 import { useAnonymousExploreSession, type QuestionCardData } from '../hooks/useAnonymousExploreSession'
 import { canOfferRestart, type SystemMessageKind } from '../hooks/exploreChat'
@@ -215,10 +215,9 @@ export function ExploreAnonymousPanel({ workspaceId, resumeGhostId, isMaximized,
                       </div>
                     )}
                     {msg.role === 'assistant' && mode === 'rendered' ? (
-                      <article className="prose prose-slate prose-sm max-w-none text-left">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        {msg.partial && <span className="opacity-50">▊</span>}
-                      </article>
+                      <Markdown className="text-left" after={msg.partial && <span className="opacity-50">▊</span>}>
+                        {msg.content}
+                      </Markdown>
                     ) : (
                       <span className="whitespace-pre-wrap text-slate-800">
                         {msg.content}

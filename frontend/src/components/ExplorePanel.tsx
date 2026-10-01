@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Code, Eye, Maximize2, Minimize2, ArrowDown } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from './Markdown'
 import { useTranslation } from 'react-i18next'
 import { useExploreSession, type QuestionCardData } from '../hooks/useExploreSession'
 import { canOfferRestart, type SystemMessageKind } from '../hooks/exploreChat'
@@ -183,10 +183,9 @@ export function ExplorePanel({ workspaceId, changeName, isMaximized, onMaximizeT
                   </div>
                 )}
                 {msg.role === 'assistant' && mode === 'rendered' ? (
-                  <article className="prose prose-slate prose-sm max-w-none text-left">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    {msg.partial && <span className="opacity-50">▊</span>}
-                  </article>
+                  <Markdown className="text-left" after={msg.partial && <span className="opacity-50">▊</span>}>
+                    {msg.content}
+                  </Markdown>
                 ) : (
                   <span className="whitespace-pre-wrap text-slate-800">
                     {msg.content}

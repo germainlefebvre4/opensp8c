@@ -1,26 +1,15 @@
 import { useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 import * as ScrollArea from '@radix-ui/react-scroll-area'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { useDocPage, useDocs } from '../hooks/useDocs'
 import { triggerDocsGenerate } from '../lib/api'
-import { MermaidDiagram } from './MermaidDiagram'
+import { Markdown } from './Markdown'
 
 interface Props {
   workspaceId: string
   generating: boolean
 }
-
-function CodeRenderer({ className, children }: { className?: string; children?: React.ReactNode }) {
-  if (/language-mermaid/.test(className ?? '')) {
-    const code = Array.isArray(children) ? children.join('') : String(children ?? '')
-    return <MermaidDiagram code={code.replace(/\n$/, '')} />
-  }
-  return <code className={className}>{children}</code>
-}
-
-const markdownComponents = { code: CodeRenderer }
 
 export function DocumentationPanel({ workspaceId, generating }: Props) {
   const { t } = useTranslation('specs')
@@ -124,11 +113,7 @@ export function DocumentationPanel({ workspaceId, generating }: Props) {
         <ScrollArea.Root className="flex-1 overflow-hidden">
           <ScrollArea.Viewport className="h-full w-full">
             <div className="px-8 py-4 max-w-3xl text-left">
-              <article className="prose prose-slate prose-sm max-w-none">
-                <ReactMarkdown components={markdownComponents}>
-                  {pageDetail?.content ?? ''}
-                </ReactMarkdown>
-              </article>
+              <Markdown mermaid size="sm">{pageDetail?.content ?? ''}</Markdown>
             </div>
           </ScrollArea.Viewport>
           <ScrollArea.Scrollbar orientation="vertical" className="flex w-1.5 touch-none select-none p-0.5">

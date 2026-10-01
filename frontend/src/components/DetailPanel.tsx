@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from './Markdown'
 import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
@@ -287,9 +287,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                         </div>
 
                         {entry.category === 'agent' ? (
-                          <article className="prose prose-slate prose-xs max-w-none text-left pl-0.5">
-                            <ReactMarkdown>{entry.summary}</ReactMarkdown>
-                          </article>
+                          <Markdown size="xs" className="text-left pl-0.5">{entry.summary}</Markdown>
                         ) : (
                           <p className="text-[11px] text-slate-700 pl-0.5 break-words whitespace-pre-wrap leading-relaxed">
                             {entry.summary}
@@ -352,9 +350,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
               {activeTab === 'proposal' && (
                 data.artifacts.proposal ? (
                   viewMode === 'rendered' ? (
-                    <article className="prose prose-slate prose-sm max-w-none text-left">
-                      <ReactMarkdown>{data.artifacts.proposal}</ReactMarkdown>
-                    </article>
+                    <Markdown className="text-left">{data.artifacts.proposal}</Markdown>
                   ) : (
                     <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-mono text-slate-700">
                       {data.artifacts.proposal}
@@ -368,9 +364,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
               {activeTab === 'design' && (
                 data.artifacts.design ? (
                   viewMode === 'rendered' ? (
-                    <article className="prose prose-slate prose-sm max-w-none text-left">
-                      <ReactMarkdown>{data.artifacts.design}</ReactMarkdown>
-                    </article>
+                    <Markdown className="text-left">{data.artifacts.design}</Markdown>
                   ) : (
                     <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-mono text-slate-700">
                       {data.artifacts.design}
