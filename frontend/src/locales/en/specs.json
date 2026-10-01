@@ -47,6 +47,11 @@
       "architecture": "Architecture",
       "domain-model": "Domain model",
       "workflows": "Workflows"
+    },
+    "diagram": {
+      "enlarge": "Enlarge diagram",
+      "close": "Close",
+      "modalTitle": "Enlarged diagram"
     }
   }
 }

@@ -1,0 +1,14 @@
+schema: spec-driven
+created: "2026-10-01"
+tags:
+    type:
+        - frontend
+    complexity: 1
+    components:
+        - timeline-page
+        - timeline-spec-matrix
+    agent_specialization:
+        - frontend
+        - ux-design
+    _auto: true
+    _tagged_at: "2026-10-01"

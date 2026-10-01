@@ -47,6 +47,11 @@
       "architecture": "Architecture",
       "domain-model": "Modèle de domaine",
       "workflows": "Flux"
+    },
+    "diagram": {
+      "enlarge": "Agrandir le diagramme",
+      "close": "Fermer",
+      "modalTitle": "Diagramme agrandi"
     }
   }
 }
