@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { X, List, LayoutGrid } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAllChanges } from '../hooks/useAllChanges'
@@ -109,34 +109,29 @@ export function TimelinePage({ workspaceId }: Props) {
     return `/specs?${p.toString()}`
   }
 
+  const subTabClass = (active: boolean) =>
+    `px-3 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
+      active
+        ? 'border-blue-600 text-blue-700'
+        : 'border-transparent text-slate-500 hover:text-slate-800'
+    }`
+
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center text-sm text-slate-400">{tCommon('loading')}</div>
   }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="shrink-0 px-6 pt-3 pb-3 flex items-center justify-between border-b border-slate-100">
-        <h1 className="text-sm font-semibold text-slate-700">{t('title')}</h1>
-        <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
-          <button
-            onClick={() => setMode('changes')}
-            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors flex items-center gap-1.5 ${
-              mode === 'changes' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <List size={11} />
-            {t('tabs.changes')}
-          </button>
-          <button
-            onClick={() => { setMode('matrice'); setSelectedChange(null) }}
-            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors flex items-center gap-1.5 ${
-              mode === 'matrice' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <LayoutGrid size={11} />
-            {t('tabs.matrix')}
-          </button>
-        </div>
+      <div className="shrink-0 flex items-center gap-1 px-4 border-b border-slate-200 bg-white">
+        <button onClick={() => setMode('changes')} className={subTabClass(mode === 'changes')}>
+          {t('tabs.changes')}
+        </button>
+        <button
+          onClick={() => { setMode('matrice'); setSelectedChange(null) }}
+          className={subTabClass(mode === 'matrice')}
+        >
+          {t('tabs.matrix')}
+        </button>
       </div>
 
       {mode === 'changes' ? (
