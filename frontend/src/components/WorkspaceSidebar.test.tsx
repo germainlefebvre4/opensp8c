@@ -21,11 +21,11 @@ void i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 })
 
-function render(isOpen: boolean) {
+function render(isOpen: boolean, task_counts: Record<string, number> = {}) {
   return renderToStaticMarkup(
     <MemoryRouter>
       <WorkspaceSidebar
-        workspaces={[{ id: 'a', name: 'Alpha', task_counts: {} } as never]}
+        workspaces={[{ id: 'a', name: 'Alpha', task_counts } as never]}
         activeId="a"
         onSelect={vi.fn()}
         isOpen={isOpen}
@@ -51,5 +51,16 @@ describe('WorkspaceSidebar', () => {
 
   it('shows the open toggle when collapsed', () => {
     expect(render(false)).toContain(`aria-label="${frWorkspace.openMenu}"`)
+  })
+
+  it('shows a blue to-review badge when the counter is above 0', () => {
+    const html = render(true, { 'to-review': 2 })
+    expect(html).toContain('bg-blue-500')
+    expect(html).toContain(`title="${frWorkspace.toReviewBadge}"`)
+  })
+
+  it('hides the to-review badge at 0', () => {
+    const html = render(true, { 'to-review': 0 })
+    expect(html).not.toContain('bg-blue-500')
   })
 })

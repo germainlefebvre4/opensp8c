@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,6 +33,44 @@ func TestWorkspaceList_TaskCountsIncludesReady(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), `"ready":0`) {
 		t.Fatalf("expected task_counts to include \"ready\":0, got %s", rec.Body.String())
+	}
+}
+
+func TestWorkspaceList_TaskCountsToReview(t *testing.T) {
+	tmpDir := t.TempDir()
+	changeDir := filepath.Join(tmpDir, "openspec", "changes", "c1")
+	if err := os.MkdirAll(changeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(changeDir, ".openspec.yaml"), []byte("schema: spec-driven\nlaunched: true\n"), 0644)
+	os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("- [ ] a\n"), 0644)
+
+	cfg := &config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: tmpDir}}}
+	ws := NewWorkspaceHandler(cfg, "", pool.NewRegistry(nil, nil, nil, nil, nil))
+	list := func() string {
+		rec := httptest.NewRecorder()
+		ws.List(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil))
+		return rec.Body.String()
+	}
+	if body := list(); !strings.Contains(body, `"to-review":0`) {
+		t.Fatalf("expected \"to-review\":0, got %s", body)
+	}
+
+	git := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v %s", err, out)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	git("add", "-A")
+	git("-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
+	git("branch", "feature/c1")
+	git("config", "branch.feature/c1.opensp8c-review", "x")
+	if body := list(); !strings.Contains(body, `"to-review":1`) || !strings.Contains(body, `"todo":0`) {
+		t.Fatalf("expected one to-review change, got %s", body)
 	}
 }
 

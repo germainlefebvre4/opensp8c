@@ -529,3 +529,52 @@ func TestIntegrateTargetConflictIsAborted(t *testing.T) {
 		t.Fatalf("README = %q", b)
 	}
 }
+
+func TestReviewMarker(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := wc.HasReview("add-auth"); err != nil || has {
+		t.Fatalf("HasReview before mark = %v, %v", has, err)
+	}
+	if err := wc.MarkReview("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := wc.HasReview("add-auth"); err != nil || !has {
+		t.Fatalf("HasReview after mark = %v, %v", has, err)
+	}
+	if got := gitIn(t, repo, "config", "--get", "branch.feature/add-auth.opensp8c-review"); got == "" {
+		t.Error("marker value should be a timestamp")
+	}
+	if out := gitIn(t, repo, "status", "--porcelain"); out != "" {
+		t.Errorf("marking must not touch tracked files, status: %q", out)
+	}
+	if err := wc.ClearReview("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.ClearReview("add-auth"); err != nil {
+		t.Errorf("clearing an absent marker must not fail: %v", err)
+	}
+	if has, _ := wc.HasReview("add-auth"); has {
+		t.Error("marker should be cleared")
+	}
+}
+
+func TestReviewMarkerDisappearsWithBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.MarkReview("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Discard("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := wc.HasReview("add-auth"); err != nil || has {
+		t.Errorf("marker should vanish with the branch: %v, %v", has, err)
+	}
+}

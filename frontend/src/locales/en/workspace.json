@@ -9,6 +9,7 @@
   "projectPathExample": "Project path (e.g. /home/user/my-project)",
   "welcome": "Welcome to OpenSP8C",
   "welcomeSubtitle": "Add your first project to get started.",
+  "toReviewBadge": "To review",
   "agentSelector": {
     "chooseAgent": "Choose the code agent",
     "configureEnv": "Configure the agent's environment variables",

@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/glefebvre/opensp8c/internal/openspec"
 )
 
 // worktreesEnv overrides the root directory of all worktrees.
@@ -294,6 +297,43 @@ func (wc *WorktreeController) HasWork(changeName string) (bool, error) {
 
 func baseConfigKey(changeName string) string {
 	return "branch.feature/" + changeName + ".opensp8c-base"
+}
+
+// MarkReview records that the change awaits review, in the repository's git
+// configuration (value: RFC 3339 timestamp). Git drops it with the branch and
+// it touches no tracked file. Unlike recordBase, a failure is returned.
+func (wc *WorktreeController) MarkReview(changeName string) error {
+	_, err := wc.runGit("config", openspec.ReviewKey(changeName), time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// ClearReview lifts the review marker of a change; lifting an absent marker is
+// not an error.
+func (wc *WorktreeController) ClearReview(changeName string) error {
+	_, code, err := wc.runGitCode("config", "--unset", openspec.ReviewKey(changeName))
+	switch {
+	case err != nil:
+		return err
+	case code == 0, code == 5:
+		return nil
+	default:
+		return fmt.Errorf("git config --unset exited with status %d", code)
+	}
+}
+
+// HasReview reports whether the change carries a review marker.
+func (wc *WorktreeController) HasReview(changeName string) (bool, error) {
+	_, code, err := wc.runGitCode("config", "--get", openspec.ReviewKey(changeName))
+	switch {
+	case err != nil:
+		return false, err
+	case code == 0:
+		return true, nil
+	case code == 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("git config --get exited with status %d", code)
+	}
 }
 
 // currentBranchName returns the checked-out branch, or "" when HEAD is detached.

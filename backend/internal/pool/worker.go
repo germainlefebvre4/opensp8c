@@ -17,6 +17,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
+	"github.com/glefebvre/opensp8c/internal/watcher"
 )
 
 // activityBroadcastInterval throttles how often an in-flight turn's activity
@@ -426,12 +427,20 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		return
 	}
 
-	// HITL review: branch and worktree stay in place; the dispatcher must not
-	// hand the change out again while it awaits review.
+	// HITL review: branch and worktree stay in place. The persistent marker
+	// makes the change to-review, which keeps the dispatcher from handing it
+	// out again, across pool and backend restarts.
 	log.Printf("[worker %d] HITL Review: change %s ready for review\n", w.ID, w.ActiveChange)
-	m.mu.Lock()
-	m.reviewChanges[w.ActiveChange] = true
-	m.mu.Unlock()
+	if err := wt.MarkReview(w.ActiveChange); err != nil {
+		log.Printf("[worker %d] failed to record review state: %v\n", w.ID, err)
+		pause(fmt.Sprintf("L'état de revue n'a pas pu être enregistré : %s", truncateReason(err)))
+		return
+	}
+	// Setting the marker touches no OpenSpec file, so the watcher stays silent:
+	// publish the change update explicitly.
+	if m.broadcaster != nil && w.WorkspaceID != "" {
+		m.broadcaster.Broadcast(w.WorkspaceID, watcher.Event{Type: "change_updated", Name: w.ActiveChange})
+	}
 	outcome = OutcomeAwaitingReview
 }
 

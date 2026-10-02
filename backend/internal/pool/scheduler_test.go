@@ -74,3 +74,14 @@ func TestScheduler_GetRunnableChanges_SortedByOrder(t *testing.T) {
 		t.Errorf("Expected runnable changes to be sorted by priority order %v, got %v", expected, runnable)
 	}
 }
+
+func TestScheduler_ToReviewNotRunnableButBlocksDependents(t *testing.T) {
+	s := NewScheduler([]openspec.Change{
+		{Name: "a", KanbanStatus: "to-review"},
+		{Name: "b", KanbanStatus: "todo", Dependencies: []string{"a"}},
+		{Name: "c", KanbanStatus: "todo"},
+	})
+	if got, want := s.GetRunnableChanges(), []string{"c"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("runnable = %v, want %v", got, want)
+	}
+}

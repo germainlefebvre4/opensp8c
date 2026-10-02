@@ -23,16 +23,13 @@ type Broadcaster interface {
 
 // Manager orchestrates the agent pool.
 type Manager struct {
-	mu            sync.Mutex
-	workspaceID   string
-	workspaceName string
-	workspacePath string
-	config        AgentPoolConfig
-	activeWorkers map[int]*Worker
-	pausedWorkers map[int]*Worker
-	// reviewChanges holds the changes handed to review (hitl-review): the
-	// dispatcher skips them while the pool stays up. In memory on purpose.
-	reviewChanges    map[string]bool
+	mu               sync.Mutex
+	workspaceID      string
+	workspaceName    string
+	workspacePath    string
+	config           AgentPoolConfig
+	activeWorkers    map[int]*Worker
+	pausedWorkers    map[int]*Worker
 	lastWorkerStatus map[int]WorkerStatus
 	cancelLoop       context.CancelFunc
 	isRunning        bool
@@ -68,7 +65,6 @@ func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *pre
 	return &Manager{
 		activeWorkers:    make(map[int]*Worker),
 		pausedWorkers:    make(map[int]*Worker),
-		reviewChanges:    make(map[string]bool),
 		worktreesRoot:    DefaultWorktreesRoot(),
 		lastWorkerStatus: make(map[int]WorkerStatus),
 		broadcaster:      broadcaster,
@@ -114,7 +110,6 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 	}
 
 	m.pausedWorkers = make(map[int]*Worker)
-	m.reviewChanges = make(map[string]bool)
 
 	m.config = cfg
 	m.workspaceID = workspaceID
@@ -173,7 +168,6 @@ func (m *Manager) Stop() {
 	}
 	m.activeWorkers = make(map[int]*Worker)
 	m.pausedWorkers = make(map[int]*Worker)
-	m.reviewChanges = make(map[string]bool)
 	m.isRunning = false
 
 	m.broadcastLocked()
@@ -376,10 +370,6 @@ func (m *Manager) tick() {
 	// stopped), otherwise the dispatcher would relaunch it on the next tick.
 	for _, w := range m.pausedWorkers {
 		activeChangeSet[w.ActiveChange] = true
-	}
-	// A change handed to review stays excluded until the pool restarts.
-	for changeName := range m.reviewChanges {
-		activeChangeSet[changeName] = true
 	}
 
 	for _, changeName := range runnable {

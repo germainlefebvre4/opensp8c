@@ -9,10 +9,11 @@ const BADGE_COLORS: Record<string, string> = {
   'to-explore': 'bg-violet-400',
   'todo':        'bg-slate-400',
   'in-progress': 'bg-amber-400',
+  'to-review':   'bg-blue-500',
   'done':        'bg-emerald-500',
 }
 
-const BADGE_ORDER = ['to-explore', 'todo', 'in-progress', 'done']
+const BADGE_ORDER = ['to-explore', 'todo', 'in-progress', 'to-review', 'done']
 
 interface Props {
   workspaces: Workspace[]
@@ -85,6 +86,7 @@ export function WorkspaceSidebar({ workspaces, activeId, onSelect, isOpen, onTog
                     .map(s => (
                       <span
                         key={s}
+                        title={s === 'to-review' ? t('toReviewBadge') : undefined}
                         className={`flex items-center gap-0.5 text-[9px] font-bold text-white px-1 py-0.5 rounded-full ${BADGE_COLORS[s]}`}
                       >
                         {ws.task_counts[s]}

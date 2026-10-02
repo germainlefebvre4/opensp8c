@@ -14,6 +14,7 @@ import (
 
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
+	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/session"
 )
 
@@ -245,7 +246,7 @@ func TestFinalize_ConcurrentMergesAreSerialized(t *testing.T) {
 func TestFinalize_HITLReviewExcludesChangeFromDispatch(t *testing.T) {
 	change := "review-me"
 	repo := newGoFixtureRepo(t, change, "- [x] done\n")
-	m, store, _ := newJournalManager(t, repo, ModeHITLReview, pipeAgent(writeInWorktree("r.txt"), okResult, nil))
+	m, store, bc := newJournalManager(t, repo, ModeHITLReview, pipeAgent(writeInWorktree("r.txt"), okResult, nil))
 
 	w := runOnce(t, m, change)
 
@@ -257,18 +258,65 @@ func TestFinalize_HITLReviewExcludesChangeFromDispatch(t *testing.T) {
 	if gitIn(t, repo, "rev-list", "--count", "HEAD..feature/"+change) != "1" {
 		t.Error("expected one commit on the feature branch")
 	}
-	m.mu.Lock()
-	inReview := m.reviewChanges[change]
-	m.mu.Unlock()
-	if !inReview {
-		t.Fatal("change should be recorded as awaiting review")
+	if has, err := NewWorktreeController(repo, "ws1", m.worktreesRoot).HasReview(change); err != nil || !has {
+		t.Fatalf("review marker should be set: %v, %v", has, err)
+	}
+	if got := reviewStatus(t, repo, change); got != "to-review" {
+		t.Errorf("status = %s, want to-review", got)
+	}
+	found := false
+	for _, c := range bc.snapshot() {
+		if c.ev.Type == "change_updated" && c.ev.Name == change && c.workspaceID == "ws1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("change_updated must be broadcast after the marker is set")
 	}
 }
 
-func TestTick_SkipsChangesAwaitingReviewUntilRestart(t *testing.T) {
-	repo := t.TempDir()
+func reviewStatus(t *testing.T, repo, change string) string {
+	t.Helper()
+	changes, err := openspec.ListChanges(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range changes {
+		if c.Name == change {
+			return c.KanbanStatus
+		}
+	}
+	t.Fatalf("change %s not listed", change)
+	return ""
+}
+
+func TestFinalize_HITLMarkerFailurePausesWorker(t *testing.T) {
+	change := "review-fail"
+	repo := newGoFixtureRepo(t, change, "- [x] done\n")
+	m, store, _ := newJournalManager(t, repo, ModeHITLReview, pipeAgent(func(ws string) {
+		writeInWorktree("r.txt")(ws)
+		// A stale lock makes every git config write fail.
+		_ = os.WriteFile(filepath.Join(repo, ".git", "config.lock"), nil, 0644)
+	}, okResult, nil))
+
+	runOnce(t, m, change)
+
+	reason, ok := pausedReason(m, 1)
+	if !ok || !strings.Contains(reason, "état de revue") {
+		t.Fatalf("worker should pause on marker failure, got %q (paused=%v)", reason, ok)
+	}
+	_, lines := loadSingleRun(t, store, "ws1", change)
+	assertEndMarker(t, lines, OutcomePaused)
+}
+
+func TestTick_SkipsChangesAwaitingReviewAcrossRestart(t *testing.T) {
+	repo := newGoFixtureRepo(t, "change-a", "- [ ] t\n")
 	writeChangeForPoolTest(t, repo+"/openspec/changes", "change-a", boolPtr(true), intPtr(1))
 	writeChangeForPoolTest(t, repo+"/openspec/changes", "change-b", boolPtr(true), intPtr(2))
+	gitIn(t, repo, "add", "-A")
+	gitIn(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "changes")
+	gitIn(t, repo, "branch", "feature/change-a")
+	gitIn(t, repo, "config", openspec.ReviewKey("change-a"), "2026-01-01T00:00:00Z")
 	block := make(chan struct{})
 	defer close(block)
 	m := newWorkerTestManager(t, repo, AgentPoolConfig{Size: 2, MaxAttempts: 1},
@@ -278,33 +326,34 @@ func TestTick_SkipsChangesAwaitingReviewUntilRestart(t *testing.T) {
 		})
 	m.workspaceID = "ws"
 	m.isRunning = true
-	m.mu.Lock()
-	m.reviewChanges["change-a"] = true
-	m.mu.Unlock()
 
-	m.tick()
-	m.tick()
-
-	m.mu.Lock()
-	if len(m.activeWorkers) != 1 {
-		t.Fatalf("expected only change-b to be dispatched, got %d workers", len(m.activeWorkers))
-	}
-	for _, w := range m.activeWorkers {
-		if w.ActiveChange != "change-b" {
-			t.Fatalf("change awaiting review was redistributed: %s", w.ActiveChange)
+	assertOnlyB := func() {
+		t.Helper()
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, w := range m.activeWorkers {
+			if w.ActiveChange == "change-a" {
+				t.Fatalf("change awaiting review was redistributed")
+			}
+		}
+		if len(m.activeWorkers) != 1 {
+			t.Fatalf("expected only change-b to be dispatched, got %d workers", len(m.activeWorkers))
 		}
 	}
-	m.mu.Unlock()
+	m.tick()
+	m.tick()
+	assertOnlyB()
 
 	m.Stop()
-	if err := m.Start(AgentPoolConfig{Size: 1, MaxAttempts: 1}, "ws", "ws", repo); err != nil {
+	if err := m.Start(AgentPoolConfig{Size: 2, MaxAttempts: 1}, "ws", "ws", repo); err != nil {
 		t.Fatal(err)
 	}
 	defer m.Stop()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.reviewChanges) != 0 || len(m.pausedWorkers) != 0 {
-		t.Errorf("Stop/Start must clear review and pause state: %v %v", m.reviewChanges, m.pausedWorkers)
+	m.tick()
+	m.tick()
+	assertOnlyB()
+	if got := reviewStatus(t, repo, "change-a"); got != "to-review" {
+		t.Errorf("status after restart = %s", got)
 	}
 }
 

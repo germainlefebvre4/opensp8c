@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -81,6 +82,45 @@ func readStaleThreshold(workspacePath string) int {
 	return cfg.StaleThresholdDays
 }
 
+// ReviewKeySuffix is the suffix of the git config key
+// (branch.feature/<change>.<suffix>) marking a change as awaiting review.
+const ReviewKeySuffix = "opensp8c-review"
+
+// ReviewKey returns the git config key holding the review marker of a change.
+func ReviewKey(changeName string) string {
+	return "branch.feature/" + changeName + "." + ReviewKeySuffix
+}
+
+// ReviewMarkers returns the set of changes carrying a review marker in the git
+// configuration of the repository at workspacePath, in a single git call. The
+// set is empty when the folder is not a git repository or git fails: the
+// error is never propagated.
+func ReviewMarkers(workspacePath string) map[string]bool {
+	markers := map[string]bool{}
+	cmd := exec.Command("git", "config", "--get-regexp", `^branch\..*\.`+ReviewKeySuffix+`$`)
+	cmd.Dir = workspacePath
+	out, err := cmd.Output()
+	if err != nil {
+		return markers
+	}
+	const prefix, suffix = "branch.feature/", "." + ReviewKeySuffix
+	for _, line := range strings.Split(string(out), "\n") {
+		key, _, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) || len(key) <= len(prefix)+len(suffix) {
+			continue
+		}
+		markers[key[len(prefix):len(key)-len(suffix)]] = true
+	}
+	return markers
+}
+
+// branchExists reports whether feature/<change> exists in the repository.
+func branchExists(workspacePath, changeName string) bool {
+	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/feature/"+changeName)
+	cmd.Dir = workspacePath
+	return cmd.Run() == nil
+}
+
 func ListChanges(workspacePath string) ([]Change, error) {
 	threshold := readStaleThreshold(workspacePath)
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
@@ -92,6 +132,7 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		return nil, err
 	}
 
+	markers := ReviewMarkers(workspacePath)
 	var changes []Change
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" {
@@ -101,9 +142,19 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		if err != nil {
 			continue
 		}
+		if markers[ch.Name] && branchExists(workspacePath, ch.Name) {
+			markReviewed(ch)
+		}
 		changes = append(changes, *ch)
 	}
 	return changes, nil
+}
+
+// markReviewed gives ch the to-review status, which takes precedence over the
+// status derived from its tasks. Staleness does not apply to a change in review.
+func markReviewed(ch *Change) {
+	ch.KanbanStatus = "to-review"
+	ch.IsStale = false
 }
 
 func ListArchivedChanges(workspacePath string) ([]Change, error) {
@@ -251,14 +302,17 @@ func ApplyWorktreeProgress(ch *Change, workspacePath, worktreePath string) bool 
 	if status == "done" {
 		status = "in-progress"
 	}
+	inReview := ch.KanbanStatus == "to-review"
 	ch.TasksDone = done
 	ch.TasksTotal = total
-	ch.KanbanStatus = status
+	if !inReview {
+		ch.KanbanStatus = status
+	}
 	ch.DaysSinceActivity = -1
 	ch.IsStale = false
 	if stat, err := os.Stat(tasksPath); err == nil {
 		ch.DaysSinceActivity = int(time.Since(stat.ModTime()).Hours() / 24)
-		ch.IsStale = status == "in-progress" && ch.DaysSinceActivity >= readStaleThreshold(workspacePath)
+		ch.IsStale = !inReview && status == "in-progress" && ch.DaysSinceActivity >= readStaleThreshold(workspacePath)
 	}
 	return true
 }
@@ -291,6 +345,8 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 	if isArchived {
 		ch.KanbanStatus = "archived"
 		ch.IsStale = false
+	} else if ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName) {
+		markReviewed(ch)
 	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))

@@ -5,7 +5,7 @@ Spec du Kanban Board : colonnes, cartes de changement, ouverture de l'ExplorePan
 ## Requirements
 
 ### Requirement: Afficher les changements en colonnes Kanban
-Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots horizontaux d'égale largeur : **To Explore**, **Ready**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif. Pour un change dont un worker du pool est actif (y compris en pause), la progression (`tasks_done`, `tasks_total`) et la colonne SHALL être dérivées du `tasks.md` du worktree du worker, et non de celui du dépôt principal ; la colonne SHALL alors être plafonnée à **In Progress**.
+Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots horizontaux d'égale largeur : **To Explore**, **Ready**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif. Pour un change dont un worker du pool est actif (y compris en pause), la progression (`tasks_done`, `tasks_total`) et la colonne SHALL être dérivées du `tasks.md` du worktree du worker, et non de celui du dépôt principal ; la colonne SHALL alors être plafonnée à **In Progress**. Un changement portant un marqueur de revue (voir `change-review-state`) SHALL être affiché dans la colonne **To Review**, quel que soit l'avancement de ses tasks dans le workspace principal ; ce statut prime sur la dérivation depuis le worktree.
 
 #### Scenario: Chargement du Kanban avec changements archivés
 - **WHEN** l'utilisateur ouvre le Kanban Board ou change de workspace actif
@@ -44,8 +44,12 @@ Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots h
 - **THEN** il est affiché dans la colonne **Done**
 
 #### Scenario: Changement entièrement complété en mode Review Humaine
-- **WHEN** toutes les tasks d'un changement ont été complétées par un worker du pool d'agents exécuté en mode `hitl-review`
-- **THEN** il est affiché dans la colonne **To Review** et n'est déplacé vers **Done** qu'après approbation de l'utilisateur
+- **WHEN** un worker du pool d'agents exécuté en mode `hitl-review` termine un changement avec l'issue `awaiting-review` (travail committé dans `feature/<change>`), alors que le `tasks.md` du workspace principal n'est pas encore coché
+- **THEN** il est affiché dans la colonne **To Review** (et non dans **To Do**) et n'est déplacé vers **Done** qu'après approbation de l'utilisateur et fusion de sa branche
+
+#### Scenario: Changement en revue après redémarrage
+- **WHEN** le pool d'agents ou le backend est arrêté puis redémarré alors qu'un changement est en attente de revue
+- **THEN** il reste affiché dans la colonne **To Review**
 
 #### Scenario: Progression en direct pendant le run d'un worker
 - **WHEN** un worker est actif sur un change et que l'agent a coché 2 tâches sur 5 dans le `tasks.md` du worktree, alors que celui du dépôt principal n'en a aucune cochée
