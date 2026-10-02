@@ -5,6 +5,7 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { DetailPanel } from './DetailPanel'
 import { useChangeDetail, type ChangeDetail } from '../hooks/useChangeDetail'
+import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
 import enDetailPanel from '../locales/en/detailPanel.json'
 
 vi.mock('../hooks/useChangeDetail', () => ({ useChangeDetail: vi.fn() }))
@@ -14,6 +15,12 @@ vi.mock('../hooks/useToggleTask', () => ({ useToggleTask: () => ({ mutate: vi.fn
 vi.mock('../hooks/useRetag', () => ({ useRetag: () => ({ mutate: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('../hooks/useActivityTimeline', () => ({ useActivityTimeline: () => ({ data: [], isLoading: false }) }))
+vi.mock('../hooks/useReviewActions', () => ({
+  useApproveReview: vi.fn(),
+  useRequestCorrection: vi.fn(),
+}))
+vi.mock('./ApproveDialog', () => ({ ApproveDialog: () => <div data-testid="approve-dialog" /> }))
+vi.mock('./CorrectionDialog', () => ({ CorrectionDialog: () => <div data-testid="correction-dialog" /> }))
 vi.mock('./ReviewTab', () => ({ ReviewTab: () => <div data-testid="review-tab" /> }))
 vi.mock('./Markdown', () => ({ Markdown: ({ children }: { children: string }) => <div>{children}</div> }))
 
@@ -39,10 +46,15 @@ function mockStatus(status: ChangeDetail['kanban_status']) {
   vi.mocked(useChangeDetail).mockReturnValue({ data: detail(status), isLoading: false } as ReturnType<typeof useChangeDetail>)
 }
 
+function mockReviewMutations(approvePending = false, correctionPending = false) {
+  vi.mocked(useApproveReview).mockReturnValue({ mutateAsync: vi.fn(), isPending: approvePending } as unknown as ReturnType<typeof useApproveReview>)
+  vi.mocked(useRequestCorrection).mockReturnValue({ mutateAsync: vi.fn(), isPending: correctionPending } as unknown as ReturnType<typeof useRequestCorrection>)
+}
+
 const panel = () => <DetailPanel workspaceId="ws1" changeName="add-auth" onClose={() => {}} />
 
 describe('DetailPanel review tab', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
 
   it('shows the Review tab for a change in review only', () => {
     mockStatus('to-review')
@@ -74,5 +86,55 @@ describe('DetailPanel review tab', () => {
     expect(screen.queryByTestId('review-tab')).toBeNull()
     expect(screen.queryByRole('button', { name: enDetailPanel.tabs.review })).toBeNull()
     expect(screen.getByText(enDetailPanel.emptyTasks)).toBeTruthy()
+  })
+})
+
+describe('DetailPanel review actions', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
+
+  const openActions = () => fireEvent.click(screen.getByRole('button', { name: enDetailPanel.tabs.actions }))
+
+  it('opens the approval confirmation from "Approve & Merge"', () => {
+    mockStatus('to-review')
+    render(panel())
+    openActions()
+    expect(screen.queryByTestId('approve-dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge }))
+    expect(screen.getByTestId('approve-dialog')).toBeTruthy()
+    expect(screen.queryByTestId('correction-dialog')).toBeNull()
+  })
+
+  it('opens the correction dialog from "Request correction"', () => {
+    mockStatus('to-review')
+    render(panel())
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.reviewActions.requestCorrection }))
+    expect(screen.getByTestId('correction-dialog')).toBeTruthy()
+    expect(screen.queryByTestId('approve-dialog')).toBeNull()
+  })
+
+  it('disables both buttons while an approval is running', () => {
+    mockReviewMutations(true)
+    mockStatus('to-review')
+    render(panel())
+    openActions()
+    expect((screen.getByRole('button', { name: enDetailPanel.reviewActions.approving }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: enDetailPanel.reviewActions.requestCorrection }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('disables both buttons while a correction is being sent', () => {
+    mockReviewMutations(false, true)
+    mockStatus('to-review')
+    render(panel())
+    openActions()
+    expect((screen.getByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: enDetailPanel.reviewActions.requestCorrection }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows no review action outside review', () => {
+    mockStatus('todo')
+    render(panel())
+    openActions()
+    expect(screen.queryByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge })).toBeNull()
   })
 })

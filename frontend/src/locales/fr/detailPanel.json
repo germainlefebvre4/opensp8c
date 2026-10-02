@@ -41,7 +41,8 @@
   },
   "reviewActions": {
     "approveAndMerge": "Approuver & Fusionner",
-    "requestCorrection": "Demander correction"
+    "requestCorrection": "Demander correction",
+    "approving": "Fusion en cours…"
   },
   "solidifyError": "Erreur lors de la solidification du change : {{error}}",
   "delete": "Supprimer",

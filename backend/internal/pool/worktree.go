@@ -237,6 +237,31 @@ func (wc *WorktreeController) Discard(changeName string) error {
 	return nil
 }
 
+// Cleanup removes everything a change left in the repository: its worktree
+// (uncommitted work included), its branch and its review marker. Unlike
+// Discard it tolerates a worktree that is already gone (pruned) and a branch
+// that does not exist; it is reserved for an explicit user deletion.
+func (wc *WorktreeController) Cleanup(changeName string) error {
+	worktreePath := wc.resolvePath(changeName)
+	if wc.isRegisteredWorktree(worktreePath) {
+		if _, err := wc.runGit("worktree", "remove", "--force", worktreePath); err != nil {
+			return fmt.Errorf("failed to remove worktree: %w", err)
+		}
+	}
+	if _, err := wc.runGit("worktree", "prune"); err != nil {
+		return fmt.Errorf("failed to prune worktrees: %w", err)
+	}
+	branchName := "feature/" + changeName
+	if exists, err := wc.branchExists(branchName); err != nil {
+		return err
+	} else if exists {
+		if _, err := wc.runGit("branch", "-D", branchName); err != nil {
+			return err
+		}
+	}
+	return wc.ClearReview(changeName)
+}
+
 // isRegisteredWorktree reports whether git lists path as a worktree of the repository.
 func (wc *WorktreeController) isRegisteredWorktree(path string) bool {
 	out, err := wc.runGit("worktree", "list", "--porcelain")
@@ -276,6 +301,20 @@ func (wc *WorktreeController) CommitAll(changeName string) ([]string, error) {
 		return nil, err
 	}
 	return strings.Split(files, "\n"), nil
+}
+
+// CommitFile commits only the given file (relative to the worktree) of changeName
+// into its branch, leaving any other uncommitted change alone.
+func (wc *WorktreeController) CommitFile(changeName, relPath, message string) error {
+	path := wc.resolvePath(changeName)
+	if _, err := wc.runGitIn(path, "add", "--", relPath); err != nil {
+		return err
+	}
+	if _, err := wc.runGitIn(path, "commit", "-q", "-m", message, "--only", "--", relPath); err != nil {
+		_, _ = wc.runGitIn(path, "reset", "-q", "--", relPath)
+		return err
+	}
+	return nil
 }
 
 // HasWork reports whether the change produced anything: a dirty worktree or

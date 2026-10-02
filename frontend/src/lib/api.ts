@@ -12,12 +12,14 @@ export class ApiError extends Error {
   status?: number
   code?: string
   target?: string
-  constructor(message: string, status?: number, code?: string, target?: string) {
+  output?: string
+  constructor(message: string, status?: number, code?: string, target?: string, output?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.target = target
+    this.output = output
   }
 }
 
@@ -42,6 +44,7 @@ api.interceptors.response.use(
         err.response.status,
         typeof body.code === 'string' ? body.code : undefined,
         typeof body.target === 'string' ? body.target : undefined,
+        typeof body.output === 'string' ? body.output : undefined,
       ))
     }
     return Promise.reject(err)
@@ -390,6 +393,28 @@ export const getReviewDiff = (workspaceId: string, changeName: string, path: str
 
 export const getReviewFile = (workspaceId: string, changeName: string, path: string) =>
   api.get<ReviewFileContent>(`${reviewURL(workspaceId, changeName)}/file`, { params: { path } }).then(r => r.data)
+
+export interface ApproveResult {
+  target: string
+}
+
+export const approveReview = (workspaceId: string, changeName: string) =>
+  api.post<ApproveResult>(`${reviewURL(workspaceId, changeName)}/approve`).then(r => r.data)
+
+export const requestCorrection = (workspaceId: string, changeName: string, feedback: string) =>
+  api.post(`${reviewURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+
+const REVIEW_ERROR_CODES = new Set([
+  'not_in_review', 'worker_active', 'merge_in_progress', 'base_branch_mismatch',
+  'integration_conflict', 'target_moving', 'validation_failed', 'empty_feedback',
+])
+
+// Translation key (dialogs namespace) of the message shown when a review action
+// (approve, request a correction) fails, from the error code the backend reports.
+export const reviewErrorKey = (err: unknown): string => {
+  const code = err instanceof ApiError ? err.code : undefined
+  return code && REVIEW_ERROR_CODES.has(code) ? `reviewErrors.${code}` : 'reviewErrors.generic'
+}
 
 export const getActivity = (workspaceId: string, changeName: string) =>
   api.get<ActivityEntry[]>(`/api/workspaces/${workspaceId}/changes/${changeName}/activity`).then(r => r.data)

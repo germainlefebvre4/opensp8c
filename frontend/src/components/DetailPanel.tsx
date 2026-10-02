@@ -12,10 +12,13 @@ import { toggleTypeInFilter } from '../lib/timelineUtils'
 import { getActivityColor } from '../lib/activityColors'
 import { useRetag } from '../hooks/useRetag'
 import { useToast } from '../hooks/useToast'
-import { deleteGhost } from '../lib/api'
+import { deleteGhost, reviewErrorKey, ApiError } from '../lib/api'
+import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { ReviewTab } from './ReviewTab'
+import { ApproveDialog } from './ApproveDialog'
+import { CorrectionDialog } from './CorrectionDialog'
 
 interface Props {
   workspaceId: string
@@ -48,6 +51,11 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const deleteChange = useDeleteChange(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
   const retag = useRetag(workspaceId, changeName)
+  const approveReview = useApproveReview(workspaceId)
+  const requestCorrection = useRequestCorrection(workspaceId)
+  const [approveOpen, setApproveOpen] = useState(false)
+  const [correctionOpen, setCorrectionOpen] = useState(false)
+  const [approveError, setApproveError] = useState<{ message: string; output?: string } | null>(null)
   const [archiveError, setArchiveError] = useState<string | null>(null)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -116,6 +124,26 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
       const axiosData = (err as { response?: { data?: string } })?.response?.data
       setDeleteError(axiosData || (err instanceof Error ? err.message : String(err)))
     }
+  }
+
+  const reviewBusy = approveReview.isPending || requestCorrection.isPending
+
+  const handleApprove = async () => {
+    setApproveError(null)
+    try {
+      await approveReview.mutateAsync(changeName)
+      setApproveOpen(false)
+    } catch (err) {
+      // The dialog stays open with the error; it is also kept in the Actions tab.
+      setApproveError({ message: tDialogs(reviewErrorKey(err)), output: err instanceof ApiError ? err.output : undefined })
+      throw err
+    }
+  }
+
+  const handleCorrection = async (feedback: string) => {
+    await requestCorrection.mutateAsync({ changeName, feedback })
+    setCorrectionOpen(false)
+    onClose()
   }
 
   const inReview = data?.kanban_status === 'to-review'
@@ -477,15 +505,29 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                   {data.kanban_status === 'to-review' && (
                     <div className="flex flex-wrap gap-2">
                       <button
-                        className="text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+                        onClick={() => { setApproveError(null); setApproveOpen(true) }}
+                        disabled={reviewBusy}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {t('reviewActions.approveAndMerge')}
+                        {approveReview.isPending && <Loader2 size={12} className="animate-spin" />}
+                        {approveReview.isPending ? t('reviewActions.approving') : t('reviewActions.approveAndMerge')}
                       </button>
                       <button
-                        className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                        onClick={() => setCorrectionOpen(true)}
+                        disabled={reviewBusy}
+                        className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {t('reviewActions.requestCorrection')}
                       </button>
+                    </div>
+                  )}
+
+                  {data.kanban_status === 'to-review' && approveError && (
+                    <div role="alert" className="flex flex-col gap-1">
+                      <p className="text-[11px] text-red-600 whitespace-pre-wrap">{approveError.message}</p>
+                      {approveError.output && (
+                        <pre className="max-h-40 overflow-auto rounded bg-slate-50 border border-slate-200 p-2 text-[11px] text-slate-600 whitespace-pre-wrap">{approveError.output}</pre>
+                      )}
                     </div>
                   )}
 
@@ -520,6 +562,23 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
             </div>
           )}
         </>
+      )}
+
+      {approveOpen && (
+        <ApproveDialog
+          workspaceId={workspaceId}
+          changeName={changeName}
+          onConfirm={handleApprove}
+          onCancel={() => setApproveOpen(false)}
+        />
+      )}
+
+      {correctionOpen && (
+        <CorrectionDialog
+          changeName={changeName}
+          onSubmit={handleCorrection}
+          onCancel={() => setCorrectionOpen(false)}
+        />
       )}
 
       {showDeleteDialog && (

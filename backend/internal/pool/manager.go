@@ -45,6 +45,9 @@ type Manager struct {
 	// mergeMu serializes the merges into the workspace repository.
 	mergeMu sync.Mutex
 
+	// reviewOps holds one lock per change serializing its review actions.
+	reviewOps sync.Map
+
 	// workers tracks running runWorker goroutines so tests can wait for them
 	// after Stop (which only cancels them).
 	workers sync.WaitGroup

@@ -41,7 +41,8 @@
   },
   "reviewActions": {
     "approveAndMerge": "Approve & Merge",
-    "requestCorrection": "Request correction"
+    "requestCorrection": "Request correction",
+    "approving": "Merging…"
   },
   "solidifyError": "Error while freezing the change: {{error}}",
   "delete": "Delete",

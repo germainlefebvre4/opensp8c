@@ -75,5 +75,33 @@
       "stop": "Arrêter le Pool",
       "resume": "Reprendre"
     }
+  },
+  "reviewCorrection": {
+    "title": "Demander une correction",
+    "body": "Décrivez ce qui ne va pas dans « {{name}} » : le retour sera ajouté comme tâche et l'agent reprendra le change.",
+    "placeholder": "Ce qui doit être corrigé…",
+    "confirm": "Envoyer",
+    "sending": "Envoi…",
+    "cancel": "Annuler"
+  },
+  "reviewApprove": {
+    "title": "Approuver & fusionner ?",
+    "body": "« {{name}} » sera fusionné dans « {{target}} » puis sa branche et son worktree seront supprimés.",
+    "bodyNoTarget": "« {{name}} » sera fusionné dans la branche courante puis sa branche et son worktree seront supprimés.",
+    "confirm": "Approuver & Fusionner",
+    "merging": "Fusion en cours…",
+    "cancel": "Annuler",
+    "output": "Sortie de validation"
+  },
+  "reviewErrors": {
+    "not_in_review": "Ce change n'est plus en revue.",
+    "worker_active": "Un worker est actif sur ce change.",
+    "merge_in_progress": "Un merge est déjà en cours dans le dépôt : terminez-le ou annulez-le, puis réessayez.",
+    "base_branch_mismatch": "Le dépôt n'est plus sur la branche de base du change : revenez sur cette branche, puis réessayez.",
+    "integration_conflict": "L'intégration de la branche cible entre en conflit avec le change : rien n'a été fusionné, le change reste en revue.",
+    "target_moving": "La branche cible n'arrête pas d'avancer : réessayez dans quelques instants.",
+    "validation_failed": "La validation a échoué après intégration de la branche cible : rien n'a été fusionné, le change reste en revue.",
+    "empty_feedback": "Le retour de correction est vide.",
+    "generic": "L'action a échoué."
   }
 }

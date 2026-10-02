@@ -341,86 +341,43 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 
 	// 8. State transitions based on delegation mode.
 	if cfg.DelegationMode == ModeFullAutonomy {
-		// Integrate what landed on the target meanwhile, outside the merge
-		// lock, and revalidate that result: the final merge then carries an
-		// already validated state. When the target moves again before the lock
-		// is held (typically another worker merging), the lock is released and
-		// the round restarts, a bounded number of times.
-		for round := 1; ; round++ {
-			// Fail fast when the repository left the base branch: no point in
-			// integrating and revalidating for a merge that will be refused.
-			if err := wt.CheckBase(w.ActiveChange); err != nil {
-				pause("Fusion refusée : " + err.Error())
-				return
+		// Integrate what landed on the target meanwhile and revalidate that
+		// result (with self-healing) before merging; see integrateAndMerge.
+		validate := func() error {
+			if !validateAndHeal() {
+				return errValidationHandled
 			}
-			ahead, err := wt.TargetAhead(w.ActiveChange)
-			if err != nil {
-				pause(fmt.Sprintf("Impossible de comparer la branche cible au changement : %s", truncateReason(err)))
-				return
+			if _, err := wt.CommitAll(w.ActiveChange); err != nil {
+				pause(fmt.Sprintf("Impossible de committer les corrections après intégration : %s", truncateReason(err)))
+				return errValidationHandled
 			}
-			if ahead {
-				if round > maxIntegrationRounds {
-					pause(fmt.Sprintf("La branche cible a continué d'avancer pendant la finalisation (%d intégrations successives) : reprenez le worker pour réessayer", maxIntegrationRounds))
-					return
-				}
-				integrationTarget := wt.CurrentBranch()
-				log.Printf("[worker %d] %s advanced: integrating it into %s before merging\n", w.ID, integrationTarget, w.ActiveChange)
-				if err := wt.IntegrateTarget(w.ActiveChange, integrationTarget); err != nil {
-					pause(fmt.Sprintf("Intégration de %s impossible (annulée, branche et worktree conservés) : %s", integrationTarget, truncateReason(err)))
-					return
-				}
-				if !validateAndHeal() {
-					return
-				}
-				if _, err := wt.CommitAll(w.ActiveChange); err != nil {
-					pause(fmt.Sprintf("Impossible de committer les corrections après intégration : %s", truncateReason(err)))
-					return
-				}
-			}
-
-			m.mergeMu.Lock()
-			// Point of no return: checked right after the lock, which may have
-			// been waited on for a long time. A merge that has started is never
-			// interrupted.
-			if ctx.Err() != nil {
-				m.mergeMu.Unlock()
-				outcome = OutcomeStopped
-				return
-			}
-			// Revalidating under the lock would block the other workers: if the
-			// target moved since the integration, start another round instead.
-			ahead, err = wt.TargetAhead(w.ActiveChange)
-			if err != nil {
-				m.mergeMu.Unlock()
-				pause(fmt.Sprintf("Impossible de comparer la branche cible au changement : %s", truncateReason(err)))
-				return
-			}
-			if !ahead {
-				break
-			}
-			m.mergeMu.Unlock()
+			return nil
 		}
-		target, err := wt.MergeInto(w.ActiveChange)
-		m.mergeMu.Unlock()
+		target, ok, err := m.integrateAndMerge(ctx, wt, w.ActiveChange, validate)
+		if ok {
+			merged, mergeTarget = true, target
+			log.Printf("[worker %d] Full Autonomy: merged %s into %s\n", w.ID, w.ActiveChange, target)
+		}
 		if err != nil {
-			log.Printf("[worker %d] failed to merge: %v\n", w.ID, err)
-			if errors.Is(err, ErrMergeInProgress) {
+			log.Printf("[worker %d] finalization failed: %v\n", w.ID, err)
+			var envErr *ValidationEnvError
+			var movingErr *TargetMovingError
+			switch {
+			case errors.Is(err, errValidationHandled):
+				// The validate callback already paused the worker.
+			case ctx.Err() != nil && !ok:
+				outcome = OutcomeStopped
+			case errors.Is(err, ErrMergeInProgress):
 				pause("Un merge est déjà en cours dans le dépôt : terminez-le ou annulez-le, puis reprenez le worker")
-			} else if errors.Is(err, ErrBaseBranchMismatch) {
+			case errors.Is(err, ErrBaseBranchMismatch):
 				pause("Fusion refusée : " + err.Error())
-			} else {
-				pause(fmt.Sprintf("Échec de la fusion dans %s (merge annulé, branche et worktree conservés) : %s", target, truncateReason(err)))
+			case errors.As(err, &movingErr):
+				pause(movingErr.Error() + " : reprenez le worker pour réessayer")
+			case errors.As(err, &envErr):
+				pause(envErr.Reason)
+			default:
+				pause(err.Error())
 			}
-			return
-		}
-		merged, mergeTarget = true, target
-		log.Printf("[worker %d] Full Autonomy: merged %s into %s\n", w.ID, w.ActiveChange, target)
-		if err := wt.Remove(w.ActiveChange); err != nil {
-			pause(fmt.Sprintf("Fusion réussie dans %s mais le worktree n'a pas pu être supprimé : %s", target, truncateReason(err)))
-			return
-		}
-		if err := wt.DeleteBranch(w.ActiveChange); err != nil {
-			pause(fmt.Sprintf("Fusion réussie dans %s mais la branche n'a pas pu être supprimée : %s", target, truncateReason(err)))
 			return
 		}
 		outcome = OutcomeCompleted

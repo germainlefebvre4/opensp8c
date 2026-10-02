@@ -75,5 +75,33 @@
       "stop": "Stop Pool",
       "resume": "Resume"
     }
+  },
+  "reviewCorrection": {
+    "title": "Request a correction",
+    "body": "Describe what is wrong with \"{{name}}\": the feedback is added as a task and the agent picks the change up again.",
+    "placeholder": "What needs to be fixed…",
+    "confirm": "Send",
+    "sending": "Sending…",
+    "cancel": "Cancel"
+  },
+  "reviewApprove": {
+    "title": "Approve & merge?",
+    "body": "\"{{name}}\" will be merged into \"{{target}}\", then its branch and worktree are deleted.",
+    "bodyNoTarget": "\"{{name}}\" will be merged into the current branch, then its branch and worktree are deleted.",
+    "confirm": "Approve & Merge",
+    "merging": "Merging…",
+    "cancel": "Cancel",
+    "output": "Validation output"
+  },
+  "reviewErrors": {
+    "not_in_review": "This change is no longer in review.",
+    "worker_active": "A worker is active on this change.",
+    "merge_in_progress": "A merge is already in progress in the repository: finish or abort it, then retry.",
+    "base_branch_mismatch": "The repository is no longer on the change's base branch: switch back to it, then retry.",
+    "integration_conflict": "Integrating the target branch conflicts with the change: nothing was merged, the change stays in review.",
+    "target_moving": "The target branch keeps advancing: retry in a few moments.",
+    "validation_failed": "Validation failed after integrating the target branch: nothing was merged, the change stays in review.",
+    "empty_feedback": "The correction feedback is empty.",
+    "generic": "The action failed."
   }
 }

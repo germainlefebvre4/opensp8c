@@ -8,13 +8,24 @@ describe('VALID_DROPS', () => {
       'ready': ['to-explore', 'todo'],
       'todo': ['ready', 'to-explore'],
       'in-progress': ['to-explore'],
+      'to-review': ['in-progress', 'done'],
     })
   })
 
-  it('never targets in-progress, to-review or done', () => {
-    const targets = Object.values(VALID_DROPS).flat()
-    for (const forbidden of ['in-progress', 'to-review', 'done']) {
-      expect(targets).not.toContain(forbidden)
+  it('never targets to-review', () => {
+    expect(Object.values(VALID_DROPS).flat()).not.toContain('to-review')
+  })
+
+  it('only accepts in-progress and done as targets from to-review', () => {
+    for (const target of ['in-progress', 'done']) {
+      const sources = Object.entries(VALID_DROPS).filter(([, t]) => t.includes(target)).map(([src]) => src)
+      expect(sources).toEqual(['to-review'])
+    }
+  })
+
+  it('refuses every other target from to-review', () => {
+    for (const target of ['to-explore', 'ready', 'todo', 'to-review', 'archived']) {
+      expect(VALID_DROPS['to-review']).not.toContain(target)
     }
   })
 })

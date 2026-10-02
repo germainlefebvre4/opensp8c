@@ -20,7 +20,7 @@ interface Props {
   onStopWorker?: (change: Change) => void
 }
 
-const DRAGGABLE_STATUSES = new Set(['to-explore', 'ready', 'todo', 'in-progress'])
+const DRAGGABLE_STATUSES = new Set(['to-explore', 'ready', 'todo', 'in-progress', 'to-review'])
 
 export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false, onStopWorker }: Props) {
   const { t: tKanban } = useTranslation('kanban')

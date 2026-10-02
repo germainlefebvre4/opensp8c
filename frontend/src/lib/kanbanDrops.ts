@@ -4,4 +4,5 @@ export const VALID_DROPS: Record<string, string[]> = {
   'ready': ['to-explore', 'todo'],
   'todo': ['ready', 'to-explore'],
   'in-progress': ['to-explore'],
+  'to-review': ['in-progress', 'done'],
 }

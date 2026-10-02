@@ -101,6 +101,7 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 	poolHandler := handlers.NewPoolHandler(wsHandler, poolRegistry)
 	poolRunsHandler := handlers.NewPoolRunsHandler(wsHandler, poolRegistry, convStore, activityStore)
 	reviewHandler := handlers.NewReviewHandler(wsHandler)
+	reviewActionsHandler := handlers.NewReviewActionsHandler(wsHandler, poolRegistry)
 	wsSettingsHandler := handlers.NewWorkspaceSettingsHandler(wsHandler, prefsSvc)
 
 	r.Route("/api", func(r chi.Router) {
@@ -130,6 +131,8 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 		r.Get("/workspaces/{id}/changes/{name}/review", reviewHandler.List)
 		r.Get("/workspaces/{id}/changes/{name}/review/diff", reviewHandler.Diff)
 		r.Get("/workspaces/{id}/changes/{name}/review/file", reviewHandler.File)
+		r.Post("/workspaces/{id}/changes/{name}/review/approve", reviewActionsHandler.Approve)
+		r.Post("/workspaces/{id}/changes/{name}/review/request-correction", reviewActionsHandler.RequestCorrection)
 		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)

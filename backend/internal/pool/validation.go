@@ -117,19 +117,25 @@ func hasTestScript(packageJSON string) bool {
 // returns a *ValidationEnvError when validation cannot run at all, and an
 // ordinary error when a started command fails.
 func (m *Manager) runValidation(ctx context.Context, w *Worker) error {
+	return m.runValidationIn(ctx, w.WorkspaceID, w.WorktreePath)
+}
+
+// runValidationIn is runValidation for a workspace and a directory, without
+// requiring a Worker (used by the review approval).
+func (m *Manager) runValidationIn(ctx context.Context, workspaceID, dir string) error {
 	configured := ""
 	if m.prefs != nil {
 		if p, err := m.prefs.Load(); err == nil && p != nil {
-			configured = strings.TrimSpace(p.ResolvePool(w.WorkspaceID).ValidationCommand)
+			configured = strings.TrimSpace(p.ResolvePool(workspaceID).ValidationCommand)
 		}
 	}
 
 	if configured != "" {
-		_, err := runValidationCommand(ctx, w.WorktreePath, "sh", []string{"-c", configured}, configured, true)
+		_, err := runValidationCommand(ctx, dir, "sh", []string{"-c", configured}, configured, true)
 		return err
 	}
 
-	cmds, unvalidable := detectValidation(w.WorktreePath)
+	cmds, unvalidable := detectValidation(dir)
 	if len(unvalidable) > 0 {
 		return &ValidationEnvError{Reason: fmt.Sprintf("Projet détecté mais non validable faute de dépendances installées (script « test » sans node_modules) : %s. Configurez une commande de validation dans les réglages du pool qui installe les dépendances (par exemple « npm ci && npm test »).", strings.Join(unvalidable, ", "))}
 	}

@@ -63,7 +63,7 @@ func newReviewEnv(t *testing.T, inReview bool) *reviewEnv {
 	reviewGit(t, repo, "commit", "-q", "-m", "init")
 
 	id := workspace.StableID(repo)
-	wc := pool.NewWorktreeController(repo, id, t.TempDir())
+	wc := pool.NewWorktreeController(repo, id, os.Getenv("OPENSP8C_WORKTREES_DIR"))
 	wt, err := wc.Provision("add-auth")
 	if err != nil {
 		t.Fatal(err)

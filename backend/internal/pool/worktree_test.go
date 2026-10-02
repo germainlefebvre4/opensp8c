@@ -578,3 +578,56 @@ func TestReviewMarkerDisappearsWithBranch(t *testing.T) {
 		t.Errorf("marker should vanish with the branch: %v, %v", has, err)
 	}
 }
+
+func TestCleanup(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+
+	// Worktree present (dirty), branch and review marker: everything goes.
+	path, err := wc.Provision("present")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(path, "wip.txt"), "wip")
+	if err := wc.MarkReview("present"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Cleanup("present"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("worktree still there: %v", err)
+	}
+	if ok, _ := wc.branchExists("feature/present"); ok {
+		t.Fatal("branch still there")
+	}
+	if has, _ := wc.HasReview("present"); has {
+		t.Fatal("review marker still there")
+	}
+
+	// Worktree deleted by hand: pruned, branch deleted, marker lifted.
+	path, err = wc.Provision("vanished")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.MarkReview("vanished"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Cleanup("vanished"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := wc.branchExists("feature/vanished"); ok {
+		t.Fatal("branch still there")
+	}
+	if out := gitIn(t, repo, "worktree", "list", "--porcelain"); strings.Contains(out, "vanished") {
+		t.Fatalf("stale worktree entry kept:\n%s", out)
+	}
+
+	// Nothing left at all: not an error.
+	if err := wc.Cleanup("never-existed"); err != nil {
+		t.Fatalf("Cleanup of an absent change: %v", err)
+	}
+}

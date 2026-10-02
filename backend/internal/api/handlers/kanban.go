@@ -200,6 +200,16 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A change in review owns a branch, a worktree and a marker that the folder
+	// removal would leave orphaned: clean them first, and keep the change when
+	// that fails.
+	if openspec.InReview(path, name) {
+		if err := pool.NewWorktreeController(path, id, "").Cleanup(name); err != nil {
+			http.Error(w, "cleanup of the change's branch and worktree failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := os.RemoveAll(changeDir); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

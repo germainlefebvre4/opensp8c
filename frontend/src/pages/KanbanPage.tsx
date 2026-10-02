@@ -12,6 +12,8 @@ import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
 import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBottomPanel'
 import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
+import { ApproveDialog } from '../components/ApproveDialog'
+import { CorrectionDialog } from '../components/CorrectionDialog'
 import { AgentPoolModal } from '../components/AgentPoolModal'
 import { PoolCapacity } from '../components/PoolCapacity'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
@@ -24,6 +26,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, ApiError } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import { useToast } from '../hooks/useToast'
+import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
 import type { Change } from '../hooks/useChanges'
 
 interface Props {
@@ -40,6 +43,8 @@ export function KanbanPage({ workspaceId }: Props) {
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
   const { data: poolStatus } = usePoolStatus(workspaceId)
   const qc = useQueryClient()
+  const approveReview = useApproveReview(workspaceId)
+  const requestCorrection = useRequestCorrection(workspaceId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [detailOpen, setDetailOpen] = useState<{ name: string } | null>(null)
@@ -53,6 +58,10 @@ export function KanbanPage({ workspaceId }: Props) {
   const [promoteDialog, setPromoteDialog] = useState<Change | null>(null)
   const [deleteGhostDialog, setDeleteGhostDialog] = useState<{ ghostId: string } | null>(null)
   const [unlaunchWorkerDialog, setUnlaunchWorkerDialog] = useState<Change | null>(null)
+  // Review dialogs opened by a drop from To Review: the card stays in To Review
+  // until the action is confirmed and succeeds.
+  const [approveDialog, setApproveDialog] = useState<Change | null>(null)
+  const [correctionDialog, setCorrectionDialog] = useState<Change | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
 
@@ -201,6 +210,12 @@ export function KanbanPage({ workspaceId }: Props) {
 
     if (getFfStatus(changeName) === 'running') return
 
+    if (sourceStatus === 'to-review') {
+      if (targetStatus === 'done') setApproveDialog(change)
+      else if (targetStatus === 'in-progress') setCorrectionDialog(change)
+      return
+    }
+
     if (targetStatus === 'ready' && sourceStatus === 'to-explore') {
       if (change.is_ghost) {
         setPromoteDialog(change)
@@ -310,6 +325,20 @@ export function KanbanPage({ workspaceId }: Props) {
       qc.invalidateQueries({ queryKey: ['pool-status', workspaceId] })
       toast({ title: t(unlaunchErrorKey(err), { target: err instanceof ApiError ? err.target : undefined }), variant: 'error' })
     }
+  }
+
+  const handleApproveConfirm = async () => {
+    if (!approveDialog) return
+    await approveReview.mutateAsync(approveDialog.name)
+    setApproveDialog(null)
+  }
+
+  const handleCorrectionSubmit = async (feedback: string) => {
+    if (!correctionDialog) return
+    const name = correctionDialog.name
+    await requestCorrection.mutateAsync({ changeName: name, feedback })
+    setCorrectionDialog(null)
+    if (detailOpen?.name === name) setDetailOpen(null)
   }
 
   const handleStopWorker = (change: Change) => {
@@ -575,6 +604,23 @@ export function KanbanPage({ workspaceId }: Props) {
           onStop={handleStopPool}
           poolStatus={poolStatus}
         />
+
+        {approveDialog && (
+          <ApproveDialog
+            workspaceId={workspaceId}
+            changeName={approveDialog.name}
+            onConfirm={handleApproveConfirm}
+            onCancel={() => setApproveDialog(null)}
+          />
+        )}
+
+        {correctionDialog && (
+          <CorrectionDialog
+            changeName={correctionDialog.name}
+            onSubmit={handleCorrectionSubmit}
+            onCancel={() => setCorrectionDialog(null)}
+          />
+        )}
 
         {resetDialog && (
           <ResetTasksDialog
