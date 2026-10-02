@@ -348,5 +348,48 @@ export const getPoolRuns = (workspaceId: string) =>
 export const getPoolRun = (workspaceId: string, change: string, ts: string) =>
   api.get<PoolRunDetail>(`/api/workspaces/${workspaceId}/pool/runs/${encodeURIComponent(change)}/${encodeURIComponent(ts)}`).then(r => r.data)
 
+export type ReviewFileStatus = 'added' | 'modified' | 'deleted'
+
+export interface ReviewFile {
+  path: string
+  status: ReviewFileStatus
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface ChangeReview {
+  branch: string
+  base: string
+  target_ahead: boolean
+  files: ReviewFile[]
+}
+
+export interface ReviewDiff {
+  path: string
+  patch: string
+  binary: boolean
+  truncated: boolean
+}
+
+export interface ReviewFileContent {
+  path: string
+  content: string
+  binary: boolean
+  truncated: boolean
+}
+
+const reviewURL = (workspaceId: string, changeName: string) =>
+  `/api/workspaces/${workspaceId}/changes/${encodeURIComponent(changeName)}/review`
+
+export const getChangeReview = (workspaceId: string, changeName: string) =>
+  api.get<ChangeReview>(reviewURL(workspaceId, changeName)).then(r => r.data)
+
+export const getReviewDiff = (workspaceId: string, changeName: string, path: string) =>
+  api.get<ReviewDiff>(`${reviewURL(workspaceId, changeName)}/diff`, { params: { path } }).then(r => r.data)
+
+export const getReviewFile = (workspaceId: string, changeName: string, path: string) =>
+  api.get<ReviewFileContent>(`${reviewURL(workspaceId, changeName)}/file`, { params: { path } }).then(r => r.data)
+
 export const getActivity = (workspaceId: string, changeName: string) =>
   api.get<ActivityEntry[]>(`/api/workspaces/${workspaceId}/changes/${changeName}/activity`).then(r => r.data)

@@ -55,21 +55,6 @@ Lorsqu'un pool est en cours d'exécution, l'utilisateur SHALL pouvoir consulter 
 - **WHEN** un worker est au statut `working` sur le changement `add-user-auth` et que sa session agent produit de la sortie
 - **THEN** le panneau affiche, pour ce worker, un aperçu texte de la dernière activité de l'agent, mis à jour au fil de l'exécution
 
-### Requirement: Panneau interactif de Review HITL (Human-In-The-Loop)
-Lorsque le mode de délégation est configuré sur `hitl-review` et qu'un changement terminé arrive dans la colonne **To Review**, l'utilisateur SHALL pouvoir cliquer sur la carte correspondante pour ouvrir un panneau de review interactif. Ce panneau SHALL afficher la liste des fichiers modifiés, un diff de code interactif, un champ de saisie de feedback textuel, un bouton "Approuver et Fusionner" et un bouton "Demander des Corrections".
-
-#### Scenario: Affichage du diff et des fichiers modifiés
-- **WHEN** l'utilisateur ouvre le panneau de review pour un changement situé dans la colonne "To Review"
-- **THEN** le panneau affiche les fichiers affectés et permet de déplier un composant de rendu Diff affichant les lignes ajoutées et supprimées dans la branche isolée du worktree
-
-#### Scenario: Approbation et fusion finale du code
-- **WHEN** l'utilisateur clique sur "Approuver et Fusionner" dans le panneau de review
-- **THEN** l'application envoie une requête de fusion au backend, qui fusionne la branche de feature dans la branche courante, nettoie le worktree, déplace la carte Kanban dans la colonne "Done" et ferme le panneau
-
-#### Scenario: Demande de corrections avec feedback textuel
-- **WHEN** l'utilisateur écrit un retour dans le champ de feedback et clique sur "Demander des Corrections"
-- **THEN** l'application envoie le feedback au backend, qui repasse la carte du changement en colonne "In Progress", relance le worker associé avec le feedback injecté dans son invite système, et ferme le panneau de review
-
 ### Requirement: Modale de lancement pré-remplie avec la configuration résolue
 La modale de configuration et de lancement du pool SHALL être pré-remplie avec la configuration résolue du workspace (défauts de Configuration et surcharges du workspace) pour la taille du pool, le mode de délégation et le nombre de tentatives. L'utilisateur SHALL pouvoir ajuster ces valeurs pour le lancement en cours sans modifier les valeurs enregistrées.
 

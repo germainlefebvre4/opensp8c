@@ -29,3 +29,18 @@ export function entryToToolCall(entry: ActivityEntry, runIsLive: boolean): ToolC
     input: (meta.input as Record<string, unknown> | undefined) ?? undefined,
   }
 }
+
+/** Search parameter of the Agents view selecting a run, as "<change>/<ts>". */
+export const RUN_PARAM = 'run'
+
+export function parseRunSelection(value: string | null): { change: string; ts: string } | null {
+  if (!value) return null
+  const sep = value.lastIndexOf('/')
+  if (sep <= 0 || sep === value.length - 1) return null
+  return { change: value.slice(0, sep), ts: value.slice(sep + 1) }
+}
+
+/** Agents-view URL opening the detail of a run. */
+export function runLink(change: string, ts: string): string {
+  return `/agents?${new URLSearchParams({ [RUN_PARAM]: `${change}/${ts}` }).toString()}`
+}

@@ -16,6 +16,7 @@ export function useWorkspaceEvents(workspaceId: string | null) {
       const data = JSON.parse(e.data) as { name: string }
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
       qc.invalidateQueries({ queryKey: ['change', workspaceId, data.name] })
+      qc.invalidateQueries({ queryKey: ['change-detail', workspaceId, data.name] })
     })
 
     es.addEventListener('change_created', () => {

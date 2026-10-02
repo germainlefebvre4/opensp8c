@@ -5,7 +5,8 @@
     "design": "Design",
     "conversation": "Conversation",
     "tags": "Tags",
-    "actions": "Actions"
+    "actions": "Actions",
+    "review": "Revue"
   },
   "status": {
     "toExplore": "To Explore",
@@ -65,5 +66,38 @@
     "duration": "{{ms}}ms",
     "seconds": "{{s}}s",
     "durationLabel": "Durée"
+  },
+  "review": {
+    "branch": "Branche",
+    "base": "Base",
+    "targetAhead": "La branche cible a avancé : l'approbation intégrera ses nouveaux commits.",
+    "groups": {
+      "openspec": "OpenSpec",
+      "code": "Code"
+    },
+    "status": {
+      "added": "Ajouté",
+      "modified": "Modifié",
+      "deleted": "Supprimé"
+    },
+    "loading": "Chargement de la revue...",
+    "error": "La revue n'a pas pu être chargée.",
+    "notInReview": "Ce change n'est plus en revue.",
+    "retry": "Réessayer",
+    "empty": "La branche ne modifie aucun fichier par rapport à sa base.",
+    "diffLoading": "Chargement du diff...",
+    "diffError": "Le diff n'a pas pu être chargé.",
+    "binary": "Aucun diff n'est affichable pour ce fichier (binaire).",
+    "truncated": "Diff tronqué : il dépasse la taille limite.",
+    "noDiff": "Aucun changement textuel.",
+    "view": {
+      "diff": "Diff",
+      "rendered": "Rendu"
+    },
+    "fileError": "Le contenu du fichier n'a pas pu être chargé.",
+    "fileTruncated": "Fichier trop volumineux : son contenu ne peut pas être rendu.",
+    "fileBinary": "Ce fichier ne peut pas être rendu (binaire).",
+    "lastRun": "Dernier run",
+    "openRun": "Ouvrir le run"
   }
 }

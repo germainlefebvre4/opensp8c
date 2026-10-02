@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Markdown } from './Markdown'
 import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -15,6 +15,7 @@ import { useToast } from '../hooks/useToast'
 import { deleteGhost } from '../lib/api'
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { ReviewTab } from './ReviewTab'
 
 interface Props {
   workspaceId: string
@@ -23,7 +24,7 @@ interface Props {
   associatedGhostId?: string
 }
 
-type Tab = 'tasks' | 'proposal' | 'design' | 'conversation' | 'tags' | 'actions'
+type Tab = 'tasks' | 'proposal' | 'design' | 'conversation' | 'review' | 'tags' | 'actions'
 type ViewMode = 'raw' | 'rendered'
 
 const STATUS_KEY_MAP: Record<string, string> = {
@@ -117,11 +118,20 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     }
   }
 
+  const inReview = data?.kanban_status === 'to-review'
+
+  // The Review tab only exists while the change is in review: when it leaves
+  // that status (approval, correction) fall back to the Tasks tab.
+  useEffect(() => {
+    if (data && !inReview && activeTab === 'review') setActiveTab('tasks')
+  }, [data, inReview, activeTab])
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'tasks', label: t('tabs.tasks') },
     { id: 'proposal', label: t('tabs.proposal') },
     { id: 'design', label: t('tabs.design') },
     { id: 'conversation', label: t('tabs.conversation') },
+    ...(inReview ? [{ id: 'review' as const, label: t('tabs.review') }] : []),
     { id: 'tags', label: t('tabs.tags') },
     { id: 'actions', label: t('tabs.actions') },
   ]
@@ -373,6 +383,10 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                 ) : (
                   <p className="text-sm text-slate-400">{t('designUnavailable')}</p>
                 )
+              )}
+
+              {activeTab === 'review' && inReview && (
+                <ReviewTab workspaceId={workspaceId} changeName={changeName} />
               )}
 
               {activeTab === 'tags' && (

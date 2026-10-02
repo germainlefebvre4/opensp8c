@@ -5,7 +5,8 @@
     "design": "Design",
     "conversation": "Conversation",
     "tags": "Tags",
-    "actions": "Actions"
+    "actions": "Actions",
+    "review": "Review"
   },
   "status": {
     "toExplore": "To Explore",
@@ -65,5 +66,38 @@
     "duration": "{{ms}}ms",
     "seconds": "{{s}}s",
     "durationLabel": "Duration"
+  },
+  "review": {
+    "branch": "Branch",
+    "base": "Base",
+    "targetAhead": "The target branch has moved on: approving will integrate its new commits.",
+    "groups": {
+      "openspec": "OpenSpec",
+      "code": "Code"
+    },
+    "status": {
+      "added": "Added",
+      "modified": "Modified",
+      "deleted": "Deleted"
+    },
+    "loading": "Loading review...",
+    "error": "The review could not be loaded.",
+    "notInReview": "This change is no longer in review.",
+    "retry": "Retry",
+    "empty": "The branch changes no file compared to its base.",
+    "diffLoading": "Loading diff...",
+    "diffError": "The diff could not be loaded.",
+    "binary": "No diff can be displayed for this file (binary).",
+    "truncated": "Diff truncated: it exceeds the size limit.",
+    "noDiff": "No textual change.",
+    "view": {
+      "diff": "Diff",
+      "rendered": "Rendered"
+    },
+    "fileError": "The file content could not be loaded.",
+    "fileTruncated": "File too large: its content cannot be rendered.",
+    "fileBinary": "This file cannot be rendered (binary).",
+    "lastRun": "Last run",
+    "openRun": "Open the run"
   }
 }

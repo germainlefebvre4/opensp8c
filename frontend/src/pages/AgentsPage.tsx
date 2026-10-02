@@ -6,7 +6,7 @@ import type { PoolWorker, WorkerStatus } from '../hooks/usePoolStatus'
 import { usePoolRuns } from '../hooks/usePoolRuns'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { AgentRunPanel } from '../components/AgentRunPanel'
-import { formatElapsed } from '../lib/poolRuns'
+import { formatElapsed, parseRunSelection, RUN_PARAM } from '../lib/poolRuns'
 
 interface Props {
   workspaceId: string
@@ -18,15 +18,6 @@ const STATUS_BADGE_CLASSES: Record<WorkerStatus, string> = {
   testing: 'bg-blue-50 text-blue-600 border-blue-200',
   healing: 'bg-amber-50 text-amber-600 border-amber-200',
   paused: 'bg-red-50 text-red-600 border-red-200',
-}
-
-const RUN_PARAM = 'run'
-
-function parseSelection(value: string | null): { change: string; ts: string } | null {
-  if (!value) return null
-  const sep = value.lastIndexOf('/')
-  if (sep <= 0 || sep === value.length - 1) return null
-  return { change: value.slice(0, sep), ts: value.slice(sep + 1) }
 }
 
 export function AgentsPage({ workspaceId }: Props) {
@@ -42,7 +33,7 @@ export function AgentsPage({ workspaceId }: Props) {
   const recentRuns = runs ?? []
 
   const [searchParams, setSearchParams] = useSearchParams()
-  const selection = parseSelection(searchParams.get(RUN_PARAM))
+  const selection = parseRunSelection(searchParams.get(RUN_PARAM))
   const selectRun = (change: string, ts: string) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)

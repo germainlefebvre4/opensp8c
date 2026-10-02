@@ -150,6 +150,12 @@ func ListChanges(workspacePath string) ([]Change, error) {
 	return changes, nil
 }
 
+// InReview reports whether the change carries a review marker and its branch
+// still exists, i.e. whether it is in the To Review column.
+func InReview(workspacePath, changeName string) bool {
+	return ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName)
+}
+
 // markReviewed gives ch the to-review status, which takes precedence over the
 // status derived from its tasks. Staleness does not apply to a change in review.
 func markReviewed(ch *Change) {
