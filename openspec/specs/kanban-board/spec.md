@@ -5,7 +5,7 @@ Spec du Kanban Board : colonnes, cartes de changement, ouverture de l'ExplorePan
 ## Requirements
 
 ### Requirement: Afficher les changements en colonnes Kanban
-Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots horizontaux d'égale largeur : **To Explore**, **Ready**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif.
+Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots horizontaux d'égale largeur : **To Explore**, **Ready**, **To Do**, **In Progress**, **To Review**, et **Done/Archived**. Le slot **Done/Archived** contient verticalement la colonne Done (en haut, `flex-1 min-h-0`, prioritaire sur l'espace vertical) et la colonne Archived (en bas, hauteur plafonnée à 40 % du slot via `max-h`, avec scroll interne). Les colonnes actives lisent depuis `openspec/changes/` (hors `archive/`). La colonne Archived lit depuis `openspec/changes/archive/` via un endpoint dédié. L'endpoint `/changes` SHALL inclure les champs `days_since_activity` (int), `is_stale` (bool), et `tags` (objet optionnel `{ type, complexity, components[] }`) pour chaque change actif. Pour un change dont un worker du pool est actif (y compris en pause), la progression (`tasks_done`, `tasks_total`) et la colonne SHALL être dérivées du `tasks.md` du worktree du worker, et non de celui du dépôt principal ; la colonne SHALL alors être plafonnée à **In Progress**.
 
 #### Scenario: Chargement du Kanban avec changements archivés
 - **WHEN** l'utilisateur ouvre le Kanban Board ou change de workspace actif
@@ -40,12 +40,32 @@ Le Kanban Board SHALL afficher les changements OpenSpec répartis en six slots h
 - **THEN** il est affiché dans la colonne **In Progress**
 
 #### Scenario: Changement entièrement complété en mode Autonomie Totale
-- **WHEN** toutes les tasks d'un changement sont cochées ET que le pool d'agents s'exécute en mode `full-autonomy` (ou hors exécution du pool)
+- **WHEN** toutes les tasks d'un changement sont cochées ET qu'aucun worker du pool n'est actif sur ce change (merge effectué en mode `full-autonomy`, ou changement hors exécution du pool)
 - **THEN** il est affiché dans la colonne **Done**
 
 #### Scenario: Changement entièrement complété en mode Review Humaine
 - **WHEN** toutes les tasks d'un changement ont été complétées par un worker du pool d'agents exécuté en mode `hitl-review`
 - **THEN** il est affiché dans la colonne **To Review** et n'est déplacé vers **Done** qu'après approbation de l'utilisateur
+
+#### Scenario: Progression en direct pendant le run d'un worker
+- **WHEN** un worker est actif sur un change et que l'agent a coché 2 tâches sur 5 dans le `tasks.md` du worktree, alors que celui du dépôt principal n'en a aucune cochée
+- **THEN** le change est affiché dans la colonne **In Progress** avec `tasks_done = 2` et `tasks_total = 5`, et son badge worker reste visible
+
+#### Scenario: Change entièrement coché dans le worktree avant le merge
+- **WHEN** un worker est actif sur un change dont toutes les tâches sont cochées dans le `tasks.md` du worktree, la validation ou le merge n'étant pas terminé
+- **THEN** le change reste dans la colonne **In Progress** avec une progression de 100 %, et ne passe à **Done** qu'une fois le worker libéré après le merge
+
+#### Scenario: Worker actif sans tâche cochée dans le worktree
+- **WHEN** un worker est actif sur un change lancé dont aucune tâche n'est cochée dans le worktree
+- **THEN** le change est affiché dans la colonne **To Do** avec son badge worker
+
+#### Scenario: Worktree sans tasks.md exploitable
+- **WHEN** un worker est actif sur un change mais que le worktree n'est pas encore provisionné, ou que son `tasks.md` est absent ou ne contient aucune tâche
+- **THEN** la progression et la colonne sont dérivées du `tasks.md` du dépôt principal
+
+#### Scenario: Fin du worker sans merge
+- **WHEN** un worker est annulé ou libéré sans que son travail ait été fusionné
+- **THEN** la progression et la colonne du change redeviennent celles du `tasks.md` du dépôt principal
 
 ### Requirement: Colonne Archived — affichage paginé, lecture seule et collapsible
 La colonne **Archived** SHALL afficher les changements par ordre antéchronologique (les plus récents en premier), limités à **3** par défaut. Un bouton "Afficher plus" SHALL permettre d'en charger 3 supplémentaires à chaque clic. La colonne Archived SHALL exposer un bouton **collapse/expand** (chevron) dans son header, permettant de masquer entièrement la liste de cartes tout en conservant le header visible. L'état collapsed est local et non persisté. Les cartes de la colonne Archived SHALL avoir un traitement visuel atténué (teintes slate/grises). Aucune action n'est disponible sur les cartes archivées — elles sont en lecture seule.

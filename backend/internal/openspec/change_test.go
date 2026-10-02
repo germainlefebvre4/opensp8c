@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -353,5 +354,108 @@ func TestParseTaskProgress_MissingFile(t *testing.T) {
 	done, total := ParseTaskProgress(filepath.Join(t.TempDir(), "missing", "tasks.md"))
 	if done != 0 || total != 0 {
 		t.Errorf("expected (0, 0) for a missing file, got (%d, %d)", done, total)
+	}
+}
+
+// writeWorktreeTasks writes a worktree tasks.md for change and returns the
+// worktree root.
+func writeWorktreeTasks(t *testing.T, change, tasksMd string) string {
+	t.Helper()
+	wt := t.TempDir()
+	dir := filepath.Join(wt, "openspec", "changes", change)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if tasksMd != "" {
+		if err := os.WriteFile(filepath.Join(dir, "tasks.md"), []byte(tasksMd), 0644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	return wt
+}
+
+func TestApplyWorktreeProgress(t *testing.T) {
+	const mainTasks = "- [ ] a\n- [ ] b\n- [ ] c\n- [ ] d\n- [ ] e\n"
+	cases := []struct {
+		name       string
+		worktree   string // tasks.md content; "-" = no worktree path
+		wantStatus string
+		wantDone   int
+		wantTotal  int
+		applied    bool
+	}{
+		{"partial", "- [x] a\n- [x] b\n- [ ] c\n- [ ] d\n- [ ] e\n", "in-progress", 2, 5, true},
+		{"fully checked capped", "- [x] a\n- [x] b\n", "in-progress", 2, 2, true},
+		{"none checked stays todo", "- [ ] a\n- [ ] b\n", "todo", 0, 2, true},
+		{"missing file", "", "todo", 0, 5, false},
+		{"empty file", "# nothing\n", "todo", 0, 5, false},
+		{"no worktree path", "-", "todo", 0, 5, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workspacePath := t.TempDir()
+			changesDir := filepath.Join(workspacePath, "openspec", "changes")
+			writeChangeFixture(t, changesDir, "c1", "schema: spec-driven\n", mainTasks)
+			wtPath := ""
+			if tc.worktree != "-" {
+				wtPath = writeWorktreeTasks(t, "c1", tc.worktree)
+			}
+			changes, err := ListChanges(workspacePath)
+			if err != nil || len(changes) != 1 {
+				t.Fatalf("ListChanges: %v %v", changes, err)
+			}
+			ch := changes[0]
+			if got := ApplyWorktreeProgress(&ch, workspacePath, wtPath); got != tc.applied {
+				t.Errorf("applied = %v, want %v", got, tc.applied)
+			}
+			if ch.KanbanStatus != tc.wantStatus || ch.TasksDone != tc.wantDone || ch.TasksTotal != tc.wantTotal {
+				t.Errorf("got %s %d/%d, want %s %d/%d", ch.KanbanStatus, ch.TasksDone, ch.TasksTotal, tc.wantStatus, tc.wantDone, tc.wantTotal)
+			}
+		})
+	}
+}
+
+func TestApplyWorktreeProgress_StalenessFromWorktree(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	writeChangeFixture(t, changesDir, "c1", "schema: spec-driven\n", "- [x] a\n- [ ] b\n")
+	old := time.Now().Add(-10 * 24 * time.Hour)
+	mainTasks := filepath.Join(changesDir, "c1", "tasks.md")
+	if err := os.Chtimes(mainTasks, old, old); err != nil {
+		t.Fatal(err)
+	}
+	wt := writeWorktreeTasks(t, "c1", "- [x] a\n- [ ] b\n")
+
+	changes, _ := ListChanges(workspacePath)
+	ch := changes[0]
+	if !ch.IsStale {
+		t.Fatalf("precondition: main repo change should be stale")
+	}
+	ApplyWorktreeProgress(&ch, workspacePath, wt)
+	if ch.DaysSinceActivity != 0 || ch.IsStale {
+		t.Errorf("got days=%d stale=%v, want 0/false", ch.DaysSinceActivity, ch.IsStale)
+	}
+}
+
+func TestGetChangeDetail_FollowsWorktree(t *testing.T) {
+	workspacePath := t.TempDir()
+	changesDir := filepath.Join(workspacePath, "openspec", "changes")
+	writeChangeFixture(t, changesDir, "c1", "schema: spec-driven\n", "- [ ] a\n- [ ] b\n- [ ] c\n")
+	wt := writeWorktreeTasks(t, "c1", "- [x] a\n- [x] b\n- [ ] c\n")
+
+	d, err := GetChangeDetail(workspacePath, "c1", wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.TasksDone != 2 || len(d.Tasks) != 3 || !d.Tasks[0].Done || !d.Tasks[1].Done || d.KanbanStatus != "in-progress" {
+		t.Errorf("worktree detail wrong: %+v", d)
+	}
+
+	d, err = GetChangeDetail(workspacePath, "c1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.TasksDone != 0 || d.Tasks[0].Done || d.KanbanStatus != "todo" {
+		t.Errorf("main detail wrong: %+v", d)
 	}
 }

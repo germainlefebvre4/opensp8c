@@ -142,6 +142,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		return
 	}
 	m.setWorktree(w, worktreePath, "feature/"+w.ActiveChange)
+	defer m.watchWorktreeTasks(w.WorkspaceID, worktreePath, w.ActiveChange)()
 
 	select {
 	case <-ctx.Done():

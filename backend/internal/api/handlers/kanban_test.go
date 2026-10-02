@@ -516,7 +516,7 @@ func newUnlaunchForceFixture(t *testing.T, answer func() (bool, pool.WorkerResul
 		os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
 	})
 	deadline := time.Now().Add(15 * time.Second)
-	for !h.activeWorkerChanges(workspaceID)[changeName] {
+	for _, held := h.activeWorkerChanges(workspaceID)[changeName]; !held; _, held = h.activeWorkerChanges(workspaceID)[changeName] {
 		if time.Now().After(deadline) {
 			t.Fatal("worker never became active")
 		}
@@ -598,5 +598,114 @@ func TestKanbanHandler_Unlaunch_NoForce_StillConflicts(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "change_already_merged") {
 		t.Error("the no-force 409 must keep its own message")
+	}
+}
+
+// workerWorktreeTasks waits for the worker of change to have a provisioned
+// worktree and returns the path of that worktree's tasks.md for the change.
+func workerWorktreeTasks(t *testing.T, h *KanbanHandler, workspaceID, change string) string {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if wt := h.activeWorkerChanges(workspaceID)[change]; wt != "" {
+			return filepath.Join(wt, "openspec", "changes", change, "tasks.md")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("worker worktree never provisioned")
+	return ""
+}
+
+func listedChange(t *testing.T, h *KanbanHandler, workspaceID, change string) openspec.Change {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/changes", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", workspaceID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h.ListChanges(rec, req)
+	var changes []openspec.Change
+	if err := json.NewDecoder(rec.Body).Decode(&changes); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, c := range changes {
+		if c.Name == change {
+			return c
+		}
+	}
+	t.Fatalf("change %s not listed", change)
+	return openspec.Change{}
+}
+
+func TestKanbanHandler_WorkerWorktreeProgress(t *testing.T) {
+	h, id, dir := newUnlaunchForceFixture(t, func() (bool, pool.WorkerResult, bool) {
+		return true, pool.WorkerResult{Outcome: pool.OutcomeStopped}, false
+	})
+	tasks := workerWorktreeTasks(t, h, id, "my-change")
+
+	// Partial progress in the worktree only: main repo stays untouched.
+	if err := os.WriteFile(tasks, []byte("- [x] a\n- [x] b\n- [ ] c\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := listedChange(t, h, id, "my-change")
+	if c.KanbanStatus != "in-progress" || c.TasksDone != 2 || c.TasksTotal != 3 || !c.WorkerActive {
+		t.Errorf("partial: got %s %d/%d worker=%v", c.KanbanStatus, c.TasksDone, c.TasksTotal, c.WorkerActive)
+	}
+
+	// Detail follows the worktree too.
+	rec, req := launchRequest("GET", id, "my-change", "", nil)
+	h.GetChange(rec, req)
+	var d openspec.ChangeDetail
+	if err := json.NewDecoder(rec.Body).Decode(&d); err != nil {
+		t.Fatal(err)
+	}
+	if d.TasksDone != 2 || len(d.Tasks) != 3 || d.KanbanStatus != "in-progress" || !d.WorkerActive {
+		t.Errorf("detail: %+v", d)
+	}
+
+	// Fully checked: capped at in-progress.
+	if err := os.WriteFile(tasks, []byte("- [x] a\n- [x] b\n- [x] c\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c = listedChange(t, h, id, "my-change")
+	if c.KanbanStatus != "in-progress" || c.TasksDone != 3 {
+		t.Errorf("full: got %s %d/%d", c.KanbanStatus, c.TasksDone, c.TasksTotal)
+	}
+
+	// Worktree tasks.md without any task: fall back to the main repo.
+	if err := os.WriteFile(tasks, []byte("# empty\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c = listedChange(t, h, id, "my-change")
+	if c.KanbanStatus != "todo" || c.TasksDone != 0 || c.TasksTotal != 1 || !c.WorkerActive {
+		t.Errorf("fallback: got %s %d/%d", c.KanbanStatus, c.TasksDone, c.TasksTotal)
+	}
+	_ = dir
+
+	// Worker released without merge: back to the main repo values.
+	if err := os.WriteFile(tasks, []byte("- [x] a\n- [x] b\n- [x] c\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h.poolReg.For(id).Stop()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		c = listedChange(t, h, id, "my-change")
+		if !c.WorkerActive || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if c.WorkerActive || c.KanbanStatus != "todo" || c.TasksDone != 0 {
+		t.Errorf("released: got %s %d/%d worker=%v", c.KanbanStatus, c.TasksDone, c.TasksTotal, c.WorkerActive)
+	}
+}
+
+func TestKanbanHandler_NoWorkerIgnoresWorktree(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeChangeWithMeta(t, filepath.Join(tmpDir, "openspec", "changes"), "my-change", "schema: spec-driven\nlaunched: true\n")
+	h, id := newTestKanbanHandler(t, tmpDir, pool.NewRegistry(nil, nil, nil, nil, nil), nil, nil, "")
+	c := listedChange(t, h, id, "my-change")
+	if c.KanbanStatus != "todo" || c.WorkerActive || c.TasksDone != 0 {
+		t.Errorf("got %s %d/%d worker=%v", c.KanbanStatus, c.TasksDone, c.TasksTotal, c.WorkerActive)
 	}
 }

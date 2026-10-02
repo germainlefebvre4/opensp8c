@@ -227,7 +227,46 @@ func ParseTaskProgress(tasksPath string) (done, total int) {
 	return done, total
 }
 
-func GetChangeDetail(workspacePath, changeName string) (*ChangeDetail, error) {
+// worktreeTasksPath returns the tasks.md of changeName inside a pool worker's
+// worktree.
+func worktreeTasksPath(worktreePath, changeName string) string {
+	return filepath.Join(worktreePath, "openspec", "changes", changeName, "tasks.md")
+}
+
+// ApplyWorktreeProgress overlays on ch the progress of the tasks.md found in
+// the worktree of the pool worker holding the change: task counts, kanban
+// column (capped at in-progress until the merge releases the worker) and
+// staleness. It is a no-op when worktreePath is empty or the worktree's
+// tasks.md is missing or has no task. Returns whether the overlay applied.
+func ApplyWorktreeProgress(ch *Change, workspacePath, worktreePath string) bool {
+	if worktreePath == "" {
+		return false
+	}
+	tasksPath := worktreeTasksPath(worktreePath, ch.Name)
+	done, total := ParseTaskProgress(tasksPath)
+	if total == 0 {
+		return false
+	}
+	status := deriveStatus(done, total, true)
+	if status == "done" {
+		status = "in-progress"
+	}
+	ch.TasksDone = done
+	ch.TasksTotal = total
+	ch.KanbanStatus = status
+	ch.DaysSinceActivity = -1
+	ch.IsStale = false
+	if stat, err := os.Stat(tasksPath); err == nil {
+		ch.DaysSinceActivity = int(time.Since(stat.ModTime()).Hours() / 24)
+		ch.IsStale = status == "in-progress" && ch.DaysSinceActivity >= readStaleThreshold(workspacePath)
+	}
+	return true
+}
+
+// GetChangeDetail loads a change with its tasks and artifacts. When
+// worktreePath is not empty and holds a usable tasks.md for the change, the
+// task list and progress come from that worktree.
+func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDetail, error) {
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
 	changeDir := filepath.Join(changesDir, changeName)
 
@@ -255,6 +294,9 @@ func GetChangeDetail(workspacePath, changeName string) (*ChangeDetail, error) {
 	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))
+	if !isArchived && ApplyWorktreeProgress(ch, workspacePath, worktreePath) {
+		tasks = parseTaskList(worktreeTasksPath(worktreePath, changeName))
+	}
 	proposal := readFileContent(filepath.Join(changeDir, "proposal.md"))
 	design := readFileContent(filepath.Join(changeDir, "design.md"))
 

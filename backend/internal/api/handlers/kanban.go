@@ -49,17 +49,18 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg 
 	return h
 }
 
-// activeWorkerChanges returns the set of change names currently claimed by an
-// Agent Pool worker for workspaceID, per that workspace's own pool manager
-// in-memory state.
-func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]bool {
-	active := make(map[string]bool)
+// activeWorkerChanges returns the changes currently claimed by an Agent Pool
+// worker (active or paused) for workspaceID, per that workspace's own pool
+// manager in-memory state, mapped to the worker's worktree path (empty until
+// the worktree is provisioned). Presence in the map means a worker holds it.
+func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]string {
+	active := make(map[string]string)
 	if h.poolReg == nil {
 		return active
 	}
 	_, _, workers := h.poolReg.For(workspaceID).Status(workspaceID)
 	for _, w := range workers {
-		active[w.ActiveChange] = true
+		active[w.ActiveChange] = w.WorktreePath
 	}
 	return active
 }
@@ -83,7 +84,10 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 
 	activeWorkers := h.activeWorkerChanges(id)
 	for i := range changes {
-		changes[i].WorkerActive = activeWorkers[changes[i].Name]
+		if wt, held := activeWorkers[changes[i].Name]; held {
+			changes[i].WorkerActive = true
+			openspec.ApplyWorktreeProgress(&changes[i], path, wt)
+		}
 	}
 
 	// Merge ghost records (app-level explorations) into the changes list.
@@ -154,7 +158,8 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := openspec.GetChangeDetail(path, name)
+	worktreePath, held := h.activeWorkerChanges(id)[name]
+	detail, err := openspec.GetChangeDetail(path, name, worktreePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "change not found", http.StatusNotFound)
@@ -163,7 +168,7 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	detail.WorkerActive = h.activeWorkerChanges(id)[name]
+	detail.WorkerActive = held
 	json.NewEncoder(w).Encode(detail)
 }
 
@@ -190,7 +195,7 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.activeWorkerChanges(id)[name] {
+	if _, held := h.activeWorkerChanges(id)[name]; held {
 		http.Error(w, "a worker is active on this change", http.StatusConflict)
 		return
 	}
@@ -260,7 +265,7 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 
 	force := r.URL.Query().Get("force") == "true"
 
-	if h.activeWorkerChanges(id)[name] {
+	if _, held := h.activeWorkerChanges(id)[name]; held {
 		if !force {
 			http.Error(w, "a worker is active on this change", http.StatusConflict)
 			return
