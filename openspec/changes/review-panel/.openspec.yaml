@@ -1,2 +1,22 @@
 schema: spec-driven
-created: 2026-10-01
+created: "2026-10-01"
+tags:
+    type: []
+    complexity: 4
+    components:
+        - change-review-panel
+        - kanban-change-detail
+        - api-router
+        - agent-pool-real-execution
+        - agent-run-detail
+        - markdown-renderer
+        - change-review-actions
+        - change-status
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - security
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-02"

@@ -13,7 +13,7 @@ En mode `hitl-review`, la colonne **To Review** est inatteignable. Le worker ter
 - Le Kanban est rafraîchi quand le marqueur change (aucun fichier OpenSpec ne change à ce moment-là, donc il faut un événement explicite).
 - **BREAKING** (comportement) : « l'arrêt puis le redémarrage du pool rend le changement de nouveau éligible » n'est plus vrai pour un change en revue.
 
-Hors périmètre : les actions Approuver / Demander correction (change `review-actions`), le panneau diff (change `review-panel`) et la règle « `todo` + worker actif ⇒ `in-progress` » (à traiter à part).
+Hors périmètre : les actions Approuver / Demander correction (change `review-actions`) et le panneau diff (change `review-panel`). La progression en direct d'un change tenu par un worker (colonne In Progress) est déjà livrée par `pool-worktree-progress` ; ce change s'y articule : le statut `to-review` prime sur la surcouche worktree, qui ne s'applique de toute façon qu'à un change tenu par un worker, ce qui n'arrive pas à un change en revue.
 
 ## Capabilities
 

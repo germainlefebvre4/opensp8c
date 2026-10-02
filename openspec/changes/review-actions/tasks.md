@@ -33,7 +33,7 @@
 
 ## 6. Interface : glisser-déposer
 
-- [ ] 6.1 Dans `KanbanPage.tsx`, retirer `in-progress → to-review` de la table des transitions, rendre les cartes To Review draggables (`ChangeCard`/`KanbanColumn`) et accepter `to-review → done` et `to-review → in-progress` ; vérifier par des tests (drop refusé vers `to-review`, accepté vers `done` et `in-progress`, refusé ailleurs)
+- [ ] 6.1 Ajouter `to-review: ['in-progress', 'done']` à `VALID_DROPS` dans `frontend/src/lib/kanbanDrops.ts` (introduit par `fix-kanban-valid-drops`), mettre à jour son test d'égalité exacte (`kanbanDrops.test.ts`), et rendre les cartes To Review draggables (`DRAGGABLE_STATUSES` de `ChangeCard.tsx`, `KanbanColumn`) ; vérifier par des tests (To Review jamais cible, `done` et `in-progress` acceptés depuis To Review seulement, refus ailleurs) et `npx vitest run src/lib/kanbanDrops.test.ts`
 - [ ] 6.2 Traiter les drops : `to-review → done` ouvre la confirmation d'approbation, `to-review → in-progress` ouvre le dialogue de correction, et l'annulation ou l'échec laisse la carte en To Review ; vérifier par des tests de `KanbanPage` (ouverture des bons dialogues, annulation sans requête, carte inchangée après erreur)
 
 ## 7. Vérification d'ensemble

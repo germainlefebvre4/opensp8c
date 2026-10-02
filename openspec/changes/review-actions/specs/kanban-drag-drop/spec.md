@@ -13,7 +13,7 @@ Le Kanban SHALL autoriser uniquement les transitions suivantes par drag-and-drop
 - `to-review → in-progress` : demande de correction (saisie obligatoire du retour de l'utilisateur, voir `change-review-actions`)
 
 Le drop vers une colonne cible autorisée SHALL être accepté dès que le pointeur se trouve à l'intérieur des bornes de la colonne cible, que cette colonne soit vide ou qu'elle contienne déjà d'autres cartes, et que le curseur soit relâché sur une carte existante ou sur l'espace vide de la colonne.
-Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non accepté), y compris `in-progress → to-review` : un changement n'entre en revue que par la fin de son worker en mode `hitl-review`. Les cartes des colonnes **Done** et **Archived** SHALL être non-draggables.
+Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non accepté). La colonne **To Review** SHALL n'être jamais une cible de drop : un changement n'y entre que par la fin de son worker en mode `hitl-review`. Les colonnes **In Progress** et **Done** SHALL n'être une cible de drop que pour une carte provenant de **To Review** (demande de correction, approbation) : leurs autres états sont pilotés par le pool d'agents et l'avancement des tâches, pas par le drag-and-drop. Les cartes des colonnes **Done** et **Archived** SHALL être non-draggables.
 
 #### Scenario: Drag valide to-explore (change normal) vers todo
 - **WHEN** l'utilisateur dépose un change normal (non-ghost) de la colonne "to-explore" sur "ready", que "ready" soit vide ou contienne des cartes
@@ -51,6 +51,10 @@ Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non
 - **WHEN** l'utilisateur drag une carte vers une colonne non autorisée pour cette source
 - **THEN** la colonne cible refuse visuellement le drop et la carte retourne à sa position d'origine
 
+#### Scenario: Drag vers In Progress, To Review ou Done refusé
+- **WHEN** l'utilisateur drag une carte de "todo" ou "in-progress" vers "in-progress", "to-review" ou "done", ou survole ces colonnes pendant le drag
+- **THEN** ces colonnes n'affichent aucun indicateur de dépôt, le drop n'est pas accepté, aucune action n'est déclenchée et la carte retourne à sa position d'origine
+
 #### Scenario: Drag to-review vers done (approbation)
 - **WHEN** l'utilisateur dépose une carte de la colonne "to-review" sur "done", sur une carte ou l'espace vide
 - **THEN** le drop est accepté et une confirmation d'approbation est demandée avant toute fusion
@@ -58,10 +62,6 @@ Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non
 #### Scenario: Drag to-review vers in-progress (demande de correction)
 - **WHEN** l'utilisateur dépose une carte de la colonne "to-review" sur "in-progress", sur une carte ou l'espace vide
 - **THEN** le drop est accepté et le dialogue de saisie du retour de correction s'ouvre ; la carte reste en "to-review" tant que la demande n'est pas confirmée
-
-#### Scenario: Drag invalide in-progress vers to-review
-- **WHEN** l'utilisateur dépose une carte de la colonne "in-progress" sur "to-review"
-- **THEN** la colonne cible refuse visuellement le drop et la carte retourne à sa position d'origine
 
 #### Scenario: Drag invalide to-review vers une autre colonne
 - **WHEN** l'utilisateur dépose une carte de la colonne "to-review" sur une colonne autre que "done" ou "in-progress"

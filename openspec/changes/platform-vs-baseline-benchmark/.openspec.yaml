@@ -1,2 +1,20 @@
 schema: spec-driven
-created: 2026-10-01
+created: "2026-10-01"
+tags:
+    type:
+        - backend
+        - batch
+    complexity: 3
+    components:
+        - benchmark-protocol
+        - benchmark-metrics-report
+        - developer-tooling
+        - activity-timeline
+        - workspace-events
+    agent_specialization:
+        - backend
+        - testing
+        - data
+        - documentation
+    _auto: true
+    _tagged_at: "2026-10-02"

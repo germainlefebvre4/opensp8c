@@ -68,7 +68,7 @@ Quand la promotion d'un ghost aboutit à la création d'un change réel, le back
 
 
 ### Requirement: Solidification du change brouillon
-La solidification (ou "figer") d'un change brouillon par l'utilisateur (soit explicitement, soit par action implicite telle que la modification d'une tâche ou le passage en "In Progress") SHALL détruire définitivement le ghost d'exploration associé et le fichier de brouillon pour finaliser le change.
+La solidification (ou "figer") d'un change brouillon par l'utilisateur (soit explicitement, soit par action implicite telle que la modification d'une tâche) SHALL détruire définitivement le ghost d'exploration associé et le fichier de brouillon pour finaliser le change. Le drag-and-drop d'une carte ne SHALL PAS solidifier un change : aucune transition de drag n'est autorisée vers la colonne "in-progress" (voir `kanban-drag-drop`).
 
 #### Scenario: Clic sur "Figer" dans la carte ou le DetailPanel
 - **WHEN** l'utilisateur clique sur le bouton "Figer" du change brouillon dans la colonne "ready" ou "todo", ou son DetailPanel
@@ -79,8 +79,8 @@ La solidification (ou "figer") d'un change brouillon par l'utilisateur (soit exp
 - **THEN** le frontend déclenche silencieusement la suppression du ghost associé pour nettoyer l'espace d'exploration, rendant le change solide de manière transparente
 
 #### Scenario: Passage à l'état In Progress fige le change
-- **WHEN** l'utilisateur drag-and-drop le change brouillon de la colonne "todo" vers "in-progress"
-- **THEN** le frontend déclenche silencieusement la suppression du ghost associé avant de déplacer la carte, consolidant le change
+- **WHEN** l'utilisateur tente de drag-and-drop le change brouillon de la colonne "todo" vers "in-progress"
+- **THEN** le drop est refusé (voir `kanban-drag-drop`), le ghost associé n'est pas supprimé et le change reste brouillon dans "todo"
 
 
 ### Requirement: Bouton de promotion dans le header d'exploration anonyme

@@ -10,7 +10,8 @@
 
 - [ ] 2.1 Appliquer l'ensemble des changes marqués dans `ListChanges` et `GetChangeDetail` (`openspec/change.go`) : statut `to-review` prioritaire sur `ready`/`todo`/`in-progress`/`done`-avant-fusion, jamais sur `archived`, marqueur ignoré si la branche `feature/<change>` n'existe pas ; vérifier par des tests de table (tasks à 0/N, lancé et non lancé, marqueur orphelin, change absent)
 - [ ] 2.2 Vérifier que `is_stale` n'est pas calculé pour un change `to-review` et que le scheduler (`pool/scheduler.go`) n'inclut pas un change `to-review` dans `GetRunnableChanges` tout en continuant à bloquer ses dépendants ; vérifier par `scheduler_test.go`
-- [ ] 2.3 Vérifier qu'un dépôt non git ou un `git` indisponible ne fait pas échouer `ListChanges` (statuts dérivés comme avant) ; vérifier par un test avec un `PATH` sans git ou un dossier non git
+- [ ] 2.3 Faire en sorte que `ApplyWorktreeProgress` (`openspec/change.go`) ne réécrive pas le statut d'un change déjà `to-review` ; vérifier par un test de `change_test.go` (change `to-review` avec un worktree fourni : statut inchangé) et par la non-régression des tests existants de la surcouche
+- [ ] 2.4 Vérifier qu'un dépôt non git ou un `git` indisponible ne fait pas échouer `ListChanges` (statuts dérivés comme avant) ; vérifier par un test avec un `PATH` sans git ou un dossier non git
 
 ## 3. Worker et Manager : poser le marqueur, retirer `reviewChanges`
 

@@ -70,7 +70,7 @@
     "chat": "fr",
     "documentation": "en"
   },
-  "uiLocale": "en",
+  "uiLocale": "fr",
   "poolDefaults": {
     "size": 1
   }

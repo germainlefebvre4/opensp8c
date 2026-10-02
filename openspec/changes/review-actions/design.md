@@ -2,7 +2,7 @@
 
 ## Context
 
-Après `review-state`, un change en revue porte un marqueur git et le statut `to-review`. Rien ne permet d'en sortir : les deux boutons de `DetailPanel.tsx` n'ont pas de `onClick`, aucun endpoint n'existe, et le drag autorise `in-progress → to-review` (sans base dans la spec) mais aucune sortie de To Review. Voir `proposal.md` - Why.
+Après `review-state`, un change en revue porte un marqueur git et le statut `to-review`. Rien ne permet d'en sortir : les deux boutons de `DetailPanel.tsx` n'ont pas de `onClick`, aucun endpoint n'existe, et aucune transition de drag ne part de To Review (`fix-kanban-valid-drops` ramène la table à la spec, dans `frontend/src/lib/kanbanDrops.ts`, avec un test d'égalité exacte). Voir `proposal.md` - Why.
 
 État du code qui contraint l'approche :
 - La séquence « contrôle de base, intégration de la cible, revalidation, verrou, fusion, nettoyage » est écrite en ligne dans `runWorker` (`pool/worker.go`), mêlée à `pause(...)` et à la boucle de guérison (`validateAndHeal`). `WorktreeController` offre déjà les briques : `CheckBase`, `TargetAhead`, `IntegrateTarget`, `MergeInto`, `Remove`, `DeleteBranch`, `Discard`.
@@ -24,7 +24,7 @@ Après `review-state`, un change en revue porte un marqueur git et le statut `to
 **Non-Goals:**
 - Heal automatique ou session d'agent à l'approbation : un échec de validation est remonté, l'utilisateur décide.
 - Session interactive de correction (chat avec l'agent dans le worktree).
-- Faire passer en `in-progress` un change dont le worker est actif (après correction il réapparaît en To Do avec le badge worker).
+- La progression en direct après une correction : déjà couverte par `pool-worktree-progress` (livré), le change repasse en In Progress dès que le worker coche des tâches, et les tâches de correction décochées du worktree sont comptées dans sa progression.
 - Lecture du diff (`review-panel`).
 
 ## Decisions
@@ -53,7 +53,7 @@ Les lignes suivantes sont écrites en citation (`> `) : après `TrimSpace` elles
 
 **7. Codes d'erreur d'API.** `409` : `not_in_review`, `worker_active`, `merge_in_progress`, `base_branch_mismatch`, `integration_conflict`, `target_moving` ; `422` : `validation_failed` (avec `output`) ; `400` : retour vide ; `404` : change inconnu. Le frontend mappe chaque code vers un message i18n.
 
-**8. Frontend.** `DetailPanel.tsx` (onglet Actions) reçoit les `onClick` ; `KanbanPage.tsx` retire `in-progress → to-review` de la table des transitions et traite les drops `to-review → done` (confirmation d'approbation) et `to-review → in-progress` (dialogue de correction). Deux composants de dialogue calqués sur `DeleteChangeDialog`/`ResetTasksDialog`, deux mutations (react-query) qui invalident la liste et le détail, clés i18n fr/en à côté de `reviewActions.*` existantes. La carte ne bouge pas de façon optimiste : elle change de colonne quand l'état serveur (SSE `change_updated`) le dit.
+**8. Frontend.** `DetailPanel.tsx` (onglet Actions) reçoit les `onClick` ; `KanbanPage.tsx` traite les drops `to-review → done` (confirmation d'approbation) et `to-review → in-progress` (dialogue de correction). La table `lib/kanbanDrops.ts` gagne `to-review: ['in-progress', 'done']`, avec la mise à jour de son test d'égalité exacte. Deux composants de dialogue calqués sur `DeleteChangeDialog`/`ResetTasksDialog`, deux mutations (react-query) qui invalident la liste et le détail, clés i18n fr/en à côté de `reviewActions.*` existantes. La carte ne bouge pas de façon optimiste : elle change de colonne quand l'état serveur (SSE `change_updated`) le dit.
 
 ## Risks / Trade-offs
 
@@ -62,7 +62,8 @@ Les lignes suivantes sont écrites en citation (`> `) : après `TrimSpace` elles
 - [Doublon de tâche si `ClearReview` échoue après le commit puis que l'utilisateur réessaie] → erreur explicite ; au pire une seconde tâche de correction visible dans `tasks.md`, sans perte.
 - [Approbation concurrente d'un worker `full-autonomy` du même workspace] → verrou de fusion partagé : l'approbation attend puis intègre le résultat du worker si besoin.
 - [Refactoring de `runWorker` sur un chemin critique déjà bien testé] → les tests existants (`integrate_test.go`, `cancel_merge_test.go`, `finalize_test.go`) servent de filet ; le refactoring est une première tâche isolée, sans changement de comportement.
-- [Après correction, le change réapparaît en To Do et non In Progress] → limitation connue, traitée à part (règle `todo` + worker actif ⇒ `in-progress`).
+- [Entre la demande de correction et le premier cochage du worker, le change est en To Do] → comportement attendu de `pool-worktree-progress` (aucune tâche cochée dans le worktree) ; il passe en In Progress dès la première tâche cochée.
+- [Dépendance de séquencement avec `fix-kanban-valid-drops`] → ce change étend sa table et sa règle de cibles de drop ; l'archiver avant, puis vérifier que `openspec validate review-actions --strict` passe sur la spec principale mise à jour.
 - [Avant `review-state` ou avec un marqueur absent, aucune action n'est possible] → ce change dépend de `review-state` et de son statut.
 
 ## Open Questions

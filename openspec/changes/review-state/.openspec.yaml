@@ -1,2 +1,20 @@
 schema: spec-driven
-created: 2026-10-01
+created: "2026-10-01"
+tags:
+    type:
+        - backend
+    complexity: 3
+    components:
+        - change-review-state
+        - kanban-board
+        - agent-pool-orchestrator
+        - workspace-kanban-counts
+        - change-status
+        - workspace-events
+        - workspace-management
+    agent_specialization:
+        - backend
+        - frontend
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-02"

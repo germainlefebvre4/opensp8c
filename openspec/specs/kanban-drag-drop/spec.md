@@ -28,7 +28,7 @@ Le Kanban SHALL autoriser uniquement les transitions suivantes par drag-and-drop
 - `ready → to-explore`, `todo → to-explore` ou `in-progress → to-explore` : reset tasks (confirmation requise)
 
 Le drop vers une colonne cible autorisée SHALL être accepté dès que le pointeur se trouve à l'intérieur des bornes de la colonne cible, que cette colonne soit vide ou qu'elle contienne déjà d'autres cartes, et que le curseur soit relâché sur une carte existante ou sur l'espace vide de la colonne.
-Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non accepté). Les cartes des colonnes **Done** et **Archived** SHALL être non-draggables.
+Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non accepté). Les colonnes **In Progress**, **To Review** et **Done** SHALL n'être jamais une cible de drop : ces états sont pilotés par le pool d'agents et l'avancement des tâches, pas par le drag-and-drop. Les cartes des colonnes **Done** et **Archived** SHALL être non-draggables.
 
 #### Scenario: Drag valide to-explore (change normal) vers todo
 - **WHEN** l'utilisateur dépose un change normal (non-ghost) de la colonne "to-explore" sur "ready", que "ready" soit vide ou contienne des cartes
@@ -65,6 +65,10 @@ Toute autre combinaison source/cible SHALL être rejetée visuellement (drop non
 #### Scenario: Drag invalide (cible non autorisée)
 - **WHEN** l'utilisateur drag une carte vers une colonne non autorisée pour cette source
 - **THEN** la colonne cible refuse visuellement le drop et la carte retourne à sa position d'origine
+
+#### Scenario: Drag vers In Progress, To Review ou Done refusé
+- **WHEN** l'utilisateur drag une carte de "todo" ou "in-progress" vers "in-progress", "to-review" ou "done", ou survole ces colonnes pendant le drag
+- **THEN** ces colonnes n'affichent aucun indicateur de dépôt, le drop n'est pas accepté, aucune action n'est déclenchée et la carte retourne à sa position d'origine
 
 ### Requirement: Indicateur visuel de drag en cours
 Dès le début d'un drag (saisie de la carte), le Kanban SHALL afficher immédiatement un indicateur visuel léger de zone de dépôt (bordure ou fond) sur chacune des colonnes cibles autorisées pour la colonne source de la carte draguée, que le curseur survole ces colonnes ou non. Parmi les colonnes autorisées, celle actuellement survolée par le curseur (sur son espace vide ou sur une de ses cartes) SHALL afficher un indicateur visuel renforcé par rapport aux autres colonnes autorisées non survolées. Les colonnes non autorisées pour cette source ne SHALL afficher aucun indicateur de dépôt, y compris lorsqu'elles sont survolées par le curseur.

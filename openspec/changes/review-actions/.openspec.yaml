@@ -1,2 +1,22 @@
 schema: spec-driven
-created: 2026-10-01
+created: "2026-10-01"
+tags:
+    type:
+        - frontend
+    complexity: 4
+    components:
+        - change-review-actions
+        - kanban-drag-drop
+        - kanban-board
+        - kanban-change-detail
+        - api-router
+        - agent-pool-real-execution
+        - workspace-management
+        - change-status
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-02"

@@ -5,6 +5,7 @@ import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@
 import type { ClientRect, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { createKanbanCollisionDetection } from '../lib/kanbanCollision'
+import { VALID_DROPS } from '../lib/kanbanDrops'
 import { KanbanColumn } from '../components/KanbanColumn'
 import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
@@ -24,15 +25,6 @@ import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, s
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import { useToast } from '../hooks/useToast'
 import type { Change } from '../hooks/useChanges'
-
-// Maps source status -> allowed drop target statuses
-const VALID_DROPS: Record<string, string[]> = {
-  'to-explore': ['ready'],
-  'ready': ['to-explore', 'todo'],
-  'todo': ['ready', 'in-progress', 'to-explore'],
-  'in-progress': ['to-explore', 'to-review', 'done'],
-  'to-review': ['in-progress', 'done'],
-}
 
 interface Props {
   workspaceId: string
