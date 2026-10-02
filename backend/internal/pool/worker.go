@@ -148,7 +148,25 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	m.mu.Unlock()
 	wt := NewWorktreeController(repoPath, w.WorkspaceID, worktreesRoot)
 
-	// 1. Provision Environment
+	notCommittedReason := fmt.Sprintf("Le changement « %s » doit être committé dans le dépôt avant d'être lancé (openspec/changes/%s/tasks.md est absent du worktree).", w.ActiveChange, w.ActiveChange)
+
+	// 1. Provision Environment. A first launch needs the change committed in
+	// HEAD: check before creating anything so a refusal leaves no orphan
+	// branch or worktree behind.
+	if exists, err := wt.branchExists("feature/" + w.ActiveChange); err != nil {
+		pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+		return
+	} else if !exists {
+		committed, err := wt.ChangeCommitted(w.ActiveChange)
+		if err != nil {
+			pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+			return
+		}
+		if !committed {
+			pause(notCommittedReason)
+			return
+		}
+	}
 	worktreePath, err := wt.Provision(w.ActiveChange)
 	if err != nil {
 		log.Printf("[worker %d] failed to provision worktree: %v\n", w.ID, err)
@@ -215,11 +233,39 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	}
 
 	// The worktree starts from the last commit: an uncommitted change is not
-	// in it, and no agent could apply it.
+	// in it, and no agent could apply it. A branch created before the change
+	// was committed is recreated when it carries no work, else left intact.
 	tasksPath := filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md")
 	if !fileExists(tasksPath) {
-		pause(fmt.Sprintf("Le changement « %s » doit être committé dans le dépôt avant d'être lancé (openspec/changes/%s/tasks.md est absent du worktree).", w.ActiveChange, w.ActiveChange))
-		return
+		committed, err := wt.ChangeCommitted(w.ActiveChange)
+		if err != nil {
+			pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+			return
+		}
+		if !committed {
+			pause(notCommittedReason)
+			return
+		}
+		hasWork, err := wt.HasWork(w.ActiveChange)
+		if err != nil {
+			pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+			return
+		}
+		if hasWork {
+			pause(fmt.Sprintf("La branche « feature/%s » ne contient pas le changement (créée avant son commit) : y intégrer la branche courante ou la supprimer, puis reprendre le worker.", w.ActiveChange))
+			return
+		}
+		newPath, err := wt.RecreateFromHead(w.ActiveChange)
+		if err != nil {
+			log.Printf("[worker %d] failed to recreate stale worktree: %v\n", w.ID, err)
+			pause(fmt.Sprintf("Échec du provisionnement du worktree : %v", err))
+			return
+		}
+		m.setWorktree(w, newPath, "feature/"+w.ActiveChange)
+		if !fileExists(filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md")) {
+			pause(notCommittedReason)
+			return
+		}
 	}
 
 	var stderrLog *conversation.SessionLog

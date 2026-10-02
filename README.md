@@ -35,6 +35,14 @@ A worktree starts from the last commit of the repository's current branch: a cha
 
 Commit the change (`git add openspec/changes/<change> && git commit`), then resume the worker.
 
+Nothing is created in that case (no branch, no worktree), so committing and resuming is all it takes.
+
+If the branch `feature/<change>` already exists but was created before the change was committed, the worker handles it by itself when the branch holds no work (clean worktree, no commit of its own): the branch and its worktree are recreated from the current branch, without forcing anything. When the branch does hold work, nothing is deleted or rewritten and the worker pauses with a distinct reason:
+
+> La branche « feature/<change> » ne contient pas le changement (créée avant son commit) : y intégrer la branche courante ou la supprimer, puis reprendre le worker.
+
+Merge the current branch into `feature/<change>` (or delete the branch if its work is not needed), then resume the worker.
+
 ### Finalization
 
 When validation passes and every task of `tasks.md` is checked, the worker commits the agent's work in `feature/<change>`, then:

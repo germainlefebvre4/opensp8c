@@ -153,6 +153,44 @@ func (wc *WorktreeController) Provision(changeName string) (string, error) {
 	return worktreePath, nil
 }
 
+// ChangeCommitted reports whether tasks.md of the change is known to the
+// repository's HEAD. The git exit code decides: 0 present, 1 absent, anything
+// else is an error.
+func (wc *WorktreeController) ChangeCommitted(changeName string) (bool, error) {
+	_, code, err := wc.runGitCode("rev-parse", "-q", "--verify", "HEAD:openspec/changes/"+changeName+"/tasks.md")
+	switch {
+	case err != nil:
+		return false, err
+	case code == 0:
+		return true, nil
+	case code == 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("git rev-parse exited with status %d", code)
+	}
+}
+
+// RecreateFromHead replaces a stale branch and its worktree with a fresh pair
+// started from HEAD, and returns the new worktree path. Nothing is forced: a
+// dirty worktree or a branch not fully contained in HEAD makes it fail before
+// anything is deleted.
+func (wc *WorktreeController) RecreateFromHead(changeName string) (string, error) {
+	branchName := "feature/" + changeName
+	if err := wc.Remove(changeName); err != nil {
+		return "", err
+	}
+	if _, err := wc.runGit("branch", "-d", branchName); err != nil {
+		return "", fmt.Errorf("failed to delete stale branch %s: %w", branchName, err)
+	}
+	base := wc.currentBranchName()
+	worktreePath := wc.worktreePath(changeName)
+	if _, err := wc.runGit("worktree", "add", "-b", branchName, worktreePath); err != nil {
+		return "", fmt.Errorf("failed to recreate worktree: %w", err)
+	}
+	wc.recordBase(changeName, base)
+	return worktreePath, nil
+}
+
 // branchExists interprets the exit code of git show-ref: 0 exists, 1 absent,
 // anything else is an error.
 func (wc *WorktreeController) branchExists(branchName string) (bool, error) {

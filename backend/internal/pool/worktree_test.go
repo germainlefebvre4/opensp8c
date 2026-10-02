@@ -664,3 +664,90 @@ func TestCleanup(t *testing.T) {
 		t.Fatalf("Cleanup of an absent change: %v", err)
 	}
 }
+
+func commitChange(t *testing.T, repo, change string) {
+	t.Helper()
+	dir := filepath.Join(repo, "openspec", "changes", change)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.md"), []byte("- [ ] 1.1 x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChangeCommitted(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if ok, err := wc.ChangeCommitted("add-auth"); err != nil || ok {
+		t.Fatalf("absent: ok=%v err=%v", ok, err)
+	}
+	commitChange(t, repo, "add-auth")
+	if ok, err := wc.ChangeCommitted("add-auth"); err != nil || ok {
+		t.Fatalf("untracked: ok=%v err=%v", ok, err)
+	}
+	gitIn(t, repo, "add", ".")
+	if ok, err := wc.ChangeCommitted("add-auth"); err != nil || ok {
+		t.Fatalf("staged only: ok=%v err=%v", ok, err)
+	}
+	gitIn(t, repo, "commit", "-q", "-m", "change")
+	if ok, err := wc.ChangeCommitted("add-auth"); err != nil || !ok {
+		t.Fatalf("committed: ok=%v err=%v", ok, err)
+	}
+	notRepo := NewWorktreeController(t.TempDir(), "ws", t.TempDir())
+	if _, err := notRepo.ChangeCommitted("add-auth"); err == nil {
+		t.Fatal("expected an error outside a repository")
+	}
+}
+
+func TestRecreateFromHeadStaleBranchWithoutWork(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	commitChange(t, repo, "add-auth")
+	gitIn(t, repo, "add", ".")
+	gitIn(t, repo, "commit", "-q", "-m", "change")
+
+	path, err := wc.RecreateFromHead("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "openspec", "changes", "add-auth", "tasks.md")); err != nil {
+		t.Fatalf("tasks.md missing from recreated worktree: %v", err)
+	}
+	if base, ok := wc.BaseBranch("add-auth"); !ok || base != "main" {
+		t.Fatalf("base = %q ok=%v", base, ok)
+	}
+}
+
+func TestRecreateFromHeadKeepsBranchWithWork(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Dirty worktree.
+	if err := os.WriteFile(filepath.Join(path, "wip.txt"), []byte("w"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wc.RecreateFromHead("add-auth"); err == nil {
+		t.Fatal("expected an error for a dirty worktree")
+	}
+	if _, err := os.Stat(filepath.Join(path, "wip.txt")); err != nil {
+		t.Fatalf("dirty worktree was touched: %v", err)
+	}
+
+	// Own commit.
+	gitIn(t, path, "add", ".")
+	gitIn(t, path, "commit", "-q", "-m", "work")
+	if _, err := wc.RecreateFromHead("add-auth"); err == nil {
+		t.Fatal("expected an error for a branch with its own commit")
+	}
+	if exists, _ := wc.branchExists("feature/add-auth"); !exists {
+		t.Fatal("branch was deleted")
+	}
+}

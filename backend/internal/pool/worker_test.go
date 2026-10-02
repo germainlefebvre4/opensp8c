@@ -750,3 +750,129 @@ func TestRunWorker_InjectsOnlyConfiguredAgentEnv(t *testing.T) {
 		t.Errorf("codex-specific var leaked into claude worker: %v", gotEnv)
 	}
 }
+
+// runStaleScenario runs one worker on changeName and returns it together with
+// the number of agent starts and the manager.
+func runStaleScenario(t *testing.T, repoDir, changeName string) (*Worker, *int, *Manager) {
+	t.Helper()
+	starts := new(int)
+	m := newWorkerTestManager(t, repoDir, AgentPoolConfig{Size: 1, DelegationMode: ModeHITLReview, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
+			*starts++
+			return fakeAutoRespondingSubprocess(), nil
+		})
+	w := &Worker{ID: 1, ActiveChange: changeName}
+	m.activeWorkers[1] = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.runWorker(ctx, w)
+	return w, starts, m
+}
+
+// writeChange writes openspec/changes/<change>/tasks.md in repoDir.
+func writeChange(t *testing.T, repoDir, change string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "openspec", "changes", change)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.md"), []byte("- [x] done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func commitChangeIn(t *testing.T, repoDir, change string) {
+	t.Helper()
+	writeChange(t, repoDir, change)
+	gitIn(t, repoDir, "add", "-A")
+	gitIn(t, repoDir, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "change "+change)
+}
+
+func TestRunWorker_UncommittedChangeCreatesNothing(t *testing.T) {
+	repoDir := newGoFixtureRepo(t, "other", "- [x] done\n")
+	writeChange(t, repoDir, "fresh")
+
+	w, starts, m := runStaleScenario(t, repoDir, "fresh")
+
+	if w.Status != StatusPaused || !strings.Contains(w.BlockedReason, "doit être committé") {
+		t.Fatalf("status=%q reason=%q", w.Status, w.BlockedReason)
+	}
+	if *starts != 0 {
+		t.Errorf("agent started %d times", *starts)
+	}
+	if out := gitIn(t, repoDir, "branch", "--list", "feature/fresh"); out != "" {
+		t.Errorf("branch created: %q", out)
+	}
+	if _, err := os.Stat(NewWorktreeController(repoDir, "", m.worktreesRoot).worktreePath("fresh")); err == nil {
+		t.Error("worktree created")
+	}
+
+	// Committing the change then resuming works without manual cleanup.
+	commitChangeIn(t, repoDir, "fresh")
+	w2, starts2, _ := runStaleScenario(t, repoDir, "fresh")
+	if *starts2 != 1 {
+		t.Errorf("after commit: agent started %d times, reason=%q", *starts2, w2.BlockedReason)
+	}
+}
+
+func TestRunWorker_StaleBranchWithoutWorkIsRecreated(t *testing.T) {
+	repoDir := newGoFixtureRepo(t, "other", "- [x] done\n")
+	gitIn(t, repoDir, "branch", "feature/uncommitted-chg") // created before the change is committed
+	commitChangeIn(t, repoDir, "uncommitted-chg")
+
+	w, starts, _ := runStaleScenario(t, repoDir, "uncommitted-chg")
+
+	if *starts != 1 {
+		t.Fatalf("agent started %d times, status=%q reason=%q", *starts, w.Status, w.BlockedReason)
+	}
+	if _, err := os.Stat(filepath.Join(w.WorktreePath, "openspec", "changes", "uncommitted-chg", "tasks.md")); err != nil {
+		t.Errorf("recreated worktree lacks tasks.md: %v", err)
+	}
+}
+
+func TestRunWorker_StaleBranchWithWorkIsKept(t *testing.T) {
+	repoDir := newGoFixtureRepo(t, "other", "- [x] done\n")
+	gitIn(t, repoDir, "branch", "feature/recreated-chg")
+	gitIn(t, repoDir, "checkout", "-q", "feature/recreated-chg")
+	if err := os.WriteFile(filepath.Join(repoDir, "own.txt"), []byte("w"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repoDir, "add", "-A")
+	gitIn(t, repoDir, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "own work")
+	gitIn(t, repoDir, "checkout", "-q", "-")
+	commitChangeIn(t, repoDir, "recreated-chg")
+	before := gitIn(t, repoDir, "rev-parse", "feature/recreated-chg")
+
+	w, starts, _ := runStaleScenario(t, repoDir, "recreated-chg")
+
+	if w.Status != StatusPaused || !strings.Contains(w.BlockedReason, "ne contient pas le changement") {
+		t.Fatalf("status=%q reason=%q", w.Status, w.BlockedReason)
+	}
+	if strings.Contains(w.BlockedReason, "doit être committé") {
+		t.Errorf("reason must differ from the not-committed one: %q", w.BlockedReason)
+	}
+	if *starts != 0 {
+		t.Errorf("agent started %d times", *starts)
+	}
+	if after := gitIn(t, repoDir, "rev-parse", "feature/recreated-chg"); after != before {
+		t.Errorf("branch rewritten: %s -> %s", before, after)
+	}
+	if _, err := os.Stat(w.WorktreePath); err != nil {
+		t.Errorf("worktree gone: %v", err)
+	}
+}
+
+func TestRunWorker_ExistingBranchWithUncommittedChangeKeepsCommitReason(t *testing.T) {
+	repoDir := newGoFixtureRepo(t, "other", "- [x] done\n")
+	gitIn(t, repoDir, "branch", "feature/kept-chg")
+	writeChange(t, repoDir, "kept-chg")
+
+	w, starts, _ := runStaleScenario(t, repoDir, "kept-chg")
+
+	if w.Status != StatusPaused || !strings.Contains(w.BlockedReason, "doit être committé") {
+		t.Fatalf("status=%q reason=%q", w.Status, w.BlockedReason)
+	}
+	if *starts != 0 {
+		t.Errorf("agent started %d times", *starts)
+	}
+}
