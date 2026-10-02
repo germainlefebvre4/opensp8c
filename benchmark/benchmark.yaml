@@ -8,8 +8,8 @@ runs: 3
 # Mêmes agent, modèle et effort pour les deux méthodes : reprendre les réglages
 # du rôle "implementer" du workspace.
 agent: claude
-model: opus
-effort: high
+model: sonnet
+effort: low
 
 # Relances maximales de la baseline après un échec de validation (défaut : 2).
 max_retries: 2
