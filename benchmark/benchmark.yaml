@@ -1,0 +1,29 @@
+# Benchmark plateforme vs baseline — voir benchmark/README.md
+# SHA du dépôt de départ : doit précéder l'ajout du dossier benchmark/.
+start_sha: e04c7c294e82c628b35f586d2637adbf94cd1fda
+
+# Nombre de runs par méthode (défaut : 3).
+runs: 3
+
+# Mêmes agent, modèle et effort pour les deux méthodes : reprendre les réglages
+# du rôle "implementer" du workspace.
+agent: claude
+model: opus
+effort: high
+
+# Relances maximales de la baseline après un échec de validation (défaut : 2).
+max_retries: 2
+
+brief: benchmark/brief.md
+answers: benchmark/answers.md
+acceptance: benchmark/acceptance
+
+# Où le test d'acceptation est copié dans le clone, après le run.
+acceptance_dest: backend/acceptance
+acceptance_command: go test -count=1 ./acceptance/...
+
+# Validation de la baseline (relancée dans le clone, depuis validation_dir).
+validation_command: go test ./...
+validation_dir: backend
+
+output_dir: benchmark/results
