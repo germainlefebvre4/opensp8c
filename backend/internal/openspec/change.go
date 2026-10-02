@@ -36,6 +36,7 @@ type Change struct {
 	IsGhost           bool     `json:"is_ghost,omitempty"`
 	GhostID           string   `json:"ghost_id,omitempty"`
 	WorkerActive      bool     `json:"worker_active,omitempty"`
+	WorkerPaused      bool     `json:"worker_paused,omitempty"`
 	Launched          bool     `json:"launched,omitempty"`
 	Order             int      `json:"order,omitempty"`
 }

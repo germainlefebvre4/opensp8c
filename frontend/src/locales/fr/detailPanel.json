@@ -47,6 +47,7 @@
   "solidifyError": "Erreur lors de la solidification du change : {{error}}",
   "delete": "Supprimer",
   "deleting": "Suppression...",
+  "deleteDisabledWorkerPaused": "Un worker de l'Agent Pool en pause tient encore ce change : rétrogradez-le d'abord vers Ready.",
   "deleteDisabledWorkerActive": "Un worker de l'Agent Pool est actuellement actif sur ce change.",
   "deleteError": "Erreur lors de la suppression du change : {{error}}",
   "activity": {

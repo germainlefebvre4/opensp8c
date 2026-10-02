@@ -156,6 +156,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive(t *testing.T) {
 		t.Skip("git not available")
 	}
 
+	t.Cleanup(pool.HoldAgentStartsForTest())
 	tmpDir := t.TempDir()
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeName := fmt.Sprintf("worker-busy-%d", time.Now().UnixNano())
@@ -190,7 +191,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive(t *testing.T) {
 	for time.Now().Before(deadline) {
 		_, _, workers := poolMgr.Status(workspaceID)
 		for _, w := range workers {
-			if w.ActiveChange == changeName {
+			if w.ActiveChange == changeName && w.Status != pool.StatusPaused {
 				active = true
 			}
 		}
@@ -216,6 +217,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive_Force(t *testing.T) {
 		t.Skip("git not available")
 	}
 
+	t.Cleanup(pool.HoldAgentStartsForTest())
 	tmpDir := t.TempDir()
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeName := fmt.Sprintf("worker-force-%d", time.Now().UnixNano())
@@ -250,7 +252,7 @@ func TestKanbanHandler_Unlaunch_WorkerActive_Force(t *testing.T) {
 	for time.Now().Before(deadline) {
 		_, _, workers := poolMgr.Status(workspaceID)
 		for _, w := range workers {
-			if w.ActiveChange == changeName {
+			if w.ActiveChange == changeName && w.Status != pool.StatusPaused {
 				active = true
 			}
 		}
@@ -488,6 +490,7 @@ func newUnlaunchForceFixture(t *testing.T, answer func() (bool, pool.WorkerResul
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
+	t.Cleanup(pool.HoldAgentStartsForTest())
 	tmpDir := t.TempDir()
 	changesDir := filepath.Join(tmpDir, "openspec", "changes")
 	changeName := "my-change"
@@ -516,7 +519,7 @@ func newUnlaunchForceFixture(t *testing.T, answer func() (bool, pool.WorkerResul
 		os.RemoveAll(filepath.Join(home, ".opensp8c", "worktrees", "wt-"+changeName))
 	})
 	deadline := time.Now().Add(15 * time.Second)
-	for _, held := h.activeWorkerChanges(workspaceID)[changeName]; !held; _, held = h.activeWorkerChanges(workspaceID)[changeName] {
+	for hw, held := h.activeWorkerChanges(workspaceID)[changeName]; !held || hw.Paused || hw.WorktreePath == ""; hw, held = h.activeWorkerChanges(workspaceID)[changeName] {
 		if time.Now().After(deadline) {
 			t.Fatal("worker never became active")
 		}
@@ -607,7 +610,7 @@ func workerWorktreeTasks(t *testing.T, h *KanbanHandler, workspaceID, change str
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if wt := h.activeWorkerChanges(workspaceID)[change]; wt != "" {
+		if wt := h.activeWorkerChanges(workspaceID)[change].WorktreePath; wt != "" {
 			return filepath.Join(wt, "openspec", "changes", change, "tasks.md")
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -707,5 +710,105 @@ func TestKanbanHandler_NoWorkerIgnoresWorktree(t *testing.T) {
 	c := listedChange(t, h, id, "my-change")
 	if c.KanbanStatus != "todo" || c.WorkerActive || c.TasksDone != 0 {
 		t.Errorf("got %s %d/%d worker=%v", c.KanbanStatus, c.TasksDone, c.TasksTotal, c.WorkerActive)
+	}
+}
+
+// newPausedWorkerHandler starts a real pool on a workspace that is not a git
+// repository, so provisioning fails and the worker of the launched change
+// pauses (the scenario that motivated releasing pauses on demotion).
+func newPausedWorkerHandler(t *testing.T) (*KanbanHandler, string, string, string, *pool.Manager) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	tmpDir := t.TempDir()
+	changesDir := filepath.Join(tmpDir, "openspec", "changes")
+	changeName := "paused-change"
+	changeDir := writeChangeWithMeta(t, changesDir, changeName, "schema: spec-driven\ncreated: \"2024-01-01\"\nlaunched: true\n")
+
+	poolReg := pool.NewRegistry(nil, nil, nil, nil, nil)
+	h, workspaceID := newTestKanbanHandler(t, tmpDir, poolReg, nil, nil, "")
+	poolMgr := poolReg.For(workspaceID)
+	if err := poolMgr.Start(pool.AgentPoolConfig{Size: 1, DelegationMode: pool.ModeHITLReview, MaxAttempts: 1}, workspaceID, "test", tmpDir); err != nil {
+		t.Fatalf("failed to start pool: %v", err)
+	}
+	t.Cleanup(poolMgr.Stop)
+
+	deadline := time.Now().Add(15 * time.Second)
+	for !h.activeWorkerChanges(workspaceID)[changeName].Paused {
+		if time.Now().After(deadline) {
+			t.Fatal("worker never paused")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return h, workspaceID, changeName, changeDir, poolMgr
+}
+
+func TestKanbanHandler_PausedWorkerIndicators(t *testing.T) {
+	h, workspaceID, changeName, _, _ := newPausedWorkerHandler(t)
+
+	rec, req := launchRequest("GET", workspaceID, changeName, "", nil)
+	h.GetChange(rec, req)
+	var d openspec.ChangeDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.WorkerActive || !d.WorkerPaused {
+		t.Fatalf("detail: want active=false paused=true, got %+v", d.Change)
+	}
+
+	rec, req = launchRequest("GET", workspaceID, "", "", nil)
+	h.ListChanges(rec, req)
+	var changes []openspec.Change
+	if err := json.Unmarshal(rec.Body.Bytes(), &changes); err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].WorkerActive || !changes[0].WorkerPaused {
+		t.Fatalf("list: want active=false paused=true, got %+v", changes)
+	}
+}
+
+func TestChange_WorkerPausedJSONOnlyWhenTrue(t *testing.T) {
+	b, _ := json.Marshal(openspec.Change{Name: "x"})
+	if strings.Contains(string(b), "worker_paused") {
+		t.Fatalf("worker_paused must be omitted when false: %s", b)
+	}
+	b, _ = json.Marshal(openspec.Change{Name: "x", WorkerPaused: true})
+	if !strings.Contains(string(b), `"worker_paused":true`) {
+		t.Fatalf("worker_paused must be exposed when true: %s", b)
+	}
+}
+
+func TestKanbanHandler_Unlaunch_PausedWorkerReleased(t *testing.T) {
+	for _, query := range []string{"unlaunch", "unlaunch?force=true"} {
+		t.Run(query, func(t *testing.T) {
+			h, workspaceID, changeName, changeDir, poolMgr := newPausedWorkerHandler(t)
+			h.cancelAndWait = func(context.Context, string, string) (bool, pool.WorkerResult, bool) {
+				t.Fatal("no process runs: cancelAndWait must not be called")
+				return false, pool.WorkerResult{}, false
+			}
+
+			rec, req := launchRequest("PATCH", workspaceID, changeName, query, nil)
+			h.Unlaunch(rec, req)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if _, _, workers := poolMgr.Status(workspaceID); len(workers) != 0 {
+				t.Fatalf("pause must be released, got %+v", workers)
+			}
+			if got := unlaunchedStatus(t, filepath.Dir(filepath.Dir(filepath.Dir(changeDir)))); got != "ready" {
+				t.Fatalf("expected ready, got %q", got)
+			}
+		})
+	}
+}
+
+func TestDeleteChange_PausedWorkerRefused(t *testing.T) {
+	h, workspaceID, changeName, changeDir, _ := newPausedWorkerHandler(t)
+	rec, req := deleteChangeRequest(workspaceID, changeName)
+	h.DeleteChange(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if _, err := os.Stat(changeDir); err != nil {
+		t.Fatalf("change must be kept: %v", err)
 	}
 }

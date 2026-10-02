@@ -150,3 +150,82 @@ func TestResumeWorker(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestReleasePausedForChange(t *testing.T) {
+	repo := t.TempDir()
+	writeChangeForPoolTest(t, repo+"/openspec/changes", "change-a", boolPtr(true), intPtr(1))
+
+	block := make(chan struct{})
+	defer close(block)
+	m := newWorkerTestManager(t, repo, AgentPoolConfig{Size: 2, MaxAttempts: 1},
+		func(ctx context.Context, workspacePath string, agentCfg agents.AgentConfig, extraSystemPrompt, claudeSessionID string, resume bool, sessionLog *conversation.SessionLog, customEnv map[string]string, nativeQuestionMode bool, languageDirective string) (*session.Subprocess, error) {
+			<-block
+			return nil, context.Canceled
+		})
+	m.workspaceID = "ws"
+	m.isRunning = true
+	other := &Worker{ID: 2, ActiveChange: "other", Status: StatusWorking}
+	m.mu.Lock()
+	m.activeWorkers[2] = other
+	m.pausedWorkers[1] = &Worker{ID: 1, ActiveChange: "change-a", Status: StatusPaused, BlockedReason: "r"}
+	m.mu.Unlock()
+
+	if m.ReleasePausedForChange("unknown") {
+		t.Fatal("no pause for that change: expected false")
+	}
+	if !m.ReleasePausedForChange("change-a") {
+		t.Fatal("expected the pause to be released")
+	}
+	if m.ReleasePausedForChange("change-a") {
+		t.Fatal("second release: expected false")
+	}
+
+	_, _, workers := m.Status("ws")
+	if len(workers) != 1 || workers[0].ID != 2 || workers[0].ActiveChange != "other" {
+		t.Fatalf("only the other worker must remain untouched, got %+v", workers)
+	}
+
+	m.tick()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	redistributed := false
+	for _, w := range m.activeWorkers {
+		if w.ActiveChange == "change-a" {
+			redistributed = true
+		}
+	}
+	if !redistributed {
+		t.Fatal("change-a must be redistributed after its pause is released")
+	}
+	if m.activeWorkers[2] != other || other.ID != 2 {
+		t.Fatal("the other worker must be unchanged")
+	}
+}
+
+// A worker whose change is cancelled must not leave a ghost pause, whether
+// the release happens before or after its pauseWorker attempt.
+func TestReleasePausedForChange_ConcurrentWithPauseWorker(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		m := NewManager(nil, nil, nil, nil, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		w := &Worker{ID: 1, ActiveChange: "change-a"}
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			m.pauseWorker(ctx, w, "r")
+		}()
+		m.mu.Lock()
+		cancel() // like CancelAndWait: cancel under m.mu, then release
+		m.mu.Unlock()
+		m.ReleasePausedForChange("change-a")
+		<-done
+
+		m.mu.Lock()
+		n := len(m.pausedWorkers)
+		m.mu.Unlock()
+		if n != 0 {
+			t.Fatalf("iteration %d: ghost pause left behind (%d)", i, n)
+		}
+	}
+}

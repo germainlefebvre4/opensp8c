@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle, Trash2, Pin, Cpu, Square } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2, Pin, Cpu, Square, Pause } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
@@ -258,6 +258,14 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
                       <Square size={9} className="fill-current" />
                     </button>
                   )}
+                </span>
+              )}
+              {change.worker_paused && (
+                <span
+                  title={tKanban('card.workerPausedTooltip')}
+                  className="flex items-center gap-0.5 text-amber-600 font-medium"
+                >
+                  <Pause size={10} /> {tKanban('card.workerPausedBadge')}
                 </span>
               )}
               {change.is_stale && (

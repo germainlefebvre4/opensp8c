@@ -202,6 +202,26 @@ func (m *Manager) ResumeWorker(workerID int) error {
 	return nil
 }
 
+// ReleasePausedForChange lifts the pause of every paused worker holding
+// change, so the change is no longer held and the next tick can redistribute
+// it. It reports whether a pause was released. Active workers are untouched.
+func (m *Manager) ReleasePausedForChange(change string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	released := false
+	for id, w := range m.pausedWorkers {
+		if w.ActiveChange == change {
+			delete(m.pausedWorkers, id)
+			released = true
+		}
+	}
+	if released {
+		m.broadcastLocked()
+	}
+	return released
+}
+
 // CancelWorkerForChange cancels the active worker assigned to changeName, if any.
 // It returns true if an active worker was found and its cancel function invoked,
 // or false if no worker was active for that change.

@@ -235,6 +235,7 @@ export function KanbanPage({ workspaceId }: Props) {
         qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
       } catch { /* ignore */ }
     } else if (targetStatus === 'ready' && sourceStatus === 'todo') {
+      // A paused worker runs nothing: demoting releases it without confirmation.
       if (change.worker_active) {
         setUnlaunchWorkerDialog(change)
         return

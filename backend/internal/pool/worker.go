@@ -32,6 +32,19 @@ const maxActivityLen = 200
 // subprocess creation without spawning a real agent CLI.
 var startSubprocessFn = session.StartSubprocess
 
+// HoldAgentStartsForTest makes every worker's agent start block until its
+// context is cancelled, so cross-package tests get a worker that stays
+// genuinely active (neither failing into a pause nor finishing). The returned
+// function restores the real starter.
+func HoldAgentStartsForTest() (restore func()) {
+	orig := startSubprocessFn
+	startSubprocessFn = func(ctx context.Context, _ string, _ agents.AgentConfig, _, _ string, _ bool, _ *conversation.SessionLog, _ map[string]string, _ bool, _ string) (*session.Subprocess, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return func() { startSubprocessFn = orig }
+}
+
 // beforeCommitHook is a test seam called once validation and the completion
 // check have passed, right before the cancellation check that precedes the
 // commit of the agent's work.

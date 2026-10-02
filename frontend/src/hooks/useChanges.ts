@@ -23,6 +23,7 @@ export interface Change {
   is_ghost?: boolean
   ghost_id?: string
   worker_active?: boolean
+  worker_paused?: boolean
   order?: number
 }
 

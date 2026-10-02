@@ -30,6 +30,7 @@ func listChangesRequest(workspaceID string) (*httptest.ResponseRecorder, *http.R
 // instead of a single global one.
 func TestActiveWorkerChanges_ScopedPerWorkspace(t *testing.T) {
 	const changeName = "shared-change"
+	t.Cleanup(pool.HoldAgentStartsForTest())
 	tmpA := setupGitWorkspace(t, changeName)
 	tmpB := setupGitWorkspace(t, changeName)
 
@@ -61,7 +62,7 @@ func TestActiveWorkerChanges_ScopedPerWorkspace(t *testing.T) {
 	for time.Now().Before(deadline) {
 		_, _, workers := reg.For(idA).Status(idA)
 		for _, w := range workers {
-			if w.ActiveChange == changeName {
+			if w.ActiveChange == changeName && w.Status != pool.StatusPaused && w.WorktreePath != "" {
 				active = true
 			}
 		}

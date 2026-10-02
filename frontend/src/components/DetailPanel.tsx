@@ -546,8 +546,8 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={() => setShowDeleteDialog(true)}
-                        disabled={deleteChange.isPending || data.worker_active}
-                        title={data.worker_active ? t('deleteDisabledWorkerActive') : undefined}
+                        disabled={deleteChange.isPending || data.worker_active || data.worker_paused}
+                        title={data.worker_active ? t('deleteDisabledWorkerActive') : data.worker_paused ? t('deleteDisabledWorkerPaused') : undefined}
                         className="self-start text-xs px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {deleteChange.isPending ? `⏳ ${t('deleting')}` : t('delete')}

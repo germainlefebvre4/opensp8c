@@ -54,6 +54,8 @@
     "ffFailed": "ff échoué",
     "draftTasksBadge": "{{done}}/{{total}} dft",
     "workerActiveBadge": "worker",
+    "workerPausedBadge": "en pause",
+    "workerPausedTooltip": "Le worker est bloqué en pause sur ce change : le rétrograder vers Ready le libère",
     "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change",
     "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready"
   }

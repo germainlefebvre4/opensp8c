@@ -30,6 +30,12 @@ type KanbanHandler struct {
 	cancelAndWait func(ctx context.Context, workspaceID, change string) (bool, pool.WorkerResult, bool)
 }
 
+// heldWorker describes the pool worker holding a change.
+type heldWorker struct {
+	WorktreePath string // empty until the worktree is provisioned
+	Paused       bool
+}
+
 func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg *pool.Registry, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
 	h := &KanbanHandler{
 		ws:        ws,
@@ -51,16 +57,17 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg 
 
 // activeWorkerChanges returns the changes currently claimed by an Agent Pool
 // worker (active or paused) for workspaceID, per that workspace's own pool
-// manager in-memory state, mapped to the worker's worktree path (empty until
-// the worktree is provisioned). Presence in the map means a worker holds it.
-func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]string {
-	active := make(map[string]string)
+// manager in-memory state, mapped to the holding worker's state. Presence in
+// the map means a worker holds it; Paused tells a blocked worker from one that
+// is executing.
+func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]heldWorker {
+	active := make(map[string]heldWorker)
 	if h.poolReg == nil {
 		return active
 	}
 	_, _, workers := h.poolReg.For(workspaceID).Status(workspaceID)
 	for _, w := range workers {
-		active[w.ActiveChange] = w.WorktreePath
+		active[w.ActiveChange] = heldWorker{WorktreePath: w.WorktreePath, Paused: w.Status == pool.StatusPaused}
 	}
 	return active
 }
@@ -84,9 +91,10 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 
 	activeWorkers := h.activeWorkerChanges(id)
 	for i := range changes {
-		if wt, held := activeWorkers[changes[i].Name]; held {
-			changes[i].WorkerActive = true
-			openspec.ApplyWorktreeProgress(&changes[i], path, wt)
+		if hw, held := activeWorkers[changes[i].Name]; held {
+			changes[i].WorkerActive = !hw.Paused
+			changes[i].WorkerPaused = hw.Paused
+			openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath)
 		}
 	}
 
@@ -158,8 +166,8 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	worktreePath, held := h.activeWorkerChanges(id)[name]
-	detail, err := openspec.GetChangeDetail(path, name, worktreePath)
+	hw, held := h.activeWorkerChanges(id)[name]
+	detail, err := openspec.GetChangeDetail(path, name, hw.WorktreePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "change not found", http.StatusNotFound)
@@ -168,7 +176,8 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	detail.WorkerActive = held
+	detail.WorkerActive = held && !hw.Paused
+	detail.WorkerPaused = held && hw.Paused
 	json.NewEncoder(w).Encode(detail)
 }
 
@@ -253,6 +262,7 @@ func (h *KanbanHandler) Launch(w http.ResponseWriter, r *http.Request) {
 // Unlaunch marks a change "not launched", demoting it from To Do to Ready.
 // Refused while an Agent Pool worker is actively working on the change,
 // unless ?force=true is provided, in which case the active worker is canceled.
+// A paused worker is released without confirmation.
 func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	name := chi.URLParam(r, "name")
@@ -275,7 +285,7 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 
 	force := r.URL.Query().Get("force") == "true"
 
-	if _, held := h.activeWorkerChanges(id)[name]; held {
+	if hw, held := h.activeWorkerChanges(id)[name]; held && !hw.Paused {
 		if !force {
 			http.Error(w, "a worker is active on this change", http.StatusConflict)
 			return
@@ -292,6 +302,12 @@ func (h *KanbanHandler) Unlaunch(w http.ResponseWriter, r *http.Request) {
 			writeUnlaunchError(w, http.StatusConflict, map[string]string{"code": "change_already_merged", "target": result.Target})
 			return
 		}
+	}
+
+	// A paused worker runs nothing: demoting releases it. This also covers a
+	// worker that paused just before honoring the cancellation above.
+	if h.poolReg != nil {
+		h.poolReg.For(id).ReleasePausedForChange(name)
 	}
 
 	if err := openspec.SetLaunched(changeDir, false); err != nil {

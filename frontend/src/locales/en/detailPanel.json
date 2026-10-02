@@ -47,6 +47,7 @@
   "solidifyError": "Error while freezing the change: {{error}}",
   "delete": "Delete",
   "deleting": "Deleting...",
+  "deleteDisabledWorkerPaused": "A paused Agent Pool worker still holds this change: demote it to Ready first.",
   "deleteDisabledWorkerActive": "An Agent Pool worker is currently active on this change.",
   "deleteError": "Error while deleting the change: {{error}}",
   "activity": {

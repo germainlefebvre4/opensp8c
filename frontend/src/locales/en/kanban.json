@@ -54,6 +54,8 @@
     "ffFailed": "ff failed",
     "draftTasksBadge": "{{done}}/{{total}} dft",
     "workerActiveBadge": "worker",
+    "workerPausedBadge": "paused",
+    "workerPausedTooltip": "The worker is blocked in pause on this change: demoting to Ready releases it",
     "workerActiveTooltip": "An Agent Pool worker is currently assigned to this change",
     "stopWorkerTooltip": "Interrupt worker and demote to Ready"
   }

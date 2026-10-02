@@ -232,7 +232,7 @@ Lorsque le provisionnement de la branche ou du worktree d'un changement échoue,
 - **THEN** le worker passe à `paused` et sa raison de blocage, exposée par l'endpoint de statut et par la liste globale des pools, décrit l'échec du provisionnement
 
 ### Requirement: Changes en pause exclues du dispatcher
-Tant qu'un worker est en pause pour un changement, le dispatcher SHALL NOT réassigner ce changement à un worker, même s'il reste dans la colonne Todo et sans dépendance en attente. Le changement SHALL redevenir éligible uniquement lorsque sa pause est levée par une reprise explicite ou par l'arrêt du pool. Les autres changements éligibles SHALL continuer à être distribués normalement. Un worker dont l'exécution est interrompue par l'arrêt du pool ou par l'annulation explicite de son changement SHALL NOT apparaître comme en pause, et un pool redémarré SHALL partir sans aucune pause héritée d'un run précédent. L'identifiant d'un worker terminé SHALL NOT pouvoir supprimer l'état d'un worker plus récent qui a réutilisé cet identifiant.
+Tant qu'un worker est en pause pour un changement, le dispatcher SHALL NOT réassigner ce changement à un worker, même s'il reste dans la colonne Todo et sans dépendance en attente. Le changement SHALL redevenir éligible uniquement lorsque sa pause est levée par une reprise explicite, par la rétrogradation du changement vers Ready (voir `kanban-ready-column`) ou par l'arrêt du pool. Les autres changements éligibles SHALL continuer à être distribués normalement. Un worker dont l'exécution est interrompue par l'arrêt du pool ou par l'annulation explicite de son changement SHALL NOT apparaître comme en pause, et un pool redémarré SHALL partir sans aucune pause héritée d'un run précédent. L'identifiant d'un worker terminé SHALL NOT pouvoir supprimer l'état d'un worker plus récent qui a réutilisé cet identifiant.
 
 #### Scenario: Change en pause non relancée
 - **WHEN** le worker du changement `add-user-auth` passe en pause alors que ce changement reste éligible dans la colonne Todo
@@ -253,6 +253,14 @@ Tant qu'un worker est en pause pour un changement, le dispatcher SHALL NOT réas
 #### Scenario: Annulation explicite d'un changement
 - **WHEN** l'utilisateur désarme de force le changement A alors que son worker est actif
 - **THEN** le worker est annulé sans apparaître comme en pause
+
+#### Scenario: Pause levée par la rétrogradation du changement
+- **WHEN** l'utilisateur rétrograde le changement A vers Ready alors que son worker est en pause, puis le promeut de nouveau vers Todo
+- **THEN** le worker en pause a disparu de la liste des workers du pool dès la rétrogradation, et le dispatcher redistribue A aux ticks suivants sans reprise explicite
+
+#### Scenario: Libération d'une pause sans effet sur les autres workers
+- **WHEN** la pause du changement A est levée par sa rétrogradation alors que le worker du changement B s'exécute
+- **THEN** le worker de B n'est ni interrompu ni modifié, et son identifiant reste inchangé
 
 ### Requirement: Reprise explicite d'un worker en pause
 Le backend SHALL exposer une action de reprise d'un worker en pause, par workspace et par identifiant de worker (`POST /api/workspaces/{id}/pool/workers/{workerId}/resume`). La reprise SHALL retirer le worker de la liste des workers en pause, ce qui rend son changement de nouveau éligible ; le dispatcher SHALL alors le reprendre selon ses règles habituelles en réutilisant la branche et le worktree existants. La reprise SHALL NOT interrompre les autres workers du pool. L'action SHALL retourner une erreur `404` si le workspace est inconnu ou si aucun worker en pause n'a cet identifiant, et `409` si aucun pool n'est actif pour ce workspace.
