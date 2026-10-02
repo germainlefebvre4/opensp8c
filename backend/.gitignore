@@ -2,3 +2,4 @@
 /preferences.json
 /server
 /activity/*.jsonl
+/activity/*

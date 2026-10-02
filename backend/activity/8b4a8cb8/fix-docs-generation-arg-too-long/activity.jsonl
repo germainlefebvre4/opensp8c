@@ -1,9 +1,0 @@
-{"ts":"2026-09-29T15:16:14.833976842Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: working","meta":{"change":"fix-docs-generation-arg-too-long","status":"working","worker_id":1}}
-{"ts":"2026-09-29T15:16:24.419103403Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: testing","meta":{"change":"fix-docs-generation-arg-too-long","status":"testing","worker_id":1}}
-{"ts":"2026-09-29T15:16:24.423291469Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: healing","meta":{"change":"fix-docs-generation-arg-too-long","status":"healing","worker_id":1}}
-{"ts":"2026-09-29T15:17:15.064944626Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: testing","meta":{"change":"fix-docs-generation-arg-too-long","status":"testing","worker_id":1}}
-{"ts":"2026-09-29T15:17:15.069173542Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: healing","meta":{"change":"fix-docs-generation-arg-too-long","status":"healing","worker_id":1}}
-{"ts":"2026-09-29T15:17:32.249095449Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: testing","meta":{"change":"fix-docs-generation-arg-too-long","status":"testing","worker_id":1}}
-{"ts":"2026-09-29T15:17:32.253540417Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: healing","meta":{"change":"fix-docs-generation-arg-too-long","status":"healing","worker_id":1}}
-{"ts":"2026-09-29T15:18:00.289317145Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: testing","meta":{"change":"fix-docs-generation-arg-too-long","status":"testing","worker_id":1}}
-{"ts":"2026-09-29T15:18:00.293177847Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: paused","meta":{"change":"fix-docs-generation-arg-too-long","status":"paused","worker_id":1}}

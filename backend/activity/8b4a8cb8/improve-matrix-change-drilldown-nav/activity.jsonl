@@ -1,2 +1,0 @@
-{"ts":"2026-10-02T21:12:36.266416115Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: working","meta":{"change":"improve-matrix-change-drilldown-nav","status":"working","worker_id":1}}
-{"ts":"2026-10-02T21:12:36.501730034Z","type":"pool.worker_status","category":"pool","summary":"Worker 1: paused","meta":{"change":"improve-matrix-change-drilldown-nav","status":"paused","worker_id":1}}
