@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,14 +71,35 @@ func (m *Manager) publishChangeUpdated(workspaceID, change string) {
 	}
 }
 
+// Element of ApproveResult.Warning.Remaining besides the cleanup elements: the
+// review marker could not be lifted.
+const cleanupMarker = "marker"
+
+// CleanupWarning reports what an approval that merged could not clean up.
+// Remaining is an ordered subset of "worktree", "branch" and "marker".
+type CleanupWarning struct {
+	Message   string
+	Remaining []string
+}
+
+// ApproveResult is the outcome of a successful approval: the target branch and,
+// when the merge happened but the cleanup is incomplete, a warning.
+type ApproveResult struct {
+	Target  string
+	Warning *CleanupWarning
+}
+
 // ApproveReview merges a change in review into the repository's current
 // branch: it integrates and revalidates the target branch when it advanced
 // (plain validation, no agent heal), merges under the workspace merge lock,
 // then removes the worktree and the branch. It does not need the pool to run
 // and runs detached from ctx: a merge that started is never interrupted.
-// It returns the target branch. On refusal or failure nothing is lost: branch,
-// worktree and review marker are kept.
-func (m *Manager) ApproveReview(ctx context.Context, workspaceID, workspacePath, change string) (string, error) {
+// On refusal or failure before the merge nothing is lost: branch, worktree and
+// review marker are kept. Once the merge happened the approval succeeds: the
+// marker is lifted and what could not be removed is reported in the warning.
+// A branch already merged (a previous approval whose marker could not be
+// lifted) is only cleaned up: no integration, validation or merge.
+func (m *Manager) ApproveReview(ctx context.Context, workspaceID, workspacePath, change string) (ApproveResult, error) {
 	ctx = context.WithoutCancel(ctx)
 	lock := m.reviewLock(change)
 	lock.Lock()
@@ -85,12 +107,25 @@ func (m *Manager) ApproveReview(ctx context.Context, workspaceID, workspacePath,
 
 	wt := NewWorktreeController(workspacePath, workspaceID, m.worktreesRoot)
 	if err := m.checkReviewable(wt, change); err != nil {
-		return "", err
+		return ApproveResult{}, err
 	}
+
+	merged, err := wt.IsMerged(change)
+	if err != nil {
+		return ApproveResult{}, fmt.Errorf("impossible de vérifier la fusion de la branche : %w", err)
+	}
+	if merged {
+		// Never delete a branch merged into something else than its base.
+		if err := wt.CheckBase(change); err != nil {
+			return ApproveResult{}, err
+		}
+		return m.finishMerged(wt, workspaceID, change, wt.CurrentBranch(), cleanupMerged(wt, change)), nil
+	}
+
 	// The integration needs a worktree: recreate it from the branch if it vanished.
 	dir, err := wt.Provision(change)
 	if err != nil {
-		return "", fmt.Errorf("impossible de préparer le worktree : %w", err)
+		return ApproveResult{}, fmt.Errorf("impossible de préparer le worktree : %w", err)
 	}
 
 	validate := func() error {
@@ -101,11 +136,42 @@ func (m *Manager) ApproveReview(ctx context.Context, workspaceID, workspacePath,
 		}
 		return &ValidationFailedError{Err: err}
 	}
-	target, merged, err := m.integrateAndMerge(ctx, wt, change, validate)
-	if merged {
-		m.publishChangeUpdated(workspaceID, change)
+	target, mergedNow, err := m.integrateAndMerge(ctx, wt, change, validate)
+	if !mergedNow {
+		return ApproveResult{}, err
 	}
-	return target, err
+	var failed *cleanupFailure
+	var ce *CleanupError
+	if errors.As(err, &ce) {
+		failed = &cleanupFailure{Element: ce.Element, Err: ce.Err}
+	}
+	return m.finishMerged(wt, workspaceID, change, target, failed), nil
+}
+
+// finishMerged completes an approval whose merge is done: it lifts the review
+// marker (the change then derives its status from the merged tasks.md),
+// publishes change_updated and builds the warning for what is left behind.
+func (m *Manager) finishMerged(wt *WorktreeController, workspaceID, change, target string, failed *cleanupFailure) ApproveResult {
+	var remaining []string
+	if failed != nil {
+		log.Printf("[review] %s merged into %s but %s could not be cleaned up: %v\n", change, target, failed.Element, failed.Err)
+		remaining = append(remaining, failed.Element)
+	}
+	if err := wt.ClearReview(change); err != nil {
+		log.Printf("[review] cannot lift the review marker of %s: %v\n", change, err)
+		remaining = append(remaining, cleanupMarker)
+	}
+	m.publishChangeUpdated(workspaceID, change)
+
+	res := ApproveResult{Target: target}
+	if len(remaining) > 0 {
+		res.Warning = &CleanupWarning{
+			Message: fmt.Sprintf("Fusion réussie dans %s mais le nettoyage est incomplet : %s à traiter manuellement",
+				target, strings.Join(remaining, ", ")),
+			Remaining: remaining,
+		}
+	}
+	return res
 }
 
 // RequestCorrection records a user correction for a change in review: one

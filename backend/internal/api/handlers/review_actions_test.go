@@ -87,6 +87,39 @@ func TestApprove_Success(t *testing.T) {
 	}
 }
 
+func TestApprove_SuccessHasNoWarningKey(t *testing.T) {
+	e := newReviewEnv(t, true)
+	rec := e.post(newActionsHandler(t, e).Approve, "add-auth", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "warning") {
+		t.Fatalf("no warning expected: %s", rec.Body)
+	}
+}
+
+func TestApprove_CleanupIncompleteIsAWarning(t *testing.T) {
+	e := newReviewEnv(t, true)
+	// An untracked file makes `git worktree remove` refuse the removal.
+	writeReviewFile(t, e.wt, "junk.txt", "untracked")
+
+	rec := e.post(newActionsHandler(t, e).Approve, "add-auth", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	var got approveResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Target != "main" || got.Warning == nil || got.Warning.Code != "cleanup_incomplete" ||
+		len(got.Warning.Remaining) != 1 || got.Warning.Remaining[0] != "worktree" || got.Warning.Message == "" {
+		t.Fatalf("body = %s", rec.Body)
+	}
+	if has, _ := e.wc.HasReview("add-auth"); has {
+		t.Fatal("review marker must be lifted")
+	}
+}
+
 func TestApprove_Refusals(t *testing.T) {
 	t.Run("not in review", func(t *testing.T) {
 		e := newReviewEnv(t, false)

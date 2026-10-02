@@ -396,6 +396,8 @@ export const getReviewFile = (workspaceId: string, changeName: string, path: str
 
 export interface ApproveResult {
   target: string
+  /** Present when the merge happened but the cleanup is incomplete. */
+  warning?: { code: string; message: string; remaining: string[] }
 }
 
 export const approveReview = (workspaceId: string, changeName: string) =>

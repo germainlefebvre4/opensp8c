@@ -62,7 +62,9 @@ func (e *MergeFailedError) Unwrap() error { return e.Err }
 type CleanupError struct {
 	Target string
 	What   string // "le worktree n'a pas pu être supprimé" | "la branche n'a pas pu être supprimée"
-	Err    error
+	// Element is what was left behind: cleanupWorktree or cleanupBranch.
+	Element string
+	Err     error
 }
 
 func (e *CleanupError) Error() string {
@@ -135,11 +137,42 @@ func (m *Manager) integrateAndMerge(ctx context.Context, wt *WorktreeController,
 		}
 		return target, false, &MergeFailedError{Target: target, Err: err}
 	}
-	if err := wt.Remove(change); err != nil {
-		return target, true, &CleanupError{Target: target, What: "le worktree n'a pas pu être supprimé", Err: err}
-	}
-	if err := wt.DeleteBranch(change); err != nil {
-		return target, true, &CleanupError{Target: target, What: "la branche n'a pas pu être supprimée", Err: err}
+	if failed := cleanupMerged(wt, change); failed != nil {
+		return target, true, failed.asError(target)
 	}
 	return target, true, nil
+}
+
+// Elements left behind by a cleanup that failed after a successful merge.
+const (
+	cleanupWorktree = "worktree"
+	cleanupBranch   = "branch"
+)
+
+// cleanupFailure describes what cleanupMerged could not remove. The branch is
+// only attempted once the worktree is gone, so at most one of the two is set.
+type cleanupFailure struct {
+	Element string // cleanupWorktree | cleanupBranch
+	Err     error
+}
+
+// asError turns the failure into the CleanupError of the full-autonomy worker.
+func (f *cleanupFailure) asError(target string) *CleanupError {
+	what := "la branche n'a pas pu être supprimée"
+	if f.Element == cleanupWorktree {
+		what = "le worktree n'a pas pu être supprimé"
+	}
+	return &CleanupError{Target: target, What: what, Element: f.Element, Err: f.Err}
+}
+
+// cleanupMerged removes the worktree then the branch of a merged change. It
+// stops at the first failure and returns nil when everything was removed.
+func cleanupMerged(wt *WorktreeController, change string) *cleanupFailure {
+	if err := wt.Remove(change); err != nil {
+		return &cleanupFailure{Element: cleanupWorktree, Err: err}
+	}
+	if err := wt.DeleteBranch(change); err != nil {
+		return &cleanupFailure{Element: cleanupBranch, Err: err}
+	}
+	return nil
 }

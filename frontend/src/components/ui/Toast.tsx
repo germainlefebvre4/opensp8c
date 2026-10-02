@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react'
 import * as ToastPrimitive from '@radix-ui/react-toast'
-import { CheckCircle2, AlertCircle } from 'lucide-react'
+import { CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react'
 import { ToastContext, type ToastOptions } from '../../lib/toastContext'
 
 interface ToastEntry extends ToastOptions {
@@ -28,12 +28,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map(t => (
           <ToastPrimitive.Root
             key={t.id}
-            duration={4000}
+            duration={t.duration ?? 4000}
             onOpenChange={open => { if (!open) dismiss(t.id) }}
             className="bg-white rounded-lg shadow-xl border border-slate-200 px-4 py-3 flex items-center gap-2"
           >
             {t.variant === 'error' ? (
               <AlertCircle size={16} className="text-red-500 shrink-0" />
+            ) : t.variant === 'warning' ? (
+              <AlertTriangle size={16} className="text-amber-500 shrink-0" />
             ) : (
               <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
             )}

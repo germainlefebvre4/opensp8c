@@ -91,7 +91,13 @@
     "confirm": "Approuver & Fusionner",
     "merging": "Fusion en cours…",
     "cancel": "Annuler",
-    "output": "Sortie de validation"
+    "output": "Sortie de validation",
+    "cleanupWarning": "« {{name}} » est fusionné, mais il reste à nettoyer à la main : {{items}}.",
+    "cleanupItems": {
+      "worktree": "le worktree",
+      "branch": "la branche",
+      "marker": "le marqueur de revue"
+    }
   },
   "reviewErrors": {
     "not_in_review": "Ce change n'est plus en revue.",

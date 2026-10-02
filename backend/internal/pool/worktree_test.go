@@ -496,6 +496,39 @@ func TestTargetAheadAndIntegrate(t *testing.T) {
 	}
 }
 
+func TestIsMerged(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+
+	if _, err := wc.IsMerged("absent"); err == nil {
+		t.Fatal("a missing branch must be an error")
+	}
+
+	path, _ := wc.Provision("done")
+	commitFile(t, path, "feat.txt", "f")
+	if merged, err := wc.IsMerged("done"); err != nil || merged {
+		t.Fatalf("unmerged branch: merged=%v err=%v", merged, err)
+	}
+	if _, err := wc.MergeInto("done"); err != nil {
+		t.Fatal(err)
+	}
+	if merged, err := wc.IsMerged("done"); err != nil || !merged {
+		t.Fatalf("merged branch: merged=%v err=%v", merged, err)
+	}
+
+	// A commit added to the branch after the merge is not merged.
+	commitFile(t, path, "more.txt", "m")
+	if merged, err := wc.IsMerged("done"); err != nil || merged {
+		t.Fatalf("branch with a new commit: merged=%v err=%v", merged, err)
+	}
+
+	// Detached HEAD: compared against HEAD.
+	gitIn(t, repo, "checkout", "-q", "--detach")
+	if merged, err := wc.IsMerged("done"); err != nil || merged {
+		t.Fatalf("detached HEAD: merged=%v err=%v", merged, err)
+	}
+}
+
 func TestTargetAheadFalseAfterManualIntegration(t *testing.T) {
 	repo := newTestRepo(t)
 	wc := newTestWC(t, repo)

@@ -130,6 +130,18 @@ describe('KanbanPage drops from To Review', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('closes the dialog without error on a success carrying a cleanup warning', async () => {
+    vi.mocked(approveReview).mockResolvedValue({
+      target: 'main', warning: { code: 'cleanup_incomplete', message: 'm', remaining: ['worktree'] },
+    })
+    renderPage()
+    await drop('add-auth', 'done')
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewApprove.confirm }))
+    await waitFor(() => expect(approveReview).toHaveBeenCalledWith('ws1', 'add-auth'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('keeps the card in review and shows the error when the approval fails', async () => {
     vi.mocked(approveReview).mockRejectedValue(new ApiError('c', 409, 'integration_conflict'))
     renderPage()

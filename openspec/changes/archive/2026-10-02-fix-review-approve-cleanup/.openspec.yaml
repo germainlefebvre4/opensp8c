@@ -1,0 +1,19 @@
+schema: spec-driven
+created: "2026-10-02"
+tags:
+    type: []
+    complexity: 3
+    components:
+        - change-review-actions
+        - agent-pool-orchestrator
+        - api-router
+        - kanban-board
+        - change-review-state
+        - developer-tooling
+    agent_specialization:
+        - backend
+        - frontend
+        - documentation
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-02"

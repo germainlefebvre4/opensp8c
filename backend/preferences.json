@@ -55,6 +55,15 @@
       "createdAt": "2026-10-01T15:46:34Z",
       "lastActivityAt": "2026-10-01T15:50:42Z",
       "claudeSessionId": "f1b37442-a7ac-456e-813d-e53f8586d9d7"
+    },
+    {
+      "id": "bb1f175463c1db39e60cd50864d83666",
+      "workspaceId": "8b4a8cb8",
+      "name": "specs-doc-last-generated-timestamp",
+      "sessionId": "bb1f175463c1db39e60cd50864d83666",
+      "createdAt": "2026-10-02T21:11:47Z",
+      "lastActivityAt": "2026-10-02T21:11:47Z",
+      "claudeSessionId": "78bc5226-0f70-45cb-bca4-254f4537ee2c"
     }
   ],
   "agentEnv": {

@@ -91,7 +91,13 @@
     "confirm": "Approve & Merge",
     "merging": "Merging…",
     "cancel": "Cancel",
-    "output": "Validation output"
+    "output": "Validation output",
+    "cleanupWarning": "\"{{name}}\" is merged, but some cleanup is left to do by hand: {{items}}.",
+    "cleanupItems": {
+      "worktree": "the worktree",
+      "branch": "the branch",
+      "marker": "the review marker"
+    }
   },
   "reviewErrors": {
     "not_in_review": "This change is no longer in review.",

@@ -40,7 +40,16 @@ Commit the change (`git add openspec/changes/<change> && git commit`), then resu
 When validation passes and every task of `tasks.md` is checked, the worker commits the agent's work in `feature/<change>`, then:
 
 * `full-autonomy`: merges the branch into the repository's current branch and only then removes the worktree and the branch. On a conflict or an already running merge, the merge is aborted (your own merge is never touched), the branch and the worktree are kept and the worker pauses with the reason.
-* `hitl-review`: keeps the branch and the worktree and does not dispatch the change again until the pool is restarted.
+* `hitl-review`: keeps the branch and the worktree and puts the change in To Review. The change is not dispatched again and stays in To Review, even after the pool or the backend restarts, until you act on it (see below).
+
+### Reviewing a change
+
+A change in To Review has a Review tab in its detail panel, listing the files and diff of `feature/<change>`. Two actions are available, from the Actions tab or by dragging the card:
+
+* **Approve & Merge** (drop on Done): after a confirmation, merges the branch into the repository's current branch (integrating and revalidating first if that branch advanced), then removes the worktree and the branch. It works with the pool stopped.
+* **Request a correction** (drop on In Progress): adds your feedback as an unchecked task in a `## Corrections` section of the change's `tasks.md`, commits it in `feature/<change>` and puts the change back in the queue.
+
+If the merge succeeded but the worktree or the branch could not be removed (for example an untracked file left in the worktree), the change still moves to Done and a warning toast lists what is left to clean by hand: remove the worktree with `git worktree remove <path>` (add `--force` to discard its untracked files), then delete the branch with `git branch -d feature/<change>`. A branch left behind would be reused if a change with the same name is created again.
 
 A worker also pauses, with a readable reason, when the agent ends a turn with an error result, stays silent for 30 minutes, or when the validation command runs for more than 20 minutes. Agent and validation processes run in their own process group, which is killed as a whole on cancellation, pool stop and server shutdown.
 

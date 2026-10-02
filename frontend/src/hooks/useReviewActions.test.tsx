@@ -1,10 +1,26 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeAll, beforeEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
 import { useApproveReview, useRequestCorrection } from './useReviewActions'
 import { ApiError, approveReview, requestCorrection, reviewErrorKey } from '../lib/api'
+
+import enDialogs from '../locales/en/dialogs.json'
+import frDialogs from '../locales/fr/dialogs.json'
+
+const toast = vi.fn()
+vi.mock('./useToast', () => ({ useToast: () => ({ toast }) }))
+
+beforeAll(async () => {
+  await i18n.use(initReactI18next).init({
+    lng: 'en', fallbackLng: 'en', ns: ['dialogs'], defaultNS: 'dialogs',
+    resources: { en: { dialogs: enDialogs }, fr: { dialogs: frDialogs } },
+    interpolation: { escapeValue: false },
+  })
+})
 
 vi.mock('../lib/api', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
@@ -32,6 +48,35 @@ describe('useApproveReview', () => {
     expect(approveReview).toHaveBeenCalledWith('ws1', 'c')
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['changes', 'ws1'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['change-detail', 'ws1', 'c'] })
+  })
+
+  it('shows no toast when the cleanup is complete', async () => {
+    vi.mocked(approveReview).mockResolvedValue({ target: 'main' })
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useApproveReview('ws1'), { wrapper })
+    await act(async () => { await result.current.mutateAsync('c') })
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['en', 'is merged, but some cleanup is left to do by hand: the worktree, the review marker.'],
+    ['fr', 'est fusionné, mais il reste à nettoyer à la main : le worktree, le marqueur de revue.'],
+  ])('shows a 10 s warning toast with the remaining items (%s)', async (lng, expected) => {
+    await i18n.changeLanguage(lng)
+    vi.mocked(approveReview).mockResolvedValue({
+      target: 'main', warning: { code: 'cleanup_incomplete', message: 'm', remaining: ['worktree', 'marker'] },
+    })
+    const { invalidate, wrapper } = setup()
+    const { result } = renderHook(() => useApproveReview('ws1'), { wrapper })
+    await act(async () => { await result.current.mutateAsync('c') })
+    expect(toast).toHaveBeenCalledTimes(1)
+    const arg = toast.mock.calls[0][0]
+    expect(arg.variant).toBe('warning')
+    expect(arg.duration).toBe(10_000)
+    expect(arg.title).toContain('c')
+    expect(arg.title).toContain(expected)
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['changes', 'ws1'] })
+    await i18n.changeLanguage('en')
   })
 
   it.each([

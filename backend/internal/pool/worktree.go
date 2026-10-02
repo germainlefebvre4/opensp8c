@@ -466,6 +466,22 @@ func (wc *WorktreeController) TargetAhead(changeName string) (bool, error) {
 	}
 }
 
+// IsMerged reports whether feature/<change> is already contained in the
+// repository's current branch. A missing branch is an error.
+func (wc *WorktreeController) IsMerged(changeName string) (bool, error) {
+	_, code, err := wc.runGitCode("merge-base", "--is-ancestor", "feature/"+changeName, wc.CurrentBranch())
+	switch {
+	case err != nil:
+		return false, err
+	case code == 0:
+		return true, nil
+	case code == 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("git merge-base --is-ancestor exited with status %d", code)
+	}
+}
+
 // IntegrateTarget merges the target branch into the change branch, inside the
 // worktree (which must be clean). A failed merge is aborted so the branch and
 // the worktree are left as they were.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -51,11 +52,14 @@ func assertUntouched(t *testing.T, m *Manager, repo, change string) {
 
 func TestApprove_MergesWithPoolStopped(t *testing.T) {
 	m, repo, counter := reviewFixture(t, "ok", "- [x] done\n", "true")
-	target, err := m.ApproveReview(context.Background(), "ws1", repo, "ok")
+	res, err := m.ApproveReview(context.Background(), "ws1", repo, "ok")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target == "" || !fileIn(repo, "a.txt") || branchExistsIn(t, repo, "feature/ok") {
+	if res.Warning != nil {
+		t.Fatalf("unexpected warning: %+v", res.Warning)
+	}
+	if target := res.Target; target == "" || !fileIn(repo, "a.txt") || branchExistsIn(t, repo, "feature/ok") {
 		t.Fatalf("expected a merge into %q and the branch deleted", target)
 	}
 	if n := countRuns(t, counter); n != 1 {
@@ -433,5 +437,180 @@ func TestCorrectionFlow_UncheckedCorrectionPausesWorker(t *testing.T) {
 	m.mu.Unlock()
 	if !strings.Contains(reason, "tâches restantes incomplètes") {
 		t.Fatalf("paused reason = %q", reason)
+	}
+}
+
+// junkInWorktree leaves an untracked file in the worktree of change, which
+// makes `git worktree remove` refuse the removal.
+func junkInWorktree(t *testing.T, m *Manager, repo, change string) {
+	t.Helper()
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	writeFile(t, filepath.Join(wt.resolvePath(change), "junk.txt"), "untracked")
+}
+
+func changeStatus(t *testing.T, repo, change string) string {
+	t.Helper()
+	changes, err := openspec.ListChanges(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range changes {
+		if c.Name == change {
+			return c.KanbanStatus
+		}
+	}
+	t.Fatalf("change %s not listed", change)
+	return ""
+}
+
+func published(bc *mockBroadcaster, change string) bool {
+	for _, c := range bc.snapshot() {
+		if c.ev.Type == "change_updated" && c.ev.Name == change {
+			return true
+		}
+	}
+	return false
+}
+
+func TestApprove_WorktreeCleanupFailureIsAWarning(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "dirty", "- [x] done\n", "true")
+	bc := &mockBroadcaster{}
+	m.broadcaster = bc
+	junkInWorktree(t, m, repo, "dirty")
+
+	res, err := m.ApproveReview(context.Background(), "ws1", repo, "dirty")
+	if err != nil {
+		t.Fatalf("a merged change must not fail: %v", err)
+	}
+	if res.Target == "" || res.Warning == nil || !reflect.DeepEqual(res.Warning.Remaining, []string{"worktree"}) {
+		t.Fatalf("result = %+v, want a warning remaining [worktree]", res)
+	}
+	if !fileIn(repo, "a.txt") {
+		t.Fatal("the merge must be on the target")
+	}
+	if inReview(t, m, repo, "dirty") {
+		t.Fatal("marker must be lifted")
+	}
+	if got := changeStatus(t, repo, "dirty"); got == "to-review" {
+		t.Fatalf("status = %s, the change must leave to-review", got)
+	}
+	if !published(bc, "dirty") {
+		t.Fatal("change_updated must be published")
+	}
+}
+
+// mergedFixture is a change in review whose branch was merged by hand, leaving
+// its marker (an approval whose marker could not be lifted).
+func mergedFixture(t *testing.T, change string) (*Manager, string, string) {
+	t.Helper()
+	m, repo, counter := reviewFixture(t, change, "- [x] done\n", "true")
+	setValidation(t, m, fmt.Sprintf("echo r >> %s; false", counter))
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	if _, err := wt.MergeInto(change); err != nil {
+		t.Fatal(err)
+	}
+	return m, repo, counter
+}
+
+func TestApprove_AlreadyMergedOnlyCleansUp(t *testing.T) {
+	m, repo, counter := mergedFixture(t, "again")
+	before := countRuns(t, counter)
+	bc := &mockBroadcaster{}
+	m.broadcaster = bc
+
+	res, err := m.ApproveReview(context.Background(), "ws1", repo, "again")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Warning != nil || res.Target != gitIn(t, repo, "symbolic-ref", "--short", "HEAD") {
+		t.Fatalf("result = %+v", res)
+	}
+	if n := countRuns(t, counter); n != before {
+		t.Fatalf("validation ran %d time(s) on an already merged branch", n-before)
+	}
+	if branchExistsIn(t, repo, "feature/again") || inReview(t, m, repo, "again") {
+		t.Fatal("branch and marker must be gone")
+	}
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	if _, err := os.Stat(wt.resolvePath("again")); !os.IsNotExist(err) {
+		t.Fatal("worktree must be removed")
+	}
+	if !published(bc, "again") {
+		t.Fatal("change_updated must be published")
+	}
+}
+
+func TestApprove_AlreadyMergedStillChecksBase(t *testing.T) {
+	m, repo, _ := mergedFixture(t, "other-base")
+	gitIn(t, repo, "checkout", "-q", "-b", "other")
+
+	_, err := m.ApproveReview(context.Background(), "ws1", repo, "other-base")
+	if !errors.Is(err, ErrBaseBranchMismatch) {
+		t.Fatalf("err = %v, want base mismatch", err)
+	}
+	if !inReview(t, m, repo, "other-base") || !branchExistsIn(t, repo, "feature/other-base") {
+		t.Fatal("branch and marker must be kept")
+	}
+}
+
+func TestCleanupMerged(t *testing.T) {
+	cases := []struct {
+		name   string
+		break_ func(t *testing.T, repo string, wc *WorktreeController)
+		want   string // "" when everything is removed
+	}{
+		{"all removed", func(*testing.T, string, *WorktreeController) {}, ""},
+		{"untracked file in worktree", func(t *testing.T, _ string, wc *WorktreeController) {
+			writeFile(t, filepath.Join(wc.resolvePath("c"), "junk.txt"), "x")
+		}, cleanupWorktree},
+		{"branch ref locked", func(t *testing.T, repo string, _ *WorktreeController) {
+			writeFile(t, filepath.Join(repo, ".git", "refs", "heads", "feature", "c.lock"), "")
+		}, cleanupBranch},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newTestRepo(t)
+			wc := newTestWC(t, repo)
+			path, _ := wc.Provision("c")
+			commitFile(t, path, "feat.txt", "f")
+			if _, err := wc.MergeInto("c"); err != nil {
+				t.Fatal(err)
+			}
+			tc.break_(t, repo, wc)
+
+			failed := cleanupMerged(wc, "c")
+			switch {
+			case tc.want == "" && failed != nil:
+				t.Fatalf("unexpected failure: %+v", failed)
+			case tc.want != "" && (failed == nil || failed.Element != tc.want):
+				t.Fatalf("failure = %+v, want %s", failed, tc.want)
+			}
+		})
+	}
+}
+
+func TestFinishMerged_WarningRemaining(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("c"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.MarkReview("c"); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{}
+
+	if res := m.finishMerged(wc, "ws1", "c", "main", nil); res.Warning != nil {
+		t.Fatalf("no failure, warning = %+v", res.Warning)
+	}
+
+	// Worktree failure plus a marker that cannot be lifted (config locked).
+	writeFile(t, filepath.Join(repo, ".git", "config.lock"), "")
+	res := m.finishMerged(wc, "ws1", "c", "main", &cleanupFailure{Element: cleanupWorktree, Err: errors.New("boom")})
+	if res.Warning == nil || !reflect.DeepEqual(res.Warning.Remaining, []string{"worktree", "marker"}) {
+		t.Fatalf("warning = %+v, want remaining [worktree marker]", res.Warning)
+	}
+	if !strings.Contains(res.Warning.Message, "worktree, marker") {
+		t.Fatalf("message = %q", res.Warning.Message)
 	}
 }

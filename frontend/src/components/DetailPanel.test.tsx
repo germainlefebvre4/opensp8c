@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { DetailPanel } from './DetailPanel'
@@ -19,7 +19,13 @@ vi.mock('../hooks/useReviewActions', () => ({
   useApproveReview: vi.fn(),
   useRequestCorrection: vi.fn(),
 }))
-vi.mock('./ApproveDialog', () => ({ ApproveDialog: () => <div data-testid="approve-dialog" /> }))
+vi.mock('./ApproveDialog', () => ({
+  ApproveDialog: ({ onConfirm }: { onConfirm: () => Promise<unknown> }) => (
+    <div data-testid="approve-dialog">
+      <button onClick={() => { onConfirm().catch(() => {}) }}>mock-confirm</button>
+    </div>
+  ),
+}))
 vi.mock('./CorrectionDialog', () => ({ CorrectionDialog: () => <div data-testid="correction-dialog" /> }))
 vi.mock('./ReviewTab', () => ({ ReviewTab: () => <div data-testid="review-tab" /> }))
 vi.mock('./Markdown', () => ({ Markdown: ({ children }: { children: string }) => <div>{children}</div> }))
@@ -102,6 +108,21 @@ describe('DetailPanel review actions', () => {
     fireEvent.click(screen.getByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge }))
     expect(screen.getByTestId('approve-dialog')).toBeTruthy()
     expect(screen.queryByTestId('correction-dialog')).toBeNull()
+  })
+
+  it('closes the approval dialog without any error on a success carrying a cleanup warning', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      target: 'main', warning: { code: 'cleanup_incomplete', message: 'm', remaining: ['worktree'] },
+    })
+    vi.mocked(useApproveReview).mockReturnValue({ mutateAsync, isPending: false } as unknown as ReturnType<typeof useApproveReview>)
+    mockStatus('to-review')
+    render(panel())
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock-confirm' }))
+    await waitFor(() => expect(screen.queryByTestId('approve-dialog')).toBeNull())
+    expect(mutateAsync).toHaveBeenCalledWith('add-auth')
+    expect(screen.queryByText(/reviewErrors/)).toBeNull()
   })
 
   it('opens the correction dialog from "Request correction"', () => {

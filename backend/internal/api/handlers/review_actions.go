@@ -72,15 +72,36 @@ func writeRefusal(w http.ResponseWriter, err error) bool {
 	return true
 }
 
-// Approve answers POST .../review/approve: 200 {"target"} on success.
+// approveWarning is the "warning" member of a successful approval whose
+// cleanup is incomplete.
+type approveWarning struct {
+	Code      string   `json:"code"`
+	Message   string   `json:"message"`
+	Remaining []string `json:"remaining"`
+}
+
+// approveResponse is the 200 body of an approval; warning is omitted when the
+// cleanup was complete.
+type approveResponse struct {
+	Target  string          `json:"target"`
+	Warning *approveWarning `json:"warning,omitempty"`
+}
+
+// Approve answers POST .../review/approve: 200 {"target"} on success, with a
+// "warning" (code cleanup_incomplete) when the merge happened but the cleanup
+// did not complete.
 func (h *ReviewActionsHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	id, path, name, ok := h.resolve(w, r)
 	if !ok {
 		return
 	}
-	target, err := h.poolReg.For(id).ApproveReview(r.Context(), id, path, name)
+	res, err := h.poolReg.For(id).ApproveReview(r.Context(), id, path, name)
 	if err == nil {
-		writeReviewAction(w, http.StatusOK, map[string]string{"target": target})
+		body := approveResponse{Target: res.Target}
+		if res.Warning != nil {
+			body.Warning = &approveWarning{Code: "cleanup_incomplete", Message: res.Warning.Message, Remaining: res.Warning.Remaining}
+		}
+		writeReviewAction(w, http.StatusOK, body)
 		return
 	}
 	status, body := approveFailure(err)
