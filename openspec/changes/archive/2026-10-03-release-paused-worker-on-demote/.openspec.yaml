@@ -1,2 +1,18 @@
 schema: spec-driven
-created: 2026-10-02
+created: "2026-10-02"
+tags:
+    type: []
+    complexity: 3
+    components:
+        - agent-pool-orchestrator
+        - kanban-ready-column
+        - kanban-board
+        - kanban-drag-drop
+        - api-router
+        - agent-pool-status-visibility
+    agent_specialization:
+        - backend
+        - frontend
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-03"

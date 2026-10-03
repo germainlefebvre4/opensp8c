@@ -114,14 +114,25 @@ describe('SettingsPage', () => {
   it('shows the four sub-tabs and the workspace name', () => {
     renderPage('a')
     for (const label of ['Agent Pool', 'Columns', 'Environment', 'Specializations']) {
-      expect(screen.getByRole('button', { name: label })).toBeTruthy()
+      expect(screen.getByRole('tab', { name: label })).toBeTruthy()
     }
     expect(screen.getByText('Workspace: Alpha')).toBeTruthy()
   })
 
+  it('has no page title and pins the workspace name at the end of the bar', () => {
+    renderPage('a')
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    expect(screen.getByTestId('subtabs-trailing').textContent).toBe('Workspace: Alpha')
+  })
+
+  it.each(['/settings?workspace=a', '/settings?workspace=a&tab=nope'])('defaults to Agent Pool for %s', url => {
+    renderPage('a', url)
+    expect(screen.getByRole('tab', { name: 'Agent Pool' }).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('carries the sub-tab in the URL while keeping the workspace', () => {
     renderPage('a')
-    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Columns' }))
     const loc = screen.getByTestId('loc').textContent
     expect(loc).toContain('workspace=a')
     expect(loc).toContain('tab=columns')

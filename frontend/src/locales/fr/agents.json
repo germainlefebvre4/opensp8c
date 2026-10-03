@@ -45,5 +45,9 @@
     "runSelector": "Runs de ce change",
     "runOption": "{{date}} - {{outcome}}"
   },
-  "selectHint": "Cliquez sur un worker ou un run pour voir ce que l'agent a fait."
+  "selectHint": "Cliquez sur un worker ou un run pour voir ce que l'agent a fait.",
+  "tabs": {
+    "workers": "Workers",
+    "runs": "Runs"
+  }
 }

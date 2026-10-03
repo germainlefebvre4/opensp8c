@@ -1,2 +1,18 @@
 schema: spec-driven
-created: 2026-10-02
+created: "2026-10-02"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 2
+    components:
+        - spec-documentation-view
+        - api-router
+        - developer-tooling
+    agent_specialization:
+        - backend
+        - frontend
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-03"
+launched: false
