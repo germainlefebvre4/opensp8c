@@ -57,6 +57,10 @@
     "workerPausedBadge": "paused",
     "workerPausedTooltip": "The worker is blocked in pause on this change: demoting to Ready releases it",
     "workerActiveTooltip": "An Agent Pool worker is currently assigned to this change",
-    "stopWorkerTooltip": "Interrupt worker and demote to Ready"
+    "stopWorkerTooltip": "Interrupt worker and demote to Ready",
+    "resumeTooltip": "Resume the worker (the agent runs again on the remaining tasks)",
+    "resumeFinalizeTooltip": "Resume and finalize without running the agent",
+    "resumeFinalizeRemaining_one": "{{count}} task left to check",
+    "resumeFinalizeRemaining_other": "{{count}} tasks left to check"
   }
 }

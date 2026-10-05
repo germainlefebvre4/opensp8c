@@ -4,23 +4,44 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/go-chi/chi/v5"
 )
 
 type TaskHandler struct {
 	ws       *WorkspaceHandler
 	actStore *activity.Store
+	poolReg  *pool.Registry
 }
 
-func NewTaskHandler(ws *WorkspaceHandler, actStore *activity.Store) *TaskHandler {
+func NewTaskHandler(ws *WorkspaceHandler, actStore *activity.Store, poolReg *pool.Registry) *TaskHandler {
 	return &TaskHandler{
 		ws:       ws,
 		actStore: actStore,
+		poolReg:  poolReg,
 	}
+}
+
+// toggleRoot returns the root whose openspec/changes/<name>/tasks.md a toggle
+// must edit: the worktree of the pool worker holding the change (active or
+// paused) when that worktree has a usable task list, the workspace repository
+// otherwise. It mirrors the read side (openspec.ApplyWorktreeProgress), so the
+// index the client computed on the displayed list targets the same file.
+func (h *TaskHandler) toggleRoot(workspaceID, workspacePath, change string) string {
+	hw, held := activeWorkerChanges(h.poolReg, workspaceID)[change]
+	if !held || hw.WorktreePath == "" {
+		return workspacePath
+	}
+	tasksPath := filepath.Join(hw.WorktreePath, "openspec", "changes", change, "tasks.md")
+	if _, total := openspec.ParseTaskProgress(tasksPath); total == 0 {
+		return workspacePath
+	}
+	return hw.WorktreePath
 }
 
 func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +61,7 @@ func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskText, done, err := openspec.ToggleTask(path, name, index)
+	taskText, done, err := openspec.ToggleTask(h.toggleRoot(id, path, name), name, index)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.Error(w, "task not found", http.StatusNotFound)

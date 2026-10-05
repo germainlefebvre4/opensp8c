@@ -73,7 +73,10 @@
       "idleWorkers_other": "{{count}} workers disponibles",
       "noWorkers": "Aucun worker n'est actuellement assigné à un change.",
       "stop": "Arrêter le Pool",
-      "resume": "Reprendre"
+      "resume": "Reprendre",
+      "resumeFinalize": "Reprendre en finalisant",
+      "resumeFinalizeRemaining_one": "Il reste {{count}} tâche à cocher",
+      "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher"
     }
   },
   "reviewCorrection": {

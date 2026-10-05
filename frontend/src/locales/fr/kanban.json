@@ -57,6 +57,10 @@
     "workerPausedBadge": "en pause",
     "workerPausedTooltip": "Le worker est bloqué en pause sur ce change : le rétrograder vers Ready le libère",
     "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change",
-    "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready"
+    "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready",
+    "resumeTooltip": "Reprendre le worker (l'agent retravaille les tâches restantes)",
+    "resumeFinalizeTooltip": "Reprendre en finalisant, sans relancer l'agent",
+    "resumeFinalizeRemaining_one": "Il reste {{count}} tâche à cocher",
+    "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher"
   }
 }

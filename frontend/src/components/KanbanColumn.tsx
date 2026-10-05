@@ -16,6 +16,8 @@ interface Props {
   onNew?: () => void
   onDeleteGhost?: (ghostId: string) => void
   onStopWorker?: (change: Change) => void
+  onResumeWorker?: (change: Change, finalizeOnly: boolean) => void
+  resumingWorkerIds?: ReadonlySet<number>
   maxVisible?: number
   collapsible?: boolean
   className?: string
@@ -34,7 +36,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
@@ -118,6 +120,8 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
                   onDelete={onDeleteGhost}
                   associatedGhostId={associatedGhost?.ghost_id}
                   onStopWorker={onStopWorker}
+                  onResumeWorker={onResumeWorker}
+                  resumingWorkerIds={resumingWorkerIds}
                 />
               )
             })}

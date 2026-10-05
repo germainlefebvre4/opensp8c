@@ -53,6 +53,9 @@ type Worker struct {
 	// runLog journals the worker's run; only the worker's own goroutine
 	// dereferences it. Nil when no conversation store is configured.
 	runLog *poolRunLog
+	// finalizeOnly is set by a "resume and finalize" request: the worker starts
+	// no agent and only validates, commits and finalizes the worktree's work.
+	finalizeOnly bool
 	// procCancel terminates the worker's agent process group (set by runWorker).
 	procCancel context.CancelFunc
 	// done is closed by runWorker as its very last act, once the worker has

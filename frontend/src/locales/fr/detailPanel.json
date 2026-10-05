@@ -101,5 +101,12 @@
     "fileBinary": "Ce fichier ne peut pas être rendu (binaire).",
     "lastRun": "Dernier run",
     "openRun": "Ouvrir le run"
+  },
+  "pausedBanner": {
+    "title": "Worker en pause",
+    "resume": "Reprendre",
+    "resumeFinalize": "Reprendre en finalisant",
+    "remaining_one": "Il reste {{count}} tâche à cocher",
+    "remaining_other": "Il reste {{count}} tâches à cocher"
   }
 }

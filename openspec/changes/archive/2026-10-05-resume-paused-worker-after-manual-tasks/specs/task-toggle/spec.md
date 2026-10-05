@@ -1,27 +1,6 @@
-## Purpose
+# Spec Delta
 
-TBD — capability introduced by the `ui-task-completion` change.
-
-## Requirements
-
-### Requirement: Toggle de l'état d'une tâche via l'API
-Le backend SHALL exposer un endpoint `PATCH /api/workspaces/{workspaceId}/changes/{changeName}/tasks/{taskIndex}` qui inverse l'état d'une tâche dans `tasks.md` (de `[ ]` à `[x]` ou inversement).
-
-#### Scenario: Toggle d'une tâche non complétée
-- **WHEN** un PATCH est envoyé sur l'index d'une tâche dont l'état est `[ ]`
-- **THEN** la ligne correspondante dans `tasks.md` est mise à jour en `[x]` et le serveur retourne 200
-
-#### Scenario: Toggle d'une tâche complétée
-- **WHEN** un PATCH est envoyé sur l'index d'une tâche dont l'état est `[x]`
-- **THEN** la ligne correspondante dans `tasks.md` est mise à jour en `[ ]` et le serveur retourne 200
-
-#### Scenario: Index hors bornes
-- **WHEN** un PATCH est envoyé avec un index supérieur ou égal au nombre de tâches
-- **THEN** le serveur retourne 404
-
-#### Scenario: Change sans tasks.md
-- **WHEN** un PATCH est envoyé pour un change dont `tasks.md` n'existe pas
-- **THEN** le serveur retourne 404
+## ADDED Requirements
 
 ### Requirement: Cible du toggle lorsqu'un worker tient le change
 Lorsqu'un worker du pool (actif ou en pause) tient le change visé et que le `tasks.md` de son worktree existe et contient au moins une tâche, `PATCH /api/workspaces/{workspaceId}/changes/{changeName}/tasks/{taskIndex}` SHALL inverser la tâche dans le `tasks.md` du **worktree** du worker et SHALL NOT modifier le `tasks.md` du dépôt principal. L'index SHALL désigner la même tâche que dans la liste renvoyée par `GET /api/workspaces/{id}/changes/{name}` pour ce change. Lorsqu'aucun worker ne tient le change, que son worktree n'est pas encore provisionné ou que le `tasks.md` du worktree est absent ou sans tâche, le toggle SHALL s'appliquer au `tasks.md` du dépôt principal, comme avant.

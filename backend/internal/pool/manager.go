@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -23,13 +24,17 @@ type Broadcaster interface {
 
 // Manager orchestrates the agent pool.
 type Manager struct {
-	mu               sync.Mutex
-	workspaceID      string
-	workspaceName    string
-	workspacePath    string
-	config           AgentPoolConfig
-	activeWorkers    map[int]*Worker
-	pausedWorkers    map[int]*Worker
+	mu            sync.Mutex
+	workspaceID   string
+	workspaceName string
+	workspacePath string
+	config        AgentPoolConfig
+	activeWorkers map[int]*Worker
+	pausedWorkers map[int]*Worker
+	// finalizeChanges holds the changes whose pause was lifted by a "resume and
+	// finalize" request the dispatcher has not consumed yet; startWorker hands
+	// the intention to the new worker. In memory only, like the pauses.
+	finalizeChanges  map[string]bool
 	lastWorkerStatus map[int]WorkerStatus
 	cancelLoop       context.CancelFunc
 	isRunning        bool
@@ -68,6 +73,7 @@ func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *pre
 	return &Manager{
 		activeWorkers:    make(map[int]*Worker),
 		pausedWorkers:    make(map[int]*Worker),
+		finalizeChanges:  make(map[string]bool),
 		worktreesRoot:    DefaultWorktreesRoot(),
 		lastWorkerStatus: make(map[int]WorkerStatus),
 		broadcaster:      broadcaster,
@@ -113,6 +119,7 @@ func (m *Manager) Start(cfg AgentPoolConfig, workspaceID, workspaceName, workspa
 	}
 
 	m.pausedWorkers = make(map[int]*Worker)
+	m.finalizeChanges = make(map[string]bool)
 
 	m.config = cfg
 	m.workspaceID = workspaceID
@@ -171,6 +178,7 @@ func (m *Manager) Stop() {
 	}
 	m.activeWorkers = make(map[int]*Worker)
 	m.pausedWorkers = make(map[int]*Worker)
+	m.finalizeChanges = make(map[string]bool)
 	m.isRunning = false
 
 	m.broadcastLocked()
@@ -185,17 +193,49 @@ var (
 	ErrWorkerNotPaused = errors.New("worker is not paused")
 )
 
+// ErrTasksIncomplete is returned by ResumeWorker(finalizeOnly) when the
+// worktree's tasks.md is not fully checked: Total is 0 when the list is absent
+// or empty, Remaining counts the unchecked tasks otherwise.
+type ErrTasksIncomplete struct {
+	Remaining int
+	Total     int
+}
+
+func (e *ErrTasksIncomplete) Error() string {
+	if e.Total == 0 {
+		return "la liste des tâches (tasks.md) du worktree est absente ou vide"
+	}
+	if e.Remaining == 1 {
+		return "il reste 1 tâche non cochée dans tasks.md"
+	}
+	return fmt.Sprintf("il reste %d tâches non cochées dans tasks.md", e.Remaining)
+}
+
 // ResumeWorker lifts the pause of a worker: its change becomes eligible again
 // and the next tick redistributes it (tick stays the single dispatch point).
-func (m *Manager) ResumeWorker(workerID int) error {
+// With finalizeOnly the worktree's tasks.md must be complete (else
+// *ErrTasksIncomplete, nothing changes), and the worker that takes the change
+// over skips the agent: it only validates, commits and finalizes.
+func (m *Manager) ResumeWorker(workerID int, finalizeOnly bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if !m.isRunning {
 		return ErrPoolNotRunning
 	}
-	if _, ok := m.pausedWorkers[workerID]; !ok {
+	w, ok := m.pausedWorkers[workerID]
+	if !ok {
 		return ErrWorkerNotPaused
+	}
+	if finalizeOnly {
+		done, total := 0, 0
+		if w.WorktreePath != "" {
+			done, total = openspec.ParseTaskProgress(filepath.Join(w.WorktreePath, "openspec", "changes", w.ActiveChange, "tasks.md"))
+		}
+		if total == 0 || done < total {
+			return &ErrTasksIncomplete{Remaining: total - done, Total: total}
+		}
+		m.finalizeChanges[w.ActiveChange] = true
 	}
 	delete(m.pausedWorkers, workerID)
 	m.broadcastLocked()
@@ -216,6 +256,8 @@ func (m *Manager) ReleasePausedForChange(change string) bool {
 			released = true
 		}
 	}
+	// A finalize intention not yet consumed must not outlive the demotion.
+	delete(m.finalizeChanges, change)
 	if released {
 		m.broadcastLocked()
 	}
@@ -430,8 +472,10 @@ func (m *Manager) startWorker(changeName string) {
 		DelegationMode: m.config.DelegationMode,
 		StartedAt:      time.Now(),
 		CancelFunc:     cancel,
+		finalizeOnly:   m.finalizeChanges[changeName],
 		done:           make(chan struct{}),
 	}
+	delete(m.finalizeChanges, changeName)
 	m.activeWorkers[id] = worker
 
 	// Start worker routine asynchronously

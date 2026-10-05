@@ -1,0 +1,19 @@
+schema: spec-driven
+created: "2026-10-03"
+tags:
+    type: []
+    complexity: 3
+    components:
+        - agent-pool-orchestrator
+        - agent-pool-status-visibility
+        - kanban-board
+        - kanban-change-detail
+        - task-progress
+        - api-router
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-05"

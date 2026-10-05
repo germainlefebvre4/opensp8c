@@ -20,14 +20,14 @@ void i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 })
 
-function render(extra: Partial<Change>) {
+function render(extra: Partial<Change>, onResumeWorker: ((c: Change, f: boolean) => void) | null = () => {}) {
   const change = {
     name: 'add-auth', kanban_status: 'todo', tasks_done: 0, tasks_total: 2, created: '2026-10-01',
     schema: 'spec-driven', days_since_activity: 0, is_stale: false, ...extra,
   } as Change
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <ChangeCard change={change} workspaceId="ws1" onOpen={() => {}} ffStatus={null} onStopWorker={() => {}} />
+      <ChangeCard change={change} workspaceId="ws1" onOpen={() => {}} ffStatus={null} onStopWorker={() => {}} onResumeWorker={onResumeWorker ?? undefined} />
     </QueryClientProvider>,
   )
 }
@@ -45,5 +45,11 @@ describe('ChangeCard worker badges', () => {
     expect(html).toContain(enKanban.card.workerActiveTooltip)
     expect(html).toContain(enKanban.card.stopWorkerTooltip)
     expect(html).not.toContain(enKanban.card.workerPausedBadge)
+  })
+
+  it('no resume button without a pause, or without the handler', () => {
+    expect(render({ worker_active: true, worker_id: 2 })).not.toContain(enKanban.card.resumeTooltip)
+    expect(render({})).not.toContain(enKanban.card.resumeTooltip)
+    expect(render({ worker_paused: true, worker_id: 2 }, null)).not.toContain(enKanban.card.resumeTooltip)
   })
 })

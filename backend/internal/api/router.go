@@ -91,7 +91,7 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 	specsHandler := handlers.NewSpecsHandler(wsHandler)
 	archiveHandler := handlers.NewArchiveHandler(wsHandler, prefsSvc)
 	tagsHandler := handlers.NewTagsHandler(wsHandler, prefsSvc)
-	taskHandler := handlers.NewTaskHandler(wsHandler, activityStore)
+	taskHandler := handlers.NewTaskHandler(wsHandler, activityStore, poolRegistry)
 	ffHandler := handlers.NewFFHandler(wsHandler, mgr, convStore, activityStore, watcherSvc)
 	docsHandler := handlers.NewDocsHandler(wsHandler, mgr, watcherSvc)
 	exploreHandler := handlers.NewExploreHandler(wsHandler, mgr, prefsSvc, watcherSvc, convStore, draftsPath(cfgPath))

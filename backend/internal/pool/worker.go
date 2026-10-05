@@ -45,6 +45,19 @@ func HoldAgentStartsForTest() (restore func()) {
 	return func() { startSubprocessFn = orig }
 }
 
+// SeedWorkerForTest registers w as a worker of m, paused or active according
+// to w.Status, without running anything, so cross-package tests can observe a
+// worker holding a change (with its worktree and pause reason) deterministically.
+func SeedWorkerForTest(m *Manager, w Worker) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if w.Status == StatusPaused {
+		m.pausedWorkers[w.ID] = &w
+	} else {
+		m.activeWorkers[w.ID] = &w
+	}
+}
+
 // beforeCommitHook is a test seam called once validation and the completion
 // check have passed, right before the cancellation check that precedes the
 // commit of the agent's work.
@@ -232,6 +245,10 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		}()
 	}
 
+	if w.finalizeOnly {
+		m.logRunMarker(w, map[string]any{"type": "pool_resume_finalize", "change": w.ActiveChange})
+	}
+
 	// The worktree starts from the last commit: an uncommitted change is not
 	// in it, and no agent could apply it. A branch created before the change
 	// was committed is recreated when it carries no work, else left intact.
@@ -272,35 +289,43 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	if runLog != nil {
 		stderrLog = runLog.sess
 	}
-	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, stderrLog, customEnv, false, langDirective)
-	if err != nil {
-		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
-		pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
-		return
-	}
-	// Ordered teardown: close stdin, give the agent a bounded time to exit,
-	// then kill its whole process group and reap it.
-	defer func() {
-		_ = proc.CloseStdin()
-		exited := make(chan struct{})
-		go func() {
-			_ = proc.Wait()
-			close(exited)
-		}()
-		select {
-		case <-exited:
-		case <-time.After(teardownGrace):
-			procCancel()
-			<-exited
+	// A "resume and finalize" worker starts no agent and sends no turn: proc
+	// stays nil and the rest of the flow (validation, completion check, commit,
+	// finalization) runs unchanged.
+	var proc *session.Subprocess
+	if !w.finalizeOnly {
+		var err error
+		proc, err = startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, stderrLog, customEnv, false, langDirective)
+		if err != nil {
+			log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
+			pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
+			return
 		}
-		procCancel()
-	}()
+		// Ordered teardown: close stdin, give the agent a bounded time to exit,
+		// then kill its whole process group and reap it.
+		defer func() {
+			_ = proc.CloseStdin()
+			exited := make(chan struct{})
+			go func() {
+				_ = proc.Wait()
+				close(exited)
+			}()
+			select {
+			case <-exited:
+			case <-time.After(teardownGrace):
+				procCancel()
+				<-exited
+			}
+			procCancel()
+		}()
 
-	// 3. Invoke the agent CLI to implement the remaining tasks.
-	if err := m.invokeAgentApply(w, proc); err != nil {
-		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-		pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour appliquer les tâches restantes"))
-		return
+		// 3. Invoke the agent CLI to implement the remaining tasks.
+		if err := m.invokeAgentApply(w, proc); err != nil {
+			log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
+			pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour appliquer les tâches restantes"))
+			return
+		}
+
 	}
 
 	// 4-5. Local validation (compilation + tests) and self-healing loop:
@@ -319,7 +344,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			return false
 		}
 
-		for validationErr != nil && attempts < cfg.MaxAttempts {
+		for validationErr != nil && proc != nil && attempts < cfg.MaxAttempts {
 			attempts++
 			m.setStatus(w, StatusHealing)
 			m.notify()
@@ -343,6 +368,11 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			}
 		}
 
+		if validationErr != nil && proc == nil {
+			log.Printf("[worker %d] validation failed while finalizing without agent. Pausing.\n", w.ID)
+			pause(fmt.Sprintf("Reprise en finalisant : la validation a échoué et aucun agent n'est lancé pour la corriger : %v", validationErr))
+			return false
+		}
 		if validationErr != nil {
 			log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, cfg.MaxAttempts)
 			pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", cfg.MaxAttempts, validationErr))

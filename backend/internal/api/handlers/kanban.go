@@ -32,8 +32,10 @@ type KanbanHandler struct {
 
 // heldWorker describes the pool worker holding a change.
 type heldWorker struct {
-	WorktreePath string // empty until the worktree is provisioned
-	Paused       bool
+	ID            int
+	WorktreePath  string // empty until the worktree is provisioned
+	Paused        bool
+	BlockedReason string
 }
 
 func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg *pool.Registry, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
@@ -55,19 +57,29 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg 
 	return h
 }
 
+// activeWorkerChanges returns the changes held by a pool worker for workspaceID.
+func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]heldWorker {
+	return activeWorkerChanges(h.poolReg, workspaceID)
+}
+
 // activeWorkerChanges returns the changes currently claimed by an Agent Pool
 // worker (active or paused) for workspaceID, per that workspace's own pool
 // manager in-memory state, mapped to the holding worker's state. Presence in
 // the map means a worker holds it; Paused tells a blocked worker from one that
 // is executing.
-func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]heldWorker {
+func activeWorkerChanges(reg *pool.Registry, workspaceID string) map[string]heldWorker {
 	active := make(map[string]heldWorker)
-	if h.poolReg == nil {
+	if reg == nil {
 		return active
 	}
-	_, _, workers := h.poolReg.For(workspaceID).Status(workspaceID)
+	_, _, workers := reg.For(workspaceID).Status(workspaceID)
 	for _, w := range workers {
-		active[w.ActiveChange] = heldWorker{WorktreePath: w.WorktreePath, Paused: w.Status == pool.StatusPaused}
+		active[w.ActiveChange] = heldWorker{
+			ID:            w.ID,
+			WorktreePath:  w.WorktreePath,
+			Paused:        w.Status == pool.StatusPaused,
+			BlockedReason: w.BlockedReason,
+		}
 	}
 	return active
 }
@@ -94,6 +106,8 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		if hw, held := activeWorkers[changes[i].Name]; held {
 			changes[i].WorkerActive = !hw.Paused
 			changes[i].WorkerPaused = hw.Paused
+			workerID := hw.ID
+			changes[i].WorkerID = &workerID
 			openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath)
 		}
 	}
@@ -178,6 +192,13 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 	}
 	detail.WorkerActive = held && !hw.Paused
 	detail.WorkerPaused = held && hw.Paused
+	if held {
+		workerID := hw.ID
+		detail.WorkerID = &workerID
+		if hw.Paused {
+			detail.WorkerBlockedReason = hw.BlockedReason
+		}
+	}
 	json.NewEncoder(w).Encode(detail)
 }
 

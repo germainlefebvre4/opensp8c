@@ -19,6 +19,7 @@ import { PoolCapacity } from '../components/PoolCapacity'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { createClampToRectModifier } from '../lib/clampToRect'
 import { useChanges } from '../hooks/useChanges'
+import { useResumeWorker } from '../hooks/useResumeWorker'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
@@ -42,6 +43,7 @@ export function KanbanPage({ workspaceId }: Props) {
   const { data: archivedChanges = [] } = useArchivedChanges(workspaceId)
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
   const { data: poolStatus } = usePoolStatus(workspaceId)
+  const { resume: resumeWorkerRequest, pending: resumingWorkerIds } = useResumeWorker(workspaceId)
   const qc = useQueryClient()
   const approveReview = useApproveReview(workspaceId)
   const requestCorrection = useRequestCorrection(workspaceId)
@@ -346,6 +348,14 @@ export function KanbanPage({ workspaceId }: Props) {
     setUnlaunchWorkerDialog(change)
   }
 
+  // A refusal (e.g. tasks left for "resume and finalize") shows the backend's
+  // message; the card stays as it is.
+  const handleResumeWorker = async (change: Change, finalizeOnly: boolean) => {
+    if (change.worker_id == null) return
+    const error = await resumeWorkerRequest(change.worker_id, finalizeOnly)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
   const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
 
   if (isLoading) return (
@@ -426,6 +436,8 @@ export function KanbanPage({ workspaceId }: Props) {
                       onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
                       onDeleteGhost={handleDeleteGhostRequest}
                       onStopWorker={handleStopWorker}
+                      onResumeWorker={handleResumeWorker}
+                      resumingWorkerIds={resumingWorkerIds}
                       getFfStatus={getFfStatus}
                       dragSourceStatus={dragSourceStatus}
                       validDropSources={Object.entries(VALID_DROPS)

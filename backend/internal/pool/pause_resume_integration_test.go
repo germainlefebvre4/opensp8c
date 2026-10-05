@@ -83,7 +83,7 @@ func TestManager_PauseThenResumeReusesWorktree(t *testing.T) {
 	if err := os.WriteFile(tasks, []byte("- [x] do the thing\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.ResumeWorker(first.ID); err != nil {
+	if err := m.ResumeWorker(first.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	m.tick()

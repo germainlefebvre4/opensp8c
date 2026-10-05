@@ -281,3 +281,88 @@ func TestResumeWorker(t *testing.T) {
 		t.Fatalf("second resume: expected 404, got %d", rec.Code)
 	}
 }
+
+func resumeBodyRequest(workspaceID, workerID, body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/"+workspaceID+"/pool/workers/"+workerID+"/resume", strings.NewReader(body))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", workspaceID)
+	rctx.URLParams.Add("workerId", workerID)
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+}
+
+// seedPausedWorker starts a pool (its change is not launched, so nothing is
+// dispatched) and seeds a paused worker 1 whose worktree has tasksMd.
+func seedPausedWorker(t *testing.T, tasksMd string) (*PoolHandler, *pool.Registry, string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	wsPath := t.TempDir()
+	h, reg, id, _ := twoWorkspaceHandler(t, wsPath, t.TempDir())
+	rec := httptest.NewRecorder()
+	h.StartPool(rec, poolRequest(http.MethodPost, "/", id, `{"size":1,"delegation_mode":"hitl-review","max_attempts":1}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: %d", rec.Code)
+	}
+	t.Cleanup(reg.For(id).Stop)
+
+	wt := t.TempDir()
+	dir := filepath.Join(wt, "openspec", "changes", "change-a")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.md"), []byte(tasksMd), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pool.SeedWorkerForTest(reg.For(id), pool.Worker{ID: 1, ActiveChange: "change-a", Status: pool.StatusPaused, WorktreePath: wt, BlockedReason: "r"})
+	return h, reg, id
+}
+
+func pausedCount(reg *pool.Registry, id string) int {
+	_, _, workers := reg.For(id).Status(id)
+	n := 0
+	for _, w := range workers {
+		if w.Status == pool.StatusPaused {
+			n++
+		}
+	}
+	return n
+}
+
+func TestResumeWorker_FinalizeOnlyBody(t *testing.T) {
+	t.Run("invalid body is a 400 and changes nothing", func(t *testing.T) {
+		h, reg, id := seedPausedWorker(t, "- [x] a\n")
+		rec := httptest.NewRecorder()
+		h.ResumeWorker(rec, resumeBodyRequest(id, "1", "{nope"))
+		if rec.Code != http.StatusBadRequest || pausedCount(reg, id) != 1 {
+			t.Fatalf("code=%d paused=%d", rec.Code, pausedCount(reg, id))
+		}
+	})
+
+	t.Run("empty body and false resume ordinarily", func(t *testing.T) {
+		for _, body := range []string{"", `{"finalize_only":false}`} {
+			h, reg, id := seedPausedWorker(t, "- [x] a\n- [ ] b\n")
+			rec := httptest.NewRecorder()
+			h.ResumeWorker(rec, resumeBodyRequest(id, "1", body))
+			if rec.Code != http.StatusOK || pausedCount(reg, id) != 0 {
+				t.Fatalf("body %q: code=%d paused=%d", body, rec.Code, pausedCount(reg, id))
+			}
+		}
+	})
+
+	t.Run("finalize_only with a complete list resumes", func(t *testing.T) {
+		h, reg, id := seedPausedWorker(t, "- [x] a\n- [x] b\n")
+		rec := httptest.NewRecorder()
+		h.ResumeWorker(rec, resumeBodyRequest(id, "1", `{"finalize_only":true}`))
+		if rec.Code != http.StatusOK || pausedCount(reg, id) != 0 {
+			t.Fatalf("code=%d paused=%d", rec.Code, pausedCount(reg, id))
+		}
+	})
+
+	t.Run("finalize_only with an incomplete list is a 409 with the count", func(t *testing.T) {
+		h, reg, id := seedPausedWorker(t, "- [x] a\n- [ ] b\n- [ ] c\n")
+		rec := httptest.NewRecorder()
+		h.ResumeWorker(rec, resumeBodyRequest(id, "1", `{"finalize_only":true}`))
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "2") || pausedCount(reg, id) != 1 {
+			t.Fatalf("code=%d body=%q paused=%d", rec.Code, rec.Body.String(), pausedCount(reg, id))
+		}
+	})
+}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -57,7 +58,10 @@ func (h *PoolHandler) StopPool(w http.ResponseWriter, r *http.Request) {
 }
 
 // ResumeWorker lifts the pause of one worker so its change is redistributed.
-// 404: unknown workspace or no paused worker with that id; 409: pool stopped.
+// The optional JSON body {"finalize_only": true} resumes it without an agent
+// turn (validate, commit, finalize). 400: invalid body; 404: unknown workspace
+// or no paused worker with that id; 409: pool stopped, or finalize_only while
+// tasks.md still has unchecked tasks.
 func (h *PoolHandler) ResumeWorker(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, ok := h.ws.workspacePath(id); !ok {
@@ -70,8 +74,17 @@ func (h *PoolHandler) ResumeWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch err := h.reg.For(id).ResumeWorker(workerID); {
-	case errors.Is(err, pool.ErrPoolNotRunning):
+	var body struct {
+		FinalizeOnly bool `json:"finalize_only"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var incomplete *pool.ErrTasksIncomplete
+	switch err := h.reg.For(id).ResumeWorker(workerID, body.FinalizeOnly); {
+	case errors.Is(err, pool.ErrPoolNotRunning), errors.As(err, &incomplete):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, pool.ErrWorkerNotPaused):
 		http.Error(w, err.Error(), http.StatusNotFound)

@@ -24,6 +24,7 @@ export interface Change {
   ghost_id?: string
   worker_active?: boolean
   worker_paused?: boolean
+  worker_id?: number
   order?: number
 }
 

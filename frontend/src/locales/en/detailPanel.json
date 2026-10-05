@@ -101,5 +101,12 @@
     "fileBinary": "This file cannot be rendered (binary).",
     "lastRun": "Last run",
     "openRun": "Open the run"
+  },
+  "pausedBanner": {
+    "title": "Worker paused",
+    "resume": "Resume",
+    "resumeFinalize": "Resume and finalize",
+    "remaining_one": "{{count}} task left to check",
+    "remaining_other": "{{count}} tasks left to check"
   }
 }

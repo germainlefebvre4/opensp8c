@@ -5,6 +5,7 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { DetailPanel } from './DetailPanel'
 import { useChangeDetail, type ChangeDetail } from '../hooks/useChangeDetail'
+import { useResumeWorker } from '../hooks/useResumeWorker'
 import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
 import enDetailPanel from '../locales/en/detailPanel.json'
 
@@ -12,6 +13,7 @@ vi.mock('../hooks/useChangeDetail', () => ({ useChangeDetail: vi.fn() }))
 vi.mock('../hooks/useArchive', () => ({ useArchive: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useDeleteChange', () => ({ useDeleteChange: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useToggleTask', () => ({ useToggleTask: () => ({ mutate: vi.fn() }) }))
+vi.mock('../hooks/useResumeWorker', () => ({ useResumeWorker: vi.fn() }))
 vi.mock('../hooks/useRetag', () => ({ useRetag: () => ({ mutate: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('../hooks/useActivityTimeline', () => ({ useActivityTimeline: () => ({ data: [], isLoading: false }) }))
@@ -59,8 +61,13 @@ function mockReviewMutations(approvePending = false, correctionPending = false) 
 
 const panel = () => <DetailPanel workspaceId="ws1" changeName="add-auth" onClose={() => {}} />
 
+function mockResume(resume = vi.fn().mockResolvedValue(null), pending: number[] = [], errors: Record<number, string> = {}) {
+  vi.mocked(useResumeWorker).mockReturnValue({ resume, pending: new Set(pending), errors } as unknown as ReturnType<typeof useResumeWorker>)
+  return resume
+}
+
 describe('DetailPanel review tab', () => {
-  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations(); mockResume() })
 
   it('shows the Review tab for a change in review only', () => {
     mockStatus('to-review')
@@ -96,7 +103,7 @@ describe('DetailPanel review tab', () => {
 })
 
 describe('DetailPanel review actions', () => {
-  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations(); mockResume() })
 
   const openActions = () => fireEvent.click(screen.getByRole('button', { name: enDetailPanel.tabs.actions }))
 
@@ -157,5 +164,63 @@ describe('DetailPanel review actions', () => {
     render(panel())
     openActions()
     expect(screen.queryByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge })).toBeNull()
+  })
+})
+
+describe('DetailPanel paused worker banner', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
+
+  const pausedDetail = (done: number, extra: Partial<ChangeDetail> = {}): ChangeDetail => ({
+    ...detail('in-progress'), tasks_done: done, tasks_total: 10,
+    worker_paused: true, worker_id: 3, worker_blocked_reason: 'Validation réussie mais tâches restantes incomplètes (9/10) dans tasks.md', ...extra,
+  })
+  const mockDetail = (d: ChangeDetail) =>
+    vi.mocked(useChangeDetail).mockReturnValue({ data: d, isLoading: false } as ReturnType<typeof useChangeDetail>)
+
+  it('shows the reason and both buttons only for a paused worker, finalize disabled with the count', () => {
+    mockResume()
+    mockDetail(pausedDetail(9))
+    render(panel())
+    expect(screen.getByText(/tâches restantes incomplètes \(9\/10\)/)).toBeTruthy()
+    expect(screen.getByText('1 task left to check')).toBeTruthy()
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resume }) as HTMLButtonElement).disabled).toBe(false)
+    cleanup()
+
+    mockDetail({ ...pausedDetail(9), worker_paused: false, worker_active: true })
+    render(panel())
+    expect(screen.queryByText(enDetailPanel.pausedBanner.title)).toBeNull()
+    expect(screen.queryByRole('button', { name: enDetailPanel.pausedBanner.resume })).toBeNull()
+  })
+
+  it('unlocks finalize as soon as the last task is checked, without reloading', () => {
+    mockResume()
+    mockDetail(pausedDetail(9))
+    const { rerender } = render(panel())
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }) as HTMLButtonElement).disabled).toBe(true)
+
+    mockDetail(pausedDetail(10))
+    rerender(panel())
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText('1 task left to check')).toBeNull()
+  })
+
+  it('requests the resume of the worker, with finalize_only for the second button', () => {
+    const resume = mockResume()
+    mockDetail(pausedDetail(10))
+    render(panel())
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.pausedBanner.resume }))
+    expect(resume).toHaveBeenLastCalledWith(3)
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }))
+    expect(resume).toHaveBeenLastCalledWith(3, true)
+  })
+
+  it('shows the backend error in the banner and disables both buttons while pending', () => {
+    mockResume(undefined, [3], { 3: 'worker is not paused' })
+    mockDetail(pausedDetail(10))
+    render(panel())
+    expect(screen.getByRole('alert').textContent).toBe('worker is not paused')
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resume }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

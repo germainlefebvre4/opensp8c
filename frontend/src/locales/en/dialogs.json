@@ -73,7 +73,10 @@
       "idleWorkers_other": "{{count}} workers available",
       "noWorkers": "No worker is currently assigned to a change.",
       "stop": "Stop Pool",
-      "resume": "Resume"
+      "resume": "Resume",
+      "resumeFinalize": "Resume and finalize",
+      "resumeFinalizeRemaining_one": "{{count}} task left to check",
+      "resumeFinalizeRemaining_other": "{{count}} tasks left to check"
     }
   },
   "reviewCorrection": {

@@ -37,6 +37,7 @@ type Change struct {
 	GhostID           string   `json:"ghost_id,omitempty"`
 	WorkerActive      bool     `json:"worker_active,omitempty"`
 	WorkerPaused      bool     `json:"worker_paused,omitempty"`
+	WorkerID          *int     `json:"worker_id,omitempty"`
 	Launched          bool     `json:"launched,omitempty"`
 	Order             int      `json:"order,omitempty"`
 }
@@ -53,8 +54,10 @@ type Artifacts struct {
 
 type ChangeDetail struct {
 	Change
-	Tasks     []Task    `json:"tasks"`
-	Artifacts Artifacts `json:"artifacts"`
+	// WorkerBlockedReason is the pause reason of the worker holding the change.
+	WorkerBlockedReason string    `json:"worker_blocked_reason,omitempty"`
+	Tasks               []Task    `json:"tasks"`
+	Artifacts           Artifacts `json:"artifacts"`
 }
 
 type openspecMeta struct {

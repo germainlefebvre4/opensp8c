@@ -22,6 +22,8 @@ export interface ChangeDetail {
   tags?: Tags
   worker_active?: boolean
   worker_paused?: boolean
+  worker_id?: number
+  worker_blocked_reason?: string
 }
 
 export function useChangeDetail(workspaceId: string | null, changeName: string | null) {

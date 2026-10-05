@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Markdown } from './Markdown'
-import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
+import { X, Code, Eye, Loader2, RefreshCw, Pin, RotateCw, CheckCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
 import { useDeleteChange } from '../hooks/useDeleteChange'
 import { useToggleTask } from '../hooks/useToggleTask'
+import { useResumeWorker } from '../hooks/useResumeWorker'
 import { useActivityTimeline } from '../hooks/useActivityTimeline'
 import { ActivityTimelineBar } from './ActivityTimelineBar'
 import { toggleTypeInFilter } from '../lib/timelineUtils'
@@ -50,6 +51,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const archive = useArchive(workspaceId)
   const deleteChange = useDeleteChange(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
+  const { resume, pending: resuming, errors: resumeErrors } = useResumeWorker(workspaceId)
   const retag = useRetag(workspaceId, changeName)
   const approveReview = useApproveReview(workspaceId)
   const requestCorrection = useRequestCorrection(workspaceId)
@@ -264,6 +266,46 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
               </div>
             )}
           </div>
+
+          {data.worker_paused && data.worker_id != null && (() => {
+            const workerId = data.worker_id
+            const remaining = data.tasks_total - data.tasks_done
+            const busy = resuming.has(workerId)
+            return (
+              <div className="shrink-0 px-4 py-3 border-b border-amber-100 bg-amber-50/60 flex flex-col gap-2">
+                <div className="text-xs font-semibold text-amber-700">{t('pausedBanner.title')}</div>
+                {data.worker_blocked_reason && (
+                  <p className="text-xs text-amber-800 whitespace-pre-wrap break-words">{data.worker_blocked_reason}</p>
+                )}
+                {resumeErrors[workerId] && (
+                  <p role="alert" className="text-xs text-red-600 break-words">{resumeErrors[workerId]}</p>
+                )}
+                <div className="flex items-center justify-end gap-2">
+                  {remaining > 0 && (
+                    <span className="text-xs text-slate-500 mr-auto">{t('pausedBanner.remaining', { count: remaining })}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void resume(workerId, true)}
+                    disabled={busy || remaining > 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    <CheckCheck size={12} />
+                    {t('pausedBanner.resumeFinalize')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void resume(workerId)}
+                    disabled={busy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    <RotateCw size={12} />
+                    {t('pausedBanner.resume')}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Content */}
           {activeTab === 'conversation' ? (

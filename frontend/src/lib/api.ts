@@ -289,8 +289,13 @@ export const startPool = (workspaceId: string, config: AgentPoolConfig) =>
 export const stopPool = (workspaceId: string) =>
   api.post(`/api/workspaces/${workspaceId}/pool/stop`)
 
-export const resumeWorker = (workspaceId: string, workerId: number) =>
-  api.post(`/api/workspaces/${workspaceId}/pool/workers/${workerId}/resume`)
+// finalizeOnly resumes the worker without an agent turn (validate, commit,
+// finalize); the body is only sent in that case, as before otherwise.
+export const resumeWorker = (workspaceId: string, workerId: number, opts: { finalizeOnly?: boolean } = {}) =>
+  api.post(
+    `/api/workspaces/${workspaceId}/pool/workers/${workerId}/resume`,
+    ...(opts.finalizeOnly ? [{ finalize_only: true }] : []),
+  )
 
 export interface DraftTask {
   id: string
