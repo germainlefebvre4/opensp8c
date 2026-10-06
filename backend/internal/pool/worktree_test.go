@@ -263,6 +263,9 @@ func TestCommitAllAndHasWork(t *testing.T) {
 	if gitIn(t, path, "status", "--porcelain") != "" {
 		t.Fatal("worktree still dirty after commit")
 	}
+	if msg := gitIn(t, path, "log", "-1", "--format=%B"); msg != "feat: Add auth\n\nChange: add-auth" {
+		t.Fatalf("commit message = %q", msg)
+	}
 	if has, _ := wc.HasWork("add-auth"); !has {
 		t.Fatal("a branch-only commit counts as work")
 	}
@@ -274,6 +277,19 @@ func TestCommitAllAndHasWork(t *testing.T) {
 	}
 	if gitIn(t, path, "rev-parse", "HEAD") != before {
 		t.Fatal("an empty commit was created")
+	}
+}
+
+func TestCommitAllUsesComponentScope(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("add-auth")
+	writeScopeFiles(t, filepath.Join(path, "openspec", "changes", "add-auth"), "tags:\n  components: [auth]\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := gitIn(t, path, "log", "-1", "--format=%B"); msg != "feat(auth): Add auth\n\nChange: add-auth" {
+		t.Fatalf("commit message = %q", msg)
 	}
 }
 
@@ -291,6 +307,9 @@ func TestMergeInto(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "ok.txt")); err != nil {
 		t.Fatalf("merged file missing: %v", err)
+	}
+	if msg := gitIn(t, repo, "log", "-1", "--format=%B"); msg != "feat: Ok change\n\nChange: ok-change" {
+		t.Fatalf("merge message = %q", msg)
 	}
 	if err := wc.Remove("ok-change"); err != nil {
 		t.Fatal(err)

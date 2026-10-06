@@ -206,7 +206,7 @@ func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspaceP
 	if err := os.WriteFile(tasksPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("écriture de tasks.md : %w", err)
 	}
-	if err := wt.CommitFile(change, rel, "chore("+change+"): add review correction"); err != nil {
+	if err := wt.CommitFile(change, rel, correctionCommitMessage(change, wt.changeScope(change))); err != nil {
 		_ = os.WriteFile(tasksPath, original, 0o644)
 		return fmt.Errorf("commit de la correction : %w", err)
 	}

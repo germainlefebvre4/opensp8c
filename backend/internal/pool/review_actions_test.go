@@ -181,7 +181,7 @@ func TestApprove_ConcurrentApprovalsMergeOnce(t *testing.T) {
 	if ok != 1 {
 		t.Fatalf("successful approvals = %d, want 1", ok)
 	}
-	if n := strings.Count(gitIn(t, repo, "log", "--merges", "--format=%s"), "Merge change conc"); n != 1 {
+	if n := strings.Count(gitIn(t, repo, "log", "--merges", "--format=%B"), "feat: Conc\n\nChange: conc"); n != 1 {
 		t.Fatalf("merge commits = %d, want 1", n)
 	}
 }
@@ -293,7 +293,7 @@ func TestRequestCorrection_Succeeds(t *testing.T) {
 	if st := gitIn(t, wt.resolvePath("corr"), "status", "--porcelain"); st != "" {
 		t.Fatalf("worktree must be clean (committed): %q", st)
 	}
-	if log := gitIn(t, repo, "log", "-1", "--format=%s", "feature/corr"); !strings.Contains(log, "correction") {
+	if log := gitIn(t, repo, "log", "-1", "--format=%B", "feature/corr"); log != "chore: Add review correction\n\nChange: corr" {
 		t.Fatalf("last commit = %q", log)
 	}
 	published := false

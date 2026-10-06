@@ -89,6 +89,23 @@ Worker startup or invocation failures also end in `paused` with a readable reaso
 2. **Approve and Merge** → the feature branch is merged into the current branch, the worktree removed, the card moved to *Done*.
 3. **Request corrections** → feedback is sent, the card returns to *In Progress*, and the worker restarts with the feedback injected into its system prompt.
 
+### Commit messages
+
+Every commit the application creates for a change follows Conventional Commits: `type(scope): Subject`, a blank line, then a body whose first line is `Change: <change-name>`.
+
+- **Type**: from the first word of the change name (`fix`, `refactor`, `perf`, `doc`/`docs` → `docs`, `test`, `chore`, `ci`, `build`, `style`), `feat` otherwise. The review-correction commit is always `chore`.
+- **Scope**: first non-empty `tags.components` of the change's `.openspec.yaml`, else the first (alphabetical) folder of the change's `specs/`, else omitted (`type: Subject`). Normalized to lowercase, with other characters replaced by `-`.
+- **Subject**: the change name with `-`/`_` turned into spaces and a capital first letter, cut on a word boundary so the header stays within 72 characters (the full name stays in the body).
+- **Worker commit and `--no-ff` merge** share the same header and body; the correction commit is `chore(scope): Add review correction`. The integration merge of the target branch into the change branch keeps git's own message.
+
+Example, change `improve-matrix-change-drilldown-nav` with component `timeline-spec-matrix`:
+
+```
+feat(timeline-spec-matrix): Improve matrix change drilldown nav
+
+Change: improve-matrix-change-drilldown-nav
+```
+
 ## 6. Archive
 
 *Done* card → "Sync & Archive" → confirmation dialog → `openspec archive <name> --yes` (specs are synced automatically) → spinner, then toast and card moves to *Archived*; on error the CLI output is shown with a "Retry" button. Archiving triggers tagging if tags are missing, and starts the log-retention clock (`changeLogRetentionDays`).

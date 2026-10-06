@@ -335,7 +335,7 @@ func (wc *WorktreeController) CommitAll(changeName string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := wc.runGitIn(path, "commit", "-q", "-m", "feat("+changeName+"): apply OpenSpec change"); err != nil {
+	if _, err := wc.runGitIn(path, "commit", "-q", "-m", wc.commitMessageFor(changeName)); err != nil {
 		return nil, err
 	}
 	return strings.Split(files, "\n"), nil
@@ -477,7 +477,8 @@ func (wc *WorktreeController) MergeInto(changeName string) (string, error) {
 	if err := wc.CheckBase(changeName); err != nil {
 		return target, err
 	}
-	_, err := wc.runGit("merge", "--no-ff", "-m", "Merge change "+changeName, "feature/"+changeName)
+	header, body, _ := strings.Cut(wc.commitMessageFor(changeName), "\n\n")
+	_, err := wc.runGit("merge", "--no-ff", "-m", header, "-m", body, "feature/"+changeName)
 	if err != nil {
 		if wc.mergeInProgress() {
 			_, _ = wc.runGit("merge", "--abort")
