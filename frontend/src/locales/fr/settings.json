@@ -15,6 +15,7 @@
   "tabs": {
     "agentPool": "Agent Pool",
     "columns": "Colonnes",
+    "verification": "Vérification",
     "environment": "Environnement",
     "specializations": "Spécialisations"
   },
@@ -31,5 +32,8 @@
     "inherited": "Héritées de Configuration",
     "noneInherited": "Aucune",
     "save": "Enregistrer"
+  },
+  "verificationTab": {
+    "description": "Surcharge Configuration pour ce workspace uniquement. « Hérité » suit Configuration ; un change peut encore surcharger ce réglage."
   }
 }

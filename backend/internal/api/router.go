@@ -148,6 +148,7 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 		r.Post("/workspaces/{id}/changes/{name}/retag", tagsHandler.Retag)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/reset", ffHandler.ResetTasks)
 		r.Patch("/workspaces/{id}/changes/{name}/tasks/{index}", taskHandler.PatchTask)
+		r.Patch("/workspaces/{id}/changes/{name}/verification", kanbanHandler.PatchVerification)
 		r.Patch("/workspaces/{id}/changes/{name}/launch", kanbanHandler.Launch)
 		r.Patch("/workspaces/{id}/changes/{name}/unlaunch", kanbanHandler.Unlaunch)
 		r.Put("/workspaces/{id}/ready-order", kanbanHandler.ReorderReady)

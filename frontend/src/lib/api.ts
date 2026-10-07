@@ -80,8 +80,8 @@ export interface AgentLanguagesPatch {
   uiLocale?: string
 }
 
-export type Role = 'explorer' | 'ff' | 'implementer' | 'fixer' | 'documenter'
-export const ROLES: Role[] = ['explorer', 'ff', 'implementer', 'fixer', 'documenter']
+export type Role = 'explorer' | 'ff' | 'implementer' | 'fixer' | 'verifier' | 'documenter'
+export const ROLES: Role[] = ['explorer', 'ff', 'implementer', 'fixer', 'verifier', 'documenter']
 
 // One level of agent/model/effort; an empty or absent field means "inherit".
 export interface RoleSetting {
@@ -138,9 +138,46 @@ export interface PoolPatch {
   validationCommand?: string | null
 }
 
+// Verification: two independent steps, each on / off / inherited per level.
+export interface VerificationSettings {
+  conformity: boolean
+  ui: boolean
+  uiStartCommand?: string
+  uiBaseUrl?: string
+}
+
+// Partial per-workspace override; an absent field inherits.
+export type VerificationOverride = Partial<VerificationSettings>
+
+// null resets a field to inheritance.
+export interface VerificationPatch {
+  conformity?: boolean | null
+  ui?: boolean | null
+  uiStartCommand?: string | null
+  uiBaseUrl?: string | null
+}
+
+// Change level: the two steps only (launch parameters describe the project).
+export interface ChangeVerificationOverride {
+  conformity?: boolean
+  ui?: boolean
+}
+
+export interface ChangeVerificationPatch {
+  conformity?: boolean | null
+  ui?: boolean | null
+}
+
+export interface ChangeVerification {
+  override: ChangeVerificationOverride
+  inherited: VerificationSettings
+  resolved: VerificationSettings
+}
+
 export interface GlobalSettingsPatch {
   agentSettings?: AgentSettingsPatch
   poolDefaults?: PoolPatch
+  verificationDefaults?: VerificationPatch
 }
 
 export interface AgentModel {
@@ -162,23 +199,27 @@ export interface WorkspaceSettings {
   overrides: {
     agentSettings: AgentSettings
     pool: PoolOverride
+    verification: VerificationOverride
     env: Record<string, string>
     agentEnv: Record<string, Record<string, string>>
   }
   inherited: {
     agentSettings: ResolvedSettings
     pool: PoolSettings
+    verification: VerificationSettings
     env: Record<string, string>
     agentEnv: Record<string, Record<string, string>>
   }
   resolved: {
     agentSettings: ResolvedSettings
     pool: PoolSettings
+    verification: VerificationSettings
   }
 }
 
-export interface WorkspaceSettingsPatch extends GlobalSettingsPatch {
+export interface WorkspaceSettingsPatch extends Omit<GlobalSettingsPatch, 'verificationDefaults'> {
   pool?: PoolPatch
+  verification?: VerificationPatch
   env?: Record<string, string>
   agentEnv?: Record<string, Record<string, string>>
 }
@@ -188,6 +229,7 @@ export interface Preferences {
   agentSettings?: AgentSettings
   resolvedAgentSettings?: ResolvedSettings
   poolDefaults?: PoolSettings
+  verificationDefaults?: VerificationSettings
   env: Record<string, string>
   agentEnv?: Record<string, Record<string, string>>
   systemEnv?: Record<string, string>
@@ -210,7 +252,7 @@ export const getPreferences = () =>
   api.get<Preferences>('/api/preferences').then(r => r.data)
 
 export const patchPreferences = (
-  data: Omit<Partial<Preferences>, 'agentLanguages' | 'agentSettings' | 'poolDefaults'> & AgentLanguagesPatch & GlobalSettingsPatch,
+  data: Omit<Partial<Preferences>, 'agentLanguages' | 'agentSettings' | 'poolDefaults' | 'verificationDefaults'> & AgentLanguagesPatch & GlobalSettingsPatch,
 ) => api.patch('/api/preferences', data)
 
 export const getAgentModels = () =>
@@ -221,6 +263,9 @@ export const getWorkspaceSettings = (workspaceId: string) =>
 
 export const patchWorkspaceSettings = (workspaceId: string, patch: WorkspaceSettingsPatch) =>
   api.patch<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`, patch).then(r => r.data)
+
+export const patchChangeVerification = (workspaceId: string, changeName: string, patch: ChangeVerificationPatch) =>
+  api.patch<ChangeVerification>(`/api/workspaces/${workspaceId}/changes/${changeName}/verification`, patch).then(r => r.data)
 
 export const getAgentSpecializations = () =>
   api.get<AgentSpecializations>('/api/agent-specializations').then(r => r.data)

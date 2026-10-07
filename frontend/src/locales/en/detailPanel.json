@@ -111,5 +111,13 @@
     "resumeFinalize": "Resume and finalize",
     "remaining_one": "{{count}} task left to check",
     "remaining_other": "{{count}} tasks left to check"
+  },
+  "verification": {
+    "title": "Verification",
+    "description": "Setting for this change only. \"Inherited\" follows the workspace, then Configuration.",
+    "tokenCost": "Uses tokens.",
+    "conformity": "Conformity",
+    "ui": "UI",
+    "saveError": "Could not save: {{message}}"
   }
 }

@@ -18,6 +18,7 @@ import { useApproveReview, useRequestCorrection } from '../hooks/useReviewAction
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { ReviewTab } from './ReviewTab'
+import { ChangeVerificationSection } from './ChangeVerificationSection'
 import { ApproveDialog } from './ApproveDialog'
 import { CorrectionDialog } from './CorrectionDialog'
 
@@ -592,6 +593,14 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                         {tKanban('card.syncAndArchive')}
                       </button>
                     </div>
+                  )}
+
+                  {data.kanban_status !== 'archived' && data.verification && (
+                    <ChangeVerificationSection
+                      workspaceId={workspaceId}
+                      changeName={changeName}
+                      verification={data.verification}
+                    />
                   )}
 
                   {data.kanban_status !== 'archived' && (

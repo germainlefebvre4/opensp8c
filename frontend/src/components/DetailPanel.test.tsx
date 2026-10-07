@@ -7,13 +7,16 @@ import { DetailPanel } from './DetailPanel'
 import { useChangeDetail, type ChangeDetail } from '../hooks/useChangeDetail'
 import { useResumeWorker } from '../hooks/useResumeWorker'
 import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
+import { useSetChangeVerification } from '../hooks/useSetChangeVerification'
 import enDetailPanel from '../locales/en/detailPanel.json'
+import enConfiguration from '../locales/en/configuration.json'
 
 vi.mock('../hooks/useChangeDetail', () => ({ useChangeDetail: vi.fn() }))
 vi.mock('../hooks/useArchive', () => ({ useArchive: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useDeleteChange', () => ({ useDeleteChange: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useToggleTask', () => ({ useToggleTask: () => ({ mutate: vi.fn() }) }))
 vi.mock('../hooks/useResumeWorker', () => ({ useResumeWorker: vi.fn() }))
+vi.mock('../hooks/useSetChangeVerification', () => ({ useSetChangeVerification: vi.fn() }))
 vi.mock('../hooks/useRetag', () => ({ useRetag: () => ({ mutate: vi.fn(), isPending: false }) }))
 vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('../hooks/useActivityTimeline', () => ({ useActivityTimeline: () => ({ data: [], isLoading: false }) }))
@@ -36,9 +39,9 @@ beforeAll(async () => {
   await i18n.use(initReactI18next).init({
     lng: 'en',
     fallbackLng: 'en',
-    ns: ['detailPanel', 'common', 'kanban', 'dialogs'],
+    ns: ['detailPanel', 'common', 'kanban', 'dialogs', 'configuration'],
     defaultNS: 'detailPanel',
-    resources: { en: { detailPanel: enDetailPanel, common: {}, kanban: {}, dialogs: {} } },
+    resources: { en: { detailPanel: enDetailPanel, common: {}, kanban: {}, dialogs: {}, configuration: enConfiguration } },
     interpolation: { escapeValue: false },
   })
 })
@@ -264,5 +267,83 @@ describe('DetailPanel paused worker banner', () => {
     expect(screen.getByRole('alert').textContent).toBe('worker is not paused')
     expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resume }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: enDetailPanel.pausedBanner.resumeFinalize }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('DetailPanel verification section', () => {
+  const mutate = vi.fn()
+
+  const withVerification = (status: ChangeDetail['kanban_status'], verification?: ChangeDetail['verification']): ChangeDetail => ({
+    ...detail(status),
+    verification,
+  })
+
+  const mockDetailWith = (d: ChangeDetail) =>
+    vi.mocked(useChangeDetail).mockReturnValue({ data: d, isLoading: false } as ReturnType<typeof useChangeDetail>)
+
+  const openActions = () => fireEvent.click(screen.getByRole('button', { name: enDetailPanel.tabs.actions }))
+  const uiSelect = () => screen.getByRole('combobox', { name: enDetailPanel.verification.ui }) as HTMLSelectElement
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockReviewMutations()
+    mockResume()
+    vi.mocked(useSetChangeVerification).mockReturnValue({ mutate, isPending: false } as unknown as ReturnType<typeof useSetChangeVerification>)
+  })
+
+  const inheritedUiOn = {
+    override: {},
+    inherited: { conformity: false, ui: true },
+    resolved: { conformity: false, ui: true },
+  }
+
+  it('shows the inherited value next to "Inherited"', () => {
+    mockDetailWith(withVerification('todo', inheritedUiOn))
+    render(panel())
+    openActions()
+    expect(uiSelect().value).toBe('inherit')
+    expect(screen.getByRole('option', { name: 'Inherited (On)' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Inherited (Off)' })).toBeTruthy()
+  })
+
+  it('sends ui false when the user disables the step', () => {
+    mockDetailWith(withVerification('in-progress', inheritedUiOn))
+    render(panel())
+    openActions()
+    fireEvent.change(uiSelect(), { target: { value: 'off' } })
+    expect(mutate).toHaveBeenCalledWith({ ui: false }, expect.any(Object))
+  })
+
+  it('sends null to go back to inheritance', () => {
+    mockDetailWith(withVerification('todo', { ...inheritedUiOn, override: { ui: false }, resolved: { conformity: false, ui: false } }))
+    render(panel())
+    openActions()
+    expect(uiSelect().value).toBe('off')
+    fireEvent.change(uiSelect(), { target: { value: 'inherit' } })
+    expect(mutate).toHaveBeenCalledWith({ ui: null }, expect.any(Object))
+  })
+
+  it('shows the error and keeps the saved selection when saving fails', async () => {
+    mutate.mockImplementation((_patch, opts: { onError: (e: Error) => void }) => opts.onError(new Error('boom')))
+    mockDetailWith(withVerification('todo', { ...inheritedUiOn, override: { ui: true } }))
+    render(panel())
+    openActions()
+    fireEvent.change(uiSelect(), { target: { value: 'off' } })
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('boom'))
+    expect(uiSelect().value).toBe('on')
+  })
+
+  it('is absent for an archived change and keeps lifecycle buttons for the others', () => {
+    mockDetailWith(withVerification('archived', undefined))
+    render(panel())
+    openActions()
+    expect(screen.queryByRole('combobox', { name: enDetailPanel.verification.ui })).toBeNull()
+    cleanup()
+
+    mockDetailWith(withVerification('done', inheritedUiOn))
+    render(panel())
+    openActions()
+    expect(uiSelect()).toBeTruthy()
+    expect(screen.getByRole('button', { name: enDetailPanel.delete })).toBeTruthy()
   })
 })

@@ -12,7 +12,7 @@ import {
 } from './roleSettings'
 import type { AgentModelCatalogEntry, AgentSettings } from './api'
 
-const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, documenter: {} }
+const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, verifier: {}, documenter: {} }
 const saved: AgentSettings = { global: { agent: 'claude' }, roles: { ...emptyRoles, implementer: { model: 'opus' } } }
 
 describe('fieldView', () => {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/verification"
 	"gopkg.in/yaml.v3"
 )
 
@@ -111,6 +112,16 @@ type ChangeDetail struct {
 	WorkerBlockedReason string    `json:"worker_blocked_reason,omitempty"`
 	Tasks               []Task    `json:"tasks"`
 	Artifacts           Artifacts `json:"artifacts"`
+	// Verification is filled by the handler, which knows the preferences.
+	Verification *ChangeVerification `json:"verification,omitempty"`
+}
+
+// ChangeVerification exposes the verification settings of one change: its own
+// override, the value it would inherit and the effective one.
+type ChangeVerification struct {
+	Override  verification.Override `json:"override"`
+	Inherited verification.Resolved `json:"inherited"`
+	Resolved  verification.Resolved `json:"resolved"`
 }
 
 type openspecMeta struct {
@@ -120,6 +131,8 @@ type openspecMeta struct {
 	Dependencies []string `yaml:"dependencies,omitempty"`
 	Launched     *bool    `yaml:"launched,omitempty"`
 	Order        *int     `yaml:"order,omitempty"`
+	// Verification is the change-level override of the verification steps.
+	Verification *verification.Override `yaml:"verification,omitempty"`
 }
 
 type openspecProjectConfig struct {
@@ -545,6 +558,58 @@ func SetLaunched(changeRoot string, launched bool) error {
 		return err
 	}
 	return os.WriteFile(metaPath, out, 0644)
+}
+
+// ReadVerification returns the verification override stored in the
+// .openspec.yaml of an active change of the main repository (never a
+// worktree); nil when absent.
+func ReadVerification(workspacePath, changeName string) (*verification.Override, error) {
+	metaPath := filepath.Join(workspacePath, "openspec", "changes", changeName, ".openspec.yaml")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+	if meta.Verification.IsEmpty() {
+		return nil, nil
+	}
+	return meta.Verification, nil
+}
+
+// SetVerification applies a partial update to the verification override of a
+// change, dropping the field when no value remains. If .openspec.yaml does
+// not exist, it initializes one with schema "spec-driven". It returns the
+// resulting override (nil when empty).
+func SetVerification(changeRoot string, patch verification.Patch) (*verification.Override, error) {
+	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
+
+	var meta openspecMeta
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		meta = openspecMeta{Schema: "spec-driven"}
+	} else if err := yaml.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+
+	meta.Verification = patch.Apply(meta.Verification)
+
+	out, err := yaml.Marshal(meta)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(metaPath, out, 0644); err != nil {
+		return nil, err
+	}
+	return meta.Verification, nil
 }
 
 // ClearKanbanState removes the persistent "launched"/"order" fields from a

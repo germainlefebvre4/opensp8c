@@ -6,6 +6,7 @@ import { useAgentModels, useAgentSpecializations, useAgents, usePatchPreferences
 import { usePatchWorkspaceSettings, useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { AgentPoolSettingsForm } from '../components/AgentPoolSettingsForm'
+import { VerificationSettingsForm } from '../components/VerificationSettingsForm'
 import { RoleSettingsTable } from '../components/RoleSettingsTable'
 import { SubTabs } from '../components/SubTabs'
 import { EnvVarList, varsToEnv } from './ConfigurationPage'
@@ -13,13 +14,14 @@ import type { EnvVar } from '../lib/cliSettings'
 
 const KEBAB_CASE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-export type SettingsTab = 'agent-pool' | 'columns' | 'environment' | 'specializations'
+export type SettingsTab = 'agent-pool' | 'columns' | 'verification' | 'environment' | 'specializations'
 
-const TABS: SettingsTab[] = ['agent-pool', 'columns', 'environment', 'specializations']
+const TABS: SettingsTab[] = ['agent-pool', 'columns', 'verification', 'environment', 'specializations']
 
 const TAB_LABEL_KEY: Record<SettingsTab, string> = {
   'agent-pool': 'tabs.agentPool',
   columns: 'tabs.columns',
+  verification: 'tabs.verification',
   environment: 'tabs.environment',
   specializations: 'tabs.specializations',
 }
@@ -177,6 +179,25 @@ export function WorkspaceColumnsTab({ workspaceId }: { workspaceId: string }) {
   )
 }
 
+export function WorkspaceVerificationTab({ workspaceId }: { workspaceId: string }) {
+  const { t } = useTranslation('settings')
+  const { data } = useWorkspaceSettings(workspaceId)
+  const patch = usePatchWorkspaceSettings(workspaceId)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[11px] text-slate-400 max-w-2xl">{t('verificationTab.description')}</p>
+      <VerificationSettingsForm
+        scope="workspace"
+        values={data?.overrides.verification}
+        inherited={data?.inherited.verification}
+        isSaving={patch.isPending}
+        onSave={verification => patch.mutateAsync({ verification })}
+      />
+    </div>
+  )
+}
+
 const toVars = (env: Record<string, string> | undefined): EnvVar[] =>
   Object.entries(env ?? {}).map(([key, value]) => ({ key, value }))
 
@@ -303,6 +324,7 @@ export function SettingsPage({ workspaceId }: { workspaceId: string }) {
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'agent-pool' && <WorkspacePoolTab key={workspaceId} workspaceId={workspaceId} />}
         {tab === 'columns' && <WorkspaceColumnsTab key={workspaceId} workspaceId={workspaceId} />}
+        {tab === 'verification' && <WorkspaceVerificationTab key={workspaceId} workspaceId={workspaceId} />}
         {tab === 'environment' && <WorkspaceEnvironmentTab key={workspaceId} workspaceId={workspaceId} />}
         {tab === 'specializations' && <SpecializationsTab />}
       </div>

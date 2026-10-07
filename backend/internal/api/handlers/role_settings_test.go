@@ -41,8 +41,8 @@ func TestPreferencesAgentSettingsRoundTrip(t *testing.T) {
 
 	before := getPrefs(t, h)
 	roles := before["agentSettings"].(map[string]any)["roles"].(map[string]any)
-	if len(roles) != 5 {
-		t.Fatalf("expected the five roles: %v", roles)
+	if len(roles) != 6 {
+		t.Fatalf("expected the six roles: %v", roles)
 	}
 	resolved := before["resolvedAgentSettings"].(map[string]any)["roles"].(map[string]any)
 	if resolved["explorer"].(map[string]any)["model"] != "opus" {

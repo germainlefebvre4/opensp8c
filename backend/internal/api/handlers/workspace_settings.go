@@ -67,6 +67,10 @@ func (h *WorkspaceSettingsHandler) write(w http.ResponseWriter, workspaceID stri
 	if ov.Pool != nil {
 		pool = *ov.Pool
 	}
+	verif := preferences.VerificationOverride{}
+	if ov.Verification != nil {
+		verif = *ov.Verification
+	}
 	env := ov.Env
 	if env == nil {
 		env = map[string]string{}
@@ -79,18 +83,21 @@ func (h *WorkspaceSettingsHandler) write(w http.ResponseWriter, workspaceID stri
 		"overrides": map[string]any{
 			"agentSettings": storedView(p, workspaceID),
 			"pool":          pool,
+			"verification":  verif,
 			"env":           env,
 			"agentEnv":      agentEnvView(ov.AgentEnv),
 		},
 		"inherited": map[string]any{
 			"agentSettings": resolveView(p, ""),
 			"pool":          p.ResolvePool(""),
+			"verification":  p.ResolveVerification("", nil),
 			"env":           globalEnv,
 			"agentEnv":      agentEnvView(p.AgentEnv),
 		},
 		"resolved": map[string]any{
 			"agentSettings": resolveView(p, workspaceID),
 			"pool":          p.ResolvePool(workspaceID),
+			"verification":  p.ResolveVerification(workspaceID, nil),
 		},
 	})
 }

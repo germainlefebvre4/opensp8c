@@ -4,7 +4,8 @@
     "agentPool": "Agent Pool",
     "columns": "Colonnes",
     "cli": "CLI",
-    "language": "Langue"
+    "language": "Langue",
+    "verification": "Vérification"
   },
   "agentsTab": {
     "description": "Registre des agents supportés par la plateforme, en lecture seule.",
@@ -88,6 +89,10 @@
         "label": "Corrections",
         "column": "À Revoir"
       },
+      "verifier": {
+        "label": "Vérification",
+        "column": "Vérification automatique"
+      },
       "documenter": {
         "label": "Documentation",
         "column": "Timeline › Documentation"
@@ -123,5 +128,36 @@
     "validationCommand": "Commande de validation",
     "validationCommandAuto": "auto-détectée",
     "validationCommandHint": "Exécutée à la racine du worktree (sh -c) après chaque tour de l'agent. Laissez vide pour détecter automatiquement les projets Go et Node ; un projet Node sans dépendances installées met le worker en pause (utilisez par exemple npm ci && npm test)."
+  },
+  "verificationSettings": {
+    "title": "Vérification automatique — défauts",
+    "workspaceTitle": "Vérification automatique de ce workspace",
+    "description": "Deux étapes facultatives vérifient un change avant sa finalisation. Elles sont désactivées par défaut.",
+    "tokenCost": "Ces étapes consomment beaucoup de tokens : activez-les seulement où elles sont utiles.",
+    "conformity": {
+      "label": "Vérification de conformité",
+      "hint": "Code, specs et tâches du change."
+    },
+    "ui": {
+      "label": "Vérification UI",
+      "hint": "Parcours dans l'application lancée."
+    },
+    "uiStartCommand": "Commande de lancement",
+    "uiStartCommandHint": "Lance l'application à vérifier, par exemple « make dev ».",
+    "uiBaseUrl": "URL de base",
+    "uiBaseUrlHint": "URL absolue http ou https, par exemple http://localhost:5173.",
+    "uiBaseUrlInvalid": "Saisissez une URL absolue http ou https.",
+    "missingStartCommand": "La vérification UI est activée sans commande de lancement : elle ne pourra pas démarrer l'application.",
+    "inherited": "Hérité : {{value}}",
+    "override": "Surcharge",
+    "reset": "Revenir à l'héritage",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saveError": "Échec de l'enregistrement : {{message}}",
+    "tri": {
+      "inherit": "Hérité ({{value}})",
+      "on": "Activé",
+      "off": "Désactivé"
+    }
   }
 }

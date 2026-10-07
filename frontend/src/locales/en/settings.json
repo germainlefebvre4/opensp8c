@@ -15,6 +15,7 @@
   "tabs": {
     "agentPool": "Agent Pool",
     "columns": "Columns",
+    "verification": "Verification",
     "environment": "Environment",
     "specializations": "Specializations"
   },
@@ -31,5 +32,8 @@
     "inherited": "Inherited from Configuration",
     "noneInherited": "None",
     "save": "Save"
+  },
+  "verificationTab": {
+    "description": "Override of Configuration for this workspace only. \"Inherited\" follows Configuration; a change can still override this setting."
   }
 }

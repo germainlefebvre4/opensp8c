@@ -17,11 +17,12 @@ const (
 	RoleFF          Role = "ff"
 	RoleImplementer Role = "implementer"
 	RoleFixer       Role = "fixer"
+	RoleVerifier    Role = "verifier"
 	RoleDocumenter  Role = "documenter"
 )
 
 // Roles lists every role, in display order.
-var Roles = []Role{RoleExplorer, RoleFF, RoleImplementer, RoleFixer, RoleDocumenter}
+var Roles = []Role{RoleExplorer, RoleFF, RoleImplementer, RoleFixer, RoleVerifier, RoleDocumenter}
 
 // Valid reports whether r is one of the defined roles.
 func (r Role) Valid() bool {
@@ -117,12 +118,13 @@ func (o *PoolOverride) isEmpty() bool {
 type WorkspacePrefs struct {
 	AgentSettings *AgentSettings               `json:"agentSettings,omitempty"`
 	Pool          *PoolOverride                `json:"pool,omitempty"`
+	Verification  *VerificationOverride        `json:"verification,omitempty"`
 	Env           map[string]string            `json:"env,omitempty"`
 	AgentEnv      map[string]map[string]string `json:"agentEnv,omitempty"`
 }
 
 func (w *WorkspacePrefs) isEmpty() bool {
-	return w == nil || (w.AgentSettings.isEmpty() && w.Pool.isEmpty() && len(w.Env) == 0 && len(w.AgentEnv) == 0)
+	return w == nil || (w.AgentSettings.isEmpty() && w.Pool.isEmpty() && w.Verification.isEmpty() && len(w.Env) == 0 && len(w.AgentEnv) == 0)
 }
 
 func (w *WorkspacePrefs) clone() *WorkspacePrefs {
@@ -136,6 +138,9 @@ func (w *WorkspacePrefs) clone() *WorkspacePrefs {
 	if w.Pool != nil {
 		c := *w.Pool
 		out.Pool = &c
+	}
+	if w.Verification != nil {
+		out.Verification = w.Verification.clone()
 	}
 	out.Env = copyMap(w.Env)
 	if w.AgentEnv != nil {
@@ -174,7 +179,7 @@ func Preset(role Role, agentID string) RoleSetting {
 	switch role {
 	case RoleExplorer:
 		return RoleSetting{Model: "opus", Effort: "high"}
-	case RoleFF, RoleImplementer, RoleFixer:
+	case RoleFF, RoleImplementer, RoleFixer, RoleVerifier:
 		return RoleSetting{Model: "sonnet", Effort: "medium"}
 	case RoleDocumenter:
 		return RoleSetting{Model: "haiku", Effort: "low"}
@@ -640,6 +645,7 @@ func (s *Service) SetPoolDefaults(patch PoolPatch) error {
 type WorkspaceSettingsPatch struct {
 	AgentSettings *AgentSettingsPatch          `json:"agentSettings"`
 	Pool          *PoolPatch                   `json:"pool"`
+	Verification  *VerificationPatch           `json:"verification"`
 	Env           map[string]string            `json:"env"`
 	AgentEnv      map[string]map[string]string `json:"agentEnv"`
 }
@@ -675,6 +681,13 @@ func (s *Service) PatchWorkspace(workspaceID string, patch WorkspaceSettingsPatc
 		}
 		ws.Pool = next
 	}
+	if patch.Verification != nil {
+		next, err := applyVerificationPatch(ws.Verification, *patch.Verification)
+		if err != nil {
+			return err
+		}
+		ws.Verification = next
+	}
 	if patch.Env != nil {
 		ws.Env = patch.Env
 	}
@@ -707,7 +720,7 @@ func (s *Service) PatchWorkspace(workspaceID string, patch WorkspaceSettingsPatc
 
 // ValidateGlobalUpdate dry-runs a Configuration-level settings/pool update
 // without writing, so a caller can validate everything before its first write.
-func (s *Service) ValidateGlobalUpdate(a *AgentSettingsPatch, pool *PoolPatch) error {
+func (s *Service) ValidateGlobalUpdate(a *AgentSettingsPatch, pool *PoolPatch, ver *VerificationPatch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, err := s.load()
@@ -721,6 +734,11 @@ func (s *Service) ValidateGlobalUpdate(a *AgentSettingsPatch, pool *PoolPatch) e
 	}
 	if pool != nil {
 		if _, err := applyPoolPatch(&PoolOverride{}, *pool); err != nil {
+			return err
+		}
+	}
+	if ver != nil {
+		if _, err := applyVerificationPatch(nil, *ver); err != nil {
 			return err
 		}
 	}

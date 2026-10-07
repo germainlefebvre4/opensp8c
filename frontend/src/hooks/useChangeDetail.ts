@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { ChangeVerification } from '../lib/api'
 import type { Tags } from './useChanges'
 
 export interface TaskItem {
@@ -25,6 +26,8 @@ export interface ChangeDetail {
   worker_paused?: boolean
   worker_id?: number
   worker_blocked_reason?: string
+  // Absent for an archived change.
+  verification?: ChangeVerification
 }
 
 export function useChangeDetail(workspaceId: string | null, changeName: string | null) {

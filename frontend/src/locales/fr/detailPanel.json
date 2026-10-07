@@ -111,5 +111,13 @@
     "resumeFinalize": "Reprendre en finalisant",
     "remaining_one": "Il reste {{count}} tâche à cocher",
     "remaining_other": "Il reste {{count}} tâches à cocher"
+  },
+  "verification": {
+    "title": "Vérification",
+    "description": "Réglage propre à ce change. « Hérité » suit le workspace puis Configuration.",
+    "tokenCost": "Consomme des tokens.",
+    "conformity": "Conformité",
+    "ui": "UI",
+    "saveError": "Échec de l'enregistrement : {{message}}"
   }
 }

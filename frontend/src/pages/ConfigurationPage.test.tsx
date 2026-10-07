@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage, LanguageTab, buildLanguagePatch } from './ConfigurationPage'
+import { AgentsRegistryTab, CliSettingsTab, AgentPoolTab, ConfigurationPage, LanguageTab, VerificationTab, buildLanguagePatch } from './ConfigurationPage'
 import { useAgents, useAgentModels, usePreferences, usePatchPreferences } from '../hooks/useAgentPreferences'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AllPoolsStatus } from '../hooks/useAllPools'
@@ -429,6 +431,7 @@ describe('ConfigurationPage columns tab and pool defaults', () => {
       ff: { agent: 'claude', model: 'sonnet', effort: 'medium' },
       implementer: { agent: 'claude', model: 'sonnet', effort: 'medium' },
       fixer: { agent: 'claude', model: 'sonnet', effort: 'medium' },
+      verifier: { agent: 'claude', model: 'sonnet', effort: 'medium' },
       documenter: { agent: 'claude', model: 'haiku', effort: 'low' },
     },
   }
@@ -437,7 +440,7 @@ describe('ConfigurationPage columns tab and pool defaults', () => {
     env: {},
     agentSettings: {
       global: {},
-      roles: { explorer: {}, ff: {}, implementer: {}, fixer: {}, documenter: {} },
+      roles: { explorer: {}, ff: {}, implementer: {}, fixer: {}, verifier: {}, documenter: {} },
     },
     resolvedAgentSettings: resolved,
     poolDefaults: { size: 2, delegationMode: 'hitl-review', maxAttempts: 3 },
@@ -477,5 +480,52 @@ describe('ConfigurationPage columns tab and pool defaults', () => {
     expect(html).toContain('Défauts de l&#x27;Agent Pool')
     expect(html).toContain('value="2"')
     expect(html).toContain("Aucun agent n&#x27;est actuellement actif.")
+  })
+})
+
+describe('ConfigurationPage Vérification sub-tab', () => {
+  afterEach(cleanup)
+
+  const prefs: Preferences = { defaultAgent: 'claude', env: {} }
+
+  function mockPatch(mutateAsync: ReturnType<typeof vi.fn>) {
+    vi.mocked(usePatchPreferences).mockReturnValue({ mutateAsync, isPending: false } as unknown as ReturnType<typeof usePatchPreferences>)
+  }
+
+  it('lists the sub-tab and renders disabled switches with the token cost notice', () => {
+    mockAgents(AGENTS)
+    mockCatalog()
+    mockPreferences(prefs)
+    mockAllPools({ pools: [] })
+    render(
+      <MemoryRouter initialEntries={['/configuration?tab=verification']}>
+        <ConfigurationPage />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Vérification' })).toBeTruthy()
+    expect((screen.getByRole('switch', { name: /Vérification de conformité/ }) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('switch', { name: /Vérification UI/ }) as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText(frConfiguration.verificationSettings.tokenCost)).toBeTruthy()
+  })
+
+  it('saves verificationDefaults', () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(usePreferences).mockReturnValue({ data: prefs } as ReturnType<typeof usePreferences>)
+    mockPatch(mutateAsync)
+    render(<VerificationTab />)
+    fireEvent.click(screen.getByRole('switch', { name: /Vérification de conformité/ }))
+    fireEvent.change(screen.getByLabelText('Commande de lancement'), { target: { value: 'make dev' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    expect(mutateAsync).toHaveBeenCalledWith({ verificationDefaults: { conformity: true, uiStartCommand: 'make dev' } })
+  })
+
+  it('shows the backend error', async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(new Error('uiBaseUrl must be an absolute http or https URL'))
+    vi.mocked(usePreferences).mockReturnValue({ data: prefs } as ReturnType<typeof usePreferences>)
+    mockPatch(mutateAsync)
+    render(<VerificationTab />)
+    fireEvent.click(screen.getByRole('switch', { name: /Vérification UI/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('uiBaseUrl must be'))
   })
 })

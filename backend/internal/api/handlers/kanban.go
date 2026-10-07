@@ -220,6 +220,11 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 			detail.WorkerBlockedReason = hw.BlockedReason
 		}
 	}
+	if detail.KanbanStatus != "archived" {
+		if v, err := h.changeVerification(id, path, name); err == nil {
+			detail.Verification = v
+		}
+	}
 	json.NewEncoder(w).Encode(detail)
 }
 

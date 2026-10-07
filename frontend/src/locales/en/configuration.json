@@ -4,7 +4,8 @@
     "agentPool": "Agent Pool",
     "columns": "Columns",
     "cli": "CLI",
-    "language": "Language"
+    "language": "Language",
+    "verification": "Verification"
   },
   "agentsTab": {
     "description": "Registry of agents supported by the platform, read-only.",
@@ -88,6 +89,10 @@
         "label": "Corrections",
         "column": "To Review"
       },
+      "verifier": {
+        "label": "Verification",
+        "column": "Automatic verification"
+      },
       "documenter": {
         "label": "Documentation",
         "column": "Timeline › Documentation"
@@ -123,5 +128,36 @@
     "validationCommand": "Validation command",
     "validationCommandAuto": "auto-detected",
     "validationCommandHint": "Run at the worktree root (sh -c) after each agent turn. Leave empty to auto-detect Go and Node projects; a Node project whose dependencies are not installed pauses the worker (use e.g. npm ci && npm test)."
+  },
+  "verificationSettings": {
+    "title": "Automatic verification — defaults",
+    "workspaceTitle": "Automatic verification for this workspace",
+    "description": "Two optional steps verify a change before it is finalized. They are off by default.",
+    "tokenCost": "These steps use a lot of tokens: enable them only where they pay off.",
+    "conformity": {
+      "label": "Conformity verification",
+      "hint": "Code, specs and tasks of the change."
+    },
+    "ui": {
+      "label": "UI verification",
+      "hint": "A walkthrough in the running application."
+    },
+    "uiStartCommand": "Start command",
+    "uiStartCommandHint": "Starts the application to verify, for example \"make dev\".",
+    "uiBaseUrl": "Base URL",
+    "uiBaseUrlHint": "Absolute http or https URL, for example http://localhost:5173.",
+    "uiBaseUrlInvalid": "Enter an absolute http or https URL.",
+    "missingStartCommand": "UI verification is on without a start command: it will not be able to start the application.",
+    "inherited": "Inherited: {{value}}",
+    "override": "Override",
+    "reset": "Back to inheritance",
+    "save": "Save",
+    "saving": "Saving…",
+    "saveError": "Could not save: {{message}}",
+    "tri": {
+      "inherit": "Inherited ({{value}})",
+      "on": "On",
+      "off": "Off"
+    }
   }
 }
