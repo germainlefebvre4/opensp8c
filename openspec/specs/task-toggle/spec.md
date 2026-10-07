@@ -1,6 +1,6 @@
 ## Purpose
 
-TBD — capability introduced by the `ui-task-completion` change.
+Permet de cocher ou décocher une tâche de `tasks.md` depuis l'application : définit l'endpoint de toggle, le fichier visé selon l'état du change (worktree d'un worker, branche du change, dépôt principal) et le commit de chaque coche faite sur la branche.
 
 ## Requirements
 
