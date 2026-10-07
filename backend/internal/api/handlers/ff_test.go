@@ -61,7 +61,7 @@ func TestFFHandler_ResetTasks_ClearsKanbanStateAndAppendsActivity(t *testing.T) 
 	}
 	workspaceID := workspace.StableID(absPath)
 	actStore := activity.NewStore(filepath.Join(tmpDir, "activity"), nil)
-	h := NewFFHandler(ws, nil, nil, actStore, nil)
+	h := NewFFHandler(ws, nil, nil, actStore, nil, nil)
 
 	rec, req := resetTasksRequest(workspaceID, "my-change")
 	h.ResetTasks(rec, req)
@@ -138,7 +138,7 @@ func TestFFHandler_TriggerFF_AppendsActivity(t *testing.T) {
 	mgr := session.NewManager(prefSvc, convStore)
 	watcherSvc := watcher.NewWatcherService()
 
-	h := NewFFHandler(ws, mgr, convStore, actStore, watcherSvc)
+	h := NewFFHandler(ws, mgr, convStore, actStore, watcherSvc, nil)
 
 	rec, req := triggerFFRequest(workspaceID, "ff-change")
 	h.TriggerFF(rec, req)

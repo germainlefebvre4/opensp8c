@@ -65,7 +65,7 @@ func TestTriggerFFUsesFFRoleWithWorkspaceOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	convStore := conversation.NewStore(filepath.Join(tmpDir, "conversations"))
-	h := NewFFHandler(ws, session.NewManager(prefs, convStore), convStore, activity.NewStore(filepath.Join(tmpDir, "activity"), nil), watcher.NewWatcherService())
+	h := NewFFHandler(ws, session.NewManager(prefs, convStore), convStore, activity.NewStore(filepath.Join(tmpDir, "activity"), nil), watcher.NewWatcherService(), nil)
 
 	rec, req := triggerFFRequest(wsID, "ff-change")
 	h.TriggerFF(rec, req)

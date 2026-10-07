@@ -10,7 +10,8 @@ interface Props {
 
 export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
   const { t } = useTranslation('dialogs')
-  const hasProgress = change.tasks_done > 0
+  const hasBranch = !!change.has_branch
+  const hasProgress = hasBranch || change.tasks_done > 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
@@ -24,9 +25,11 @@ export function ResetTasksDialog({ change, onConfirm, onCancel }: Props) {
               {t('resetTasks.title')}
             </p>
             <p className="text-xs text-slate-500">
-              {hasProgress
-                ? t('resetTasks.bodyWithProgress', { done: change.tasks_done, total: change.tasks_total })
-                : t('resetTasks.bodyNoProgress', { name: change.name })
+              {hasBranch
+                ? t('resetTasks.bodyWithBranch', { name: change.name, done: change.tasks_done, total: change.tasks_total })
+                : change.tasks_done > 0
+                  ? t('resetTasks.bodyWithProgress', { done: change.tasks_done, total: change.tasks_total })
+                  : t('resetTasks.bodyNoProgress', { name: change.name })
               }
             </p>
           </div>

@@ -3,6 +3,7 @@
     "title": "Reset tasks?",
     "bodyWithProgress": "{{done}} completed task(s) out of {{total}} will be lost. The proposal and design will be kept.",
     "bodyNoProgress": "Tasks for \"{{name}}\" will be cleared. The proposal and design will be kept.",
+    "bodyWithBranch": "The feature/{{name}} branch, its worktree and all committed work will be deleted, along with the tasks ({{done}}/{{total}} completed). The proposal and design will be kept. This cannot be undone.",
     "confirm": "Reset",
     "cancel": "Cancel"
   },

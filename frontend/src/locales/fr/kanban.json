@@ -34,7 +34,10 @@
     "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change.",
     "unlaunchFailed": "Échec de la rétrogradation du change.",
     "unlaunchAlreadyMerged": "Le change a été fusionné dans {{target}} avant l'interruption : il n'a pas été rétrogradé.",
-    "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants."
+    "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants.",
+    "resetWorkerActive": "Réinitialisation impossible : un worker est actif sur ce change.",
+    "resetReviewBusy": "Réinitialisation impossible : une action de revue est en cours sur ce change.",
+    "resetFailed": "Échec de la réinitialisation du change."
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",

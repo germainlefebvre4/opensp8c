@@ -24,7 +24,7 @@ import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, ApiError } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, resetErrorKey, ApiError } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import { useToast } from '../hooks/useToast'
 import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
@@ -311,7 +311,11 @@ export function KanbanPage({ workspaceId }: Props) {
     try {
       await resetTasks(workspaceId, name)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
-    } catch { /* ignore */ }
+    } catch (err) {
+      // Refused (worker active, review action running): the card stays in its column.
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      toast({ title: t(resetErrorKey(err)), variant: 'error' })
+    }
   }
 
   const handleConfirmUnlaunchWorker = async () => {

@@ -2,18 +2,21 @@ schema: spec-driven
 created: "2026-10-06"
 tags:
     type: []
-    complexity: 3
+    complexity: 4
     components:
-        - verification-settings
-        - agent-role-settings
-        - platform-configuration-menu
-        - workspace-settings
+        - task-progress
+        - kanban-board
         - kanban-change-detail
+        - kanban-drag-drop
+        - change-review-actions
+        - agent-pool-orchestrator
         - api-router
+        - workspace-management
     agent_specialization:
         - backend
         - frontend
         - api-design
+        - documentation
         - testing
     _auto: true
     _tagged_at: "2026-10-07"

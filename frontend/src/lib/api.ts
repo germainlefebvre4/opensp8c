@@ -234,6 +234,14 @@ export const triggerFF = (workspaceId: string, changeName: string) =>
 export const resetTasks = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/reset`)
 
+// Translation key (kanban namespace) of the toast shown when a reset is refused.
+export const resetErrorKey = (err: unknown): string => {
+  const code = err instanceof ApiError ? err.code : undefined
+  if (code === 'worker_active') return 'errors.resetWorkerActive'
+  if (code === 'review_busy') return 'errors.resetReviewBusy'
+  return 'errors.resetFailed'
+}
+
 export const launchChange = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/launch`)
 

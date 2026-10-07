@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -115,6 +116,20 @@ func changeCommitMessage(name, scope string) string {
 // correctionCommitMessage is the message of a review correction commit.
 func correctionCommitMessage(name, scope string) string {
 	return buildMessage("chore", scope, "Add review correction", name)
+}
+
+// taskCommitMessage is the message of a task tick commit: "Validate task N"
+// when the task got checked, "Reopen task N" when it got unchecked (N is the
+// 1-based position), with the change and the first line of the task text in
+// the body.
+func taskCommitMessage(name, scope string, index int, text string, done bool) string {
+	verb := "Reopen"
+	if done {
+		verb = "Validate"
+	}
+	header := commitHeader("chore", normalizeScope(scope), fmt.Sprintf("%s task %d", verb, index+1))
+	first, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	return header + "\n\nChange: " + name + "\nTask: " + strings.TrimSpace(first)
 }
 
 func buildMessage(typ, scope, subject, name string) string {

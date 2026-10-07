@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/glefebvre/opensp8c/internal/activity"
@@ -27,21 +26,31 @@ func NewTaskHandler(ws *WorkspaceHandler, actStore *activity.Store, poolReg *poo
 	}
 }
 
-// toggleRoot returns the root whose openspec/changes/<name>/tasks.md a toggle
-// must edit: the worktree of the pool worker holding the change (active or
-// paused) when that worktree has a usable task list, the workspace repository
-// otherwise. It mirrors the read side (openspec.ApplyWorktreeProgress), so the
-// index the client computed on the displayed list targets the same file.
-func (h *TaskHandler) toggleRoot(workspaceID, workspacePath, change string) string {
-	hw, held := activeWorkerChanges(h.poolReg, workspaceID)[change]
-	if !held || hw.WorktreePath == "" {
-		return workspacePath
+// taskTarget is the file a toggle edits.
+type taskTarget int
+
+const (
+	targetMain     taskTarget = iota // openspec/changes/<name>/tasks.md of the workspace repository
+	targetWorktree                   // worktree of the pool worker holding the change, no commit
+	targetBranch                     // feature/<name>, one commit per tick
+)
+
+// resolveTaskTarget picks the source of the tasks of a change, the same one
+// the read side shows: the worktree of the pool worker holding the change
+// (active or paused) when it has a usable task list, else feature/<change>
+// when its tasks.md has a task and a pool exists to commit into it, else the
+// workspace repository. root is the directory to edit for the worktree and
+// main targets.
+func (h *TaskHandler) resolveTaskTarget(workspaceID, workspacePath, change string) (taskTarget, string) {
+	if hw, held := activeWorkerChanges(h.poolReg, workspaceID)[change]; held && openspec.WorktreeHasTasks(hw.WorktreePath, change) {
+		return targetWorktree, hw.WorktreePath
 	}
-	tasksPath := filepath.Join(hw.WorktreePath, "openspec", "changes", change, "tasks.md")
-	if _, total := openspec.ParseTaskProgress(tasksPath); total == 0 {
-		return workspacePath
+	if h.poolReg != nil && openspec.FeatureBranches(workspacePath)[change] {
+		if content, ok := pool.NewWorktreeController(workspacePath, workspaceID, "").BranchTasks(change); ok && len(openspec.ParseTaskListContent(content)) > 0 {
+			return targetBranch, ""
+		}
 	}
-	return hw.WorktreePath
+	return targetMain, workspacePath
 }
 
 func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
@@ -61,13 +70,25 @@ func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskText, done, err := openspec.ToggleTask(h.toggleRoot(id, path, name), name, index)
+	var taskText string
+	var done bool
+	target, root := h.resolveTaskTarget(id, path, name)
+	if target == targetBranch {
+		taskText, done, err = h.poolReg.For(id).ToggleBranchTask(r.Context(), id, path, name, index)
+	} else {
+		taskText, done, err = openspec.ToggleTask(root, name, index)
+	}
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
 			http.Error(w, "task not found", http.StatusNotFound)
-			return
+		case errors.Is(err, pool.ErrReviewBusy):
+			writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "review_busy", Message: err.Error()})
+		case errors.Is(err, pool.ErrWorkerActive):
+			writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "worker_active", Message: err.Error()})
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

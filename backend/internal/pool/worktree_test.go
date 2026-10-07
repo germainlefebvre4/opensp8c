@@ -770,3 +770,64 @@ func TestRecreateFromHeadKeepsBranchWithWork(t *testing.T) {
 		t.Fatal("branch was deleted")
 	}
 }
+
+func TestBranchTasks(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	rel := filepath.Join("openspec", "changes", "add-auth", "tasks.md")
+
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("no branch: BranchTasks must report absent")
+	}
+
+	path, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("branch without tasks.md must report absent")
+	}
+
+	writeFile(t, filepath.Join(path, rel), "- [ ] a\n- [ ] b\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	// An uncommitted tick in the worktree is what BranchTasks reads.
+	writeFile(t, filepath.Join(path, rel), "- [x] a\n- [ ] b\n")
+	if got, ok := wc.BranchTasks("add-auth"); !ok || got != "- [x] a\n- [ ] b\n" {
+		t.Fatalf("with worktree = %q, %v", got, ok)
+	}
+
+	// Without worktree: the committed content, and nothing is provisioned.
+	if err := wc.Remove("add-auth"); err == nil {
+		t.Fatal("dirty worktree should refuse Remove")
+	}
+	if err := wc.Discard("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	_ = gitIn(t, repo, "branch", "feature/add-auth", "main") // recreate an empty branch
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("tasks.md absent from the branch must report absent")
+	}
+}
+
+func TestBranchTasks_CommittedWithoutWorktree(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	rel := filepath.Join("openspec", "changes", "add-auth", "tasks.md")
+	path, _ := wc.Provision("add-auth")
+	writeFile(t, filepath.Join(path, rel), "- [x] a\n- [ ] b\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Remove("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := wc.BranchTasks("add-auth")
+	if !ok || got != "- [x] a\n- [ ] b" {
+		t.Fatalf("BranchTasks = %q, %v", got, ok)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("BranchTasks must not recreate the worktree")
+	}
+}

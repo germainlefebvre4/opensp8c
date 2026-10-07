@@ -26,6 +26,7 @@ export interface Change {
   worker_paused?: boolean
   worker_id?: number
   order?: number
+  has_branch?: boolean
 }
 
 export function useChanges(workspaceId: string | null) {

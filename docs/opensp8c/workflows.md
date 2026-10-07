@@ -89,6 +89,10 @@ Worker startup or invocation failures also end in `paused` with a readable reaso
 2. **Approve and Merge** → the feature branch is merged into the current branch, the worktree removed, the card moved to *Done*.
 3. **Request corrections** → feedback is sent, the card returns to *In Progress*, and the worker restarts with the feedback injected into its system prompt.
 
+**Tasks follow the branch.** As soon as a change owns a `feature/<change>` branch and no worker holds it, the detail panel and the card counters read the tasks from the branch (its worktree if present, else the committed `tasks.md`), not from the main repository. Ticking a task then edits that file and creates **one commit per tick** in the branch (`chore(scope): Validate task N` / `Reopen task N`, body `Change:` and `Task:`), so the tick is merged by Approve and the main repository stays clean. The column is not recomputed from the branch: it still derives from the review marker, the launched state and the main repository. A tick is refused with `409` (`review_busy`) while an approval, correction or reset runs on the change, and (`worker_active`) while a worker holds it; with a worker holding the change the tick edits its worktree without commit, as before.
+
+**Reset to To Explore** (drag to the *To Explore* column) on a change owning a branch deletes the branch, its worktree and the review marker, then empties `tasks.md`; the confirmation dialog warns about the loss even when no task is ticked. It is refused with `409` while a worker is active (`worker_active`) or a review action runs (`review_busy`); a paused worker is released first. If the cleanup fails nothing else is modified.
+
 ### Commit messages
 
 Every commit the application creates for a change follows Conventional Commits: `type(scope): Subject`, a blank line, then a body whose first line is `Change: <change-name>`.

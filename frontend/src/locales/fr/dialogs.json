@@ -3,6 +3,7 @@
     "title": "Réinitialiser les tâches ?",
     "bodyWithProgress": "{{done}} tâche(s) complétée(s) sur {{total}} seront perdues. Le proposal et le design seront conservés.",
     "bodyNoProgress": "Les tâches de \"{{name}}\" seront effacées. Le proposal et le design seront conservés.",
+    "bodyWithBranch": "La branche feature/{{name}}, son worktree et tout le travail committé seront supprimés, ainsi que les tâches ({{done}}/{{total}} complétées). Le proposal et le design seront conservés. Cette action est irréversible.",
     "confirm": "Réinitialiser",
     "cancel": "Annuler"
   },

@@ -194,3 +194,51 @@ func TestListChanges_NonGitFolder(t *testing.T) {
 }
 
 func timeAgo(days int) time.Time { return time.Now().Add(-time.Duration(days) * 24 * time.Hour) }
+
+func TestFeatureBranches(t *testing.T) {
+	ws := newReviewRepo(t, true, "alpha", "beta", "gamma")
+	gitRun(t, ws, "branch", "feature/alpha")
+	gitRun(t, ws, "branch", "feature/beta")
+	gitRun(t, ws, "branch", "other/gamma")
+
+	got := FeatureBranches(ws)
+	if len(got) != 2 || !got["alpha"] || !got["beta"] {
+		t.Fatalf("FeatureBranches = %v, want alpha and beta only", got)
+	}
+
+	changes, _ := ListChanges(ws)
+	for _, c := range changes {
+		if want := c.Name != "gamma"; c.HasBranch != want {
+			t.Errorf("%s HasBranch = %v, want %v", c.Name, c.HasBranch, want)
+		}
+	}
+}
+
+func TestFeatureBranches_NonGitFolder(t *testing.T) {
+	if got := FeatureBranches(t.TempDir()); len(got) != 0 {
+		t.Fatalf("FeatureBranches outside git = %v, want empty", got)
+	}
+}
+
+func TestApplyBranchProgress_KeepsColumn(t *testing.T) {
+	ch := &Change{Name: "c", KanbanStatus: "ready", TasksDone: 0, TasksTotal: 2, IsStale: true}
+	if !ApplyBranchProgress(ch, "- [x] a\n- [x] b\n") {
+		t.Fatal("overlay should apply")
+	}
+	if ch.TasksDone != 2 || ch.TasksTotal != 2 {
+		t.Errorf("counts = %d/%d, want 2/2", ch.TasksDone, ch.TasksTotal)
+	}
+	if ch.KanbanStatus != "ready" || !ch.IsStale {
+		t.Errorf("column and staleness must be untouched: %s stale=%v", ch.KanbanStatus, ch.IsStale)
+	}
+}
+
+func TestApplyBranchProgress_NoTasks(t *testing.T) {
+	ch := &Change{Name: "c", TasksDone: 1, TasksTotal: 3}
+	if ApplyBranchProgress(ch, "# nothing here\n") {
+		t.Fatal("content without task must be a no-op")
+	}
+	if ch.TasksDone != 1 || ch.TasksTotal != 3 {
+		t.Errorf("counts changed: %d/%d", ch.TasksDone, ch.TasksTotal)
+	}
+}

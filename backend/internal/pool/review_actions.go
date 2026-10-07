@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/glefebvre/opensp8c/internal/openspec"
 	"github.com/glefebvre/opensp8c/internal/watcher"
 )
 
@@ -19,6 +20,9 @@ var (
 	ErrNotInReview = errors.New("le changement n'est pas en revue")
 	// ErrWorkerActive reports a worker (active or paused) holding the change.
 	ErrWorkerActive = errors.New("un worker est assigné à ce changement")
+	// ErrReviewBusy reports a review action already running on the change
+	// (approval, correction, reset or another task toggle).
+	ErrReviewBusy = errors.New("une action de revue est déjà en cours sur ce changement")
 	// ErrEmptyFeedback reports a correction request without text.
 	ErrEmptyFeedback = errors.New("le retour de correction est vide")
 )
@@ -215,6 +219,59 @@ func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspaceP
 	}
 	m.publishChangeUpdated(workspaceID, change)
 	return nil
+}
+
+// TryLockReview takes the review lock of change without waiting and returns
+// its release function, or ErrReviewBusy when the lock is held.
+func (m *Manager) TryLockReview(change string) (func(), error) {
+	lock := m.reviewLock(change)
+	if !lock.TryLock() {
+		return nil, ErrReviewBusy
+	}
+	return lock.Unlock, nil
+}
+
+// HasWorkerFor reports whether a worker, active or paused, holds change.
+func (m *Manager) HasWorkerFor(change string) bool { return m.hasWorkerFor(change) }
+
+// ToggleBranchTask toggles the index-th task of the tasks.md carried by
+// feature/<change> and commits that single file into the branch, one commit
+// per tick, under the review lock. The worktree is recreated from the branch
+// when it vanished. The review marker is left untouched. It refuses with
+// ErrReviewBusy while another review action runs and with ErrWorkerActive when
+// a worker holds the change. On a write or commit failure the file is
+// restored.
+func (m *Manager) ToggleBranchTask(ctx context.Context, workspaceID, workspacePath, change string, index int) (taskText string, done bool, err error) {
+	release, err := m.TryLockReview(change)
+	if err != nil {
+		return "", false, err
+	}
+	defer release()
+	if m.hasWorkerFor(change) {
+		return "", false, ErrWorkerActive
+	}
+
+	wt := NewWorktreeController(workspacePath, workspaceID, m.worktreesRoot)
+	dir, err := wt.Provision(change)
+	if err != nil {
+		return "", false, fmt.Errorf("impossible de préparer le worktree : %w", err)
+	}
+	rel := filepath.Join("openspec", "changes", change, "tasks.md")
+	tasksPath := filepath.Join(dir, rel)
+	original, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return "", false, fmt.Errorf("lecture de tasks.md : %w", err)
+	}
+	taskText, done, err = openspec.ToggleTask(dir, change, index)
+	if err != nil {
+		return "", false, err
+	}
+	if err := wt.CommitFile(change, rel, taskCommitMessage(change, wt.changeScope(change), index, taskText, done)); err != nil {
+		_ = os.WriteFile(tasksPath, original, 0o644)
+		return "", false, fmt.Errorf("commit de la coche : %w", err)
+	}
+	m.publishChangeUpdated(workspaceID, change)
+	return taskText, done, nil
 }
 
 // AppendCorrection adds one unchecked task carrying feedback at the end of the

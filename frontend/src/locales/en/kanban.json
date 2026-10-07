@@ -34,7 +34,10 @@
     "unlaunchWorkerActive": "Cannot demote: an Agent Pool worker is active on this change.",
     "unlaunchFailed": "Failed to demote change.",
     "unlaunchAlreadyMerged": "The change was merged into {{target}} before the interruption: it was not demoted.",
-    "unlaunchWorkerStillRunning": "The worker is still running: please try again in a moment."
+    "unlaunchWorkerStillRunning": "The worker is still running: please try again in a moment.",
+    "resetWorkerActive": "Cannot reset: an Agent Pool worker is active on this change.",
+    "resetReviewBusy": "Cannot reset: a review action is in progress on this change.",
+    "resetFailed": "Failed to reset change."
   },
   "columnActions": {
     "newExploration": "New exploration",

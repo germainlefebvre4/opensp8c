@@ -1,2 +1,15 @@
 schema: spec-driven
-created: 2026-10-06
+created: "2026-10-06"
+tags:
+    type: []
+    complexity: 2
+    components:
+        - agent-pool-orchestrator
+        - change-review-actions
+        - developer-tooling
+    agent_specialization:
+        - backend
+        - testing
+        - documentation
+    _auto: true
+    _tagged_at: "2026-10-07"

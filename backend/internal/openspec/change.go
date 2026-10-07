@@ -40,6 +40,8 @@ type Change struct {
 	WorkerID          *int     `json:"worker_id,omitempty"`
 	Launched          bool     `json:"launched,omitempty"`
 	Order             int      `json:"order,omitempty"`
+	// HasBranch reports that feature/<change> exists in the repository.
+	HasBranch bool `json:"has_branch,omitempty"`
 }
 
 type Task struct {
@@ -125,6 +127,76 @@ func branchExists(workspacePath, changeName string) bool {
 	return cmd.Run() == nil
 }
 
+// FeatureBranches returns the set of changes owning a feature/<change> branch,
+// in a single git call. The set is empty when the folder is not a git
+// repository or git fails: the error is never propagated.
+func FeatureBranches(workspacePath string) map[string]bool {
+	branches := map[string]bool{}
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/heads/feature/")
+	cmd.Dir = workspacePath
+	out, err := cmd.Output()
+	if err != nil {
+		return branches
+	}
+	const prefix = "refs/heads/feature/"
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) && len(line) > len(prefix) {
+			branches[line[len(prefix):]] = true
+		}
+	}
+	return branches
+}
+
+// WorktreeHasTasks reports whether the worktree at worktreePath holds a
+// tasks.md with at least one task for changeName.
+func WorktreeHasTasks(worktreePath, changeName string) bool {
+	if worktreePath == "" {
+		return false
+	}
+	_, total := ParseTaskProgress(worktreeTasksPath(worktreePath, changeName))
+	return total > 0
+}
+
+// ApplyBranchProgress overlays on ch the task counts of a feature branch's
+// tasks.md content. Unlike ApplyWorktreeProgress it never touches the kanban
+// column nor staleness: the column stays derived from the review marker and
+// the main repository. It is a no-op when content holds no task. Returns
+// whether the overlay applied.
+func ApplyBranchProgress(ch *Change, content string) bool {
+	done, total := parseTaskProgressContent(content)
+	if total == 0 {
+		return false
+	}
+	ch.TasksDone = done
+	ch.TasksTotal = total
+	return true
+}
+
+// ParseTaskListContent parses the checklist items of a tasks.md content.
+func ParseTaskListContent(content string) []Task {
+	tasks := []Task{}
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "- [") {
+			continue
+		}
+		done := strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")
+		tasks = append(tasks, Task{Text: strings.TrimSpace(line[5:]), Done: done})
+	}
+	return tasks
+}
+
+func parseTaskProgressContent(content string) (done, total int) {
+	for _, t := range ParseTaskListContent(content) {
+		total++
+		if t.Done {
+			done++
+		}
+	}
+	return done, total
+}
+
 func ListChanges(workspacePath string) ([]Change, error) {
 	threshold := readStaleThreshold(workspacePath)
 	changesDir := filepath.Join(workspacePath, "openspec", "changes")
@@ -137,6 +209,7 @@ func ListChanges(workspacePath string) ([]Change, error) {
 	}
 
 	markers := ReviewMarkers(workspacePath)
+	branches := FeatureBranches(workspacePath)
 	var changes []Change
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" {
@@ -146,7 +219,8 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		if err != nil {
 			continue
 		}
-		if markers[ch.Name] && branchExists(workspacePath, ch.Name) {
+		ch.HasBranch = branches[ch.Name]
+		if markers[ch.Name] && ch.HasBranch {
 			markReviewed(ch)
 		}
 		changes = append(changes, *ch)
@@ -357,6 +431,9 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 		ch.IsStale = false
 	} else if ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName) {
 		markReviewed(ch)
+	}
+	if !isArchived {
+		ch.HasBranch = branchExists(workspacePath, changeName)
 	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))

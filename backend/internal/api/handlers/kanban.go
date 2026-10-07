@@ -84,6 +84,12 @@ func activeWorkerChanges(reg *pool.Registry, workspaceID string) map[string]held
 	return active
 }
 
+// branchTasks returns the tasks.md carried by feature/<change>, without
+// provisioning a worktree.
+func (h *KanbanHandler) branchTasks(workspaceID, workspacePath, change string) (string, bool) {
+	return pool.NewWorktreeController(workspacePath, workspaceID, "").BranchTasks(change)
+}
+
 func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	path, ok := h.ws.workspacePath(id)
@@ -108,7 +114,14 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 			changes[i].WorkerPaused = hw.Paused
 			workerID := hw.ID
 			changes[i].WorkerID = &workerID
-			openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath)
+			if openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath) {
+				continue
+			}
+		}
+		if changes[i].HasBranch {
+			if content, ok := h.branchTasks(id, path, changes[i].Name); ok {
+				openspec.ApplyBranchProgress(&changes[i], content)
+			}
 		}
 	}
 
@@ -189,6 +202,14 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if detail.HasBranch && !detail.IsGhost && detail.KanbanStatus != "archived" {
+		workerOwnsTasks := held && openspec.WorktreeHasTasks(hw.WorktreePath, name)
+		if !workerOwnsTasks {
+			if content, ok := h.branchTasks(id, path, name); ok && openspec.ApplyBranchProgress(&detail.Change, content) {
+				detail.Tasks = openspec.ParseTaskListContent(content)
+			}
+		}
 	}
 	detail.WorkerActive = held && !hw.Paused
 	detail.WorkerPaused = held && hw.Paused

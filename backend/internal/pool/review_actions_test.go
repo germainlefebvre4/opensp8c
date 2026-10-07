@@ -614,3 +614,116 @@ func TestFinishMerged_WarningRemaining(t *testing.T) {
 		t.Fatalf("message = %q", res.Warning.Message)
 	}
 }
+
+func TestToggleBranchTask_TickAndUntickInReview(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "tg", "- [x] done\n", "true")
+	bc := &mockBroadcaster{}
+	m.broadcaster = bc
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	before := gitIn(t, repo, "rev-parse", "feature/tg")
+
+	text, done, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "tg", 0)
+	if err != nil || done || text != "done" {
+		t.Fatalf("untick = %q, %v, %v", text, done, err)
+	}
+	if got := gitIn(t, repo, "log", "-1", "--format=%B", "feature/tg"); got != "chore: Reopen task 1\n\nChange: tg\nTask: done" {
+		t.Fatalf("untick message = %q", got)
+	}
+	if files := gitIn(t, repo, "show", "--name-only", "--format=", "feature/tg"); files != "openspec/changes/tg/tasks.md" {
+		t.Fatalf("commit files = %q", files)
+	}
+	if !strings.Contains(gitIn(t, repo, "show", "feature/tg:openspec/changes/tg/tasks.md"), "- [ ] done") {
+		t.Fatal("branch must carry the unticked task")
+	}
+
+	if _, done, err = m.ToggleBranchTask(context.Background(), "ws1", repo, "tg", 0); err != nil || !done {
+		t.Fatalf("tick = %v, %v", done, err)
+	}
+	if got := gitIn(t, repo, "log", "-1", "--format=%B", "feature/tg"); got != "chore: Validate task 1\n\nChange: tg\nTask: done" {
+		t.Fatalf("tick message = %q", got)
+	}
+	if gitIn(t, repo, "rev-parse", "feature/tg~2") != before {
+		t.Fatal("one commit per tick expected")
+	}
+	if !inReview(t, m, repo, "tg") {
+		t.Fatal("review marker must be kept")
+	}
+	if st := gitIn(t, repo, "status", "--porcelain"); st != "" {
+		t.Fatalf("main repo must stay clean: %q", st)
+	}
+	if st := gitIn(t, wt.resolvePath("tg"), "status", "--porcelain"); st != "" {
+		t.Fatalf("worktree must be clean: %q", st)
+	}
+	if !published(bc, "tg") {
+		t.Fatal("change_updated expected")
+	}
+}
+
+func TestToggleBranchTask_ScopeFromComponents(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "sc", "- [x] done\n", "true")
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	writeScopeFiles(t, filepath.Join(wt.resolvePath("sc"), "openspec", "changes", "sc"), "tags:\n  components: [kanban]\n")
+	if _, err := wt.CommitAll("sc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "sc", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitIn(t, repo, "log", "-1", "--format=%s", "feature/sc"); got != "chore(kanban): Reopen task 1" {
+		t.Fatalf("subject = %q", got)
+	}
+}
+
+func TestToggleBranchTask_RecreatesMissingWorktree(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "gn", "- [x] done\n", "true")
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	gitIn(t, repo, "worktree", "remove", "--force", wt.resolvePath("gn"))
+	if _, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "gn", 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gitIn(t, repo, "show", "feature/gn:openspec/changes/gn/tasks.md"), "- [ ] done") {
+		t.Fatal("tick missing from the branch")
+	}
+}
+
+func TestToggleBranchTask_Refusals(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "rf", "- [x] done\n", "true")
+	before := gitIn(t, repo, "rev-parse", "feature/rf")
+
+	m.pausedWorkers[3] = &Worker{ID: 3, ActiveChange: "rf"}
+	if _, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "rf", 0); !errors.Is(err, ErrWorkerActive) {
+		t.Fatalf("err = %v, want worker active", err)
+	}
+	delete(m.pausedWorkers, 3)
+
+	lock := m.reviewLock("rf")
+	lock.Lock()
+	_, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "rf", 0)
+	lock.Unlock()
+	if !errors.Is(err, ErrReviewBusy) {
+		t.Fatalf("err = %v, want review busy", err)
+	}
+	if gitIn(t, repo, "rev-parse", "feature/rf") != before {
+		t.Fatal("branch must be unchanged")
+	}
+}
+
+func TestToggleBranchTask_CommitFailureRestoresFile(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "cfl", "- [x] done\n", "true")
+	before := gitIn(t, repo, "rev-parse", "feature/cfl")
+	hook := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	writeFile(t, hook, "#!/bin/sh\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "cfl", 0); err == nil {
+		t.Fatal("expected a commit error")
+	}
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	if st := gitIn(t, wt.resolvePath("cfl"), "status", "--porcelain"); st != "" {
+		t.Fatalf("tasks.md must be restored: %q", st)
+	}
+	if gitIn(t, repo, "rev-parse", "feature/cfl") != before || !inReview(t, m, repo, "cfl") {
+		t.Fatal("branch and marker must be unchanged")
+	}
+}

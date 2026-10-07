@@ -355,6 +355,24 @@ func (wc *WorktreeController) CommitFile(changeName, relPath, message string) er
 	return nil
 }
 
+// BranchTasks returns the tasks.md of the change as carried by its branch: the
+// file of the worktree when there is one (it may hold an uncommitted tick),
+// else the one committed on feature/<change>. It never provisions anything.
+// ok is false when the branch has no tasks.md.
+func (wc *WorktreeController) BranchTasks(changeName string) (content string, ok bool) {
+	rel := filepath.Join("openspec", "changes", changeName, "tasks.md")
+	if path := wc.resolvePath(changeName); wc.isRegisteredWorktree(path) {
+		if data, err := os.ReadFile(filepath.Join(path, rel)); err == nil {
+			return string(data), true
+		}
+	}
+	out, err := wc.runGit("show", "feature/"+changeName+":"+filepath.ToSlash(rel))
+	if err != nil {
+		return "", false
+	}
+	return out, true
+}
+
 // HasWork reports whether the change produced anything: a dirty worktree or
 // commits on its branch that the repository's current branch does not have.
 func (wc *WorktreeController) HasWork(changeName string) (bool, error) {
