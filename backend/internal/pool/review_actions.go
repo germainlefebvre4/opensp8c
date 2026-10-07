@@ -93,6 +93,17 @@ type ApproveResult struct {
 	Warning *CleanupWarning
 }
 
+// TasksPendingError reports that the branch's tasks.md still holds unchecked
+// tasks, which refuses the approval.
+type TasksPendingError struct{ Remaining int }
+
+func (e *TasksPendingError) Error() string {
+	if e.Remaining == 1 {
+		return "1 tâche reste à valider dans tasks.md"
+	}
+	return fmt.Sprintf("%d tâches restent à valider dans tasks.md", e.Remaining)
+}
+
 // ApproveReview merges a change in review into the repository's current
 // branch: it integrates and revalidates the target branch when it advanced
 // (plain validation, no agent heal), merges under the workspace merge lock,
@@ -124,6 +135,14 @@ func (m *Manager) ApproveReview(ctx context.Context, workspaceID, workspacePath,
 			return ApproveResult{}, err
 		}
 		return m.finishMerged(wt, workspaceID, change, wt.CurrentBranch(), cleanupMerged(wt, change)), nil
+	}
+
+	// Approving declares every task validated: any unchecked task of the
+	// branch, flagged for human review or not, refuses the approval.
+	if content, ok := wt.BranchTasks(change); ok {
+		if st := openspec.ParseTaskStatsContent(content); st.Total > st.Done {
+			return ApproveResult{}, &TasksPendingError{Remaining: st.Total - st.Done}
+		}
 	}
 
 	// The integration needs a worktree: recreate it from the branch if it vanished.

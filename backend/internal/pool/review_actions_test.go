@@ -727,3 +727,72 @@ func TestToggleBranchTask_CommitFailureRestoresFile(t *testing.T) {
 		t.Fatal("branch and marker must be unchanged")
 	}
 }
+
+func TestCorrectionFlow_FlaggedTasksStayUncheckedAndDoNotBlock(t *testing.T) {
+	const change = "flow-flagged"
+	const marked = "- [ ] Parcours manuel <!-- human review required -->"
+	m, repo := correctionFlow(t, change, func(run int, ws string) {
+		writeInWorktree(fmt.Sprintf("f%d.txt", run))(ws)
+		p := filepath.Join(ws, "openspec", "changes", change, "tasks.md")
+		b, _ := os.ReadFile(p)
+		var out []string
+		for _, l := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(l, "- [ ]") && !strings.Contains(l, "human review required") {
+				l = strings.Replace(l, "- [ ]", "- [x]", 1)
+			}
+			out = append(out, l)
+		}
+		s := strings.Join(out, "\n")
+		if !strings.Contains(s, "human review required") {
+			s = strings.TrimRight(s, "\n") + "\n" + marked + "\n"
+		}
+		_ = os.WriteFile(p, []byte(s), 0o644)
+	})
+	if !inReview(t, m, repo, change) {
+		t.Fatal("change should be back in review with the flagged task left unchecked")
+	}
+	got := gitIn(t, repo, "show", "feature/"+change+":openspec/changes/"+change+"/tasks.md")
+	if !strings.Contains(got, marked) || !strings.Contains(got, "- [x] Correction : à corriger") {
+		t.Fatalf("unexpected tasks.md:\n%s", got)
+	}
+}
+
+func TestApprove_RefusedWhileTasksPending(t *testing.T) {
+	tasks := "- [x] done\n- [ ] manual <!-- human review required -->\n- [ ] visual <!-- human review required -->\n"
+	m, repo, counter := reviewFixture(t, "pending", tasks, "true")
+	_, err := m.ApproveReview(context.Background(), "ws1", repo, "pending")
+	var pending *TasksPendingError
+	if !errors.As(err, &pending) || pending.Remaining != 2 {
+		t.Fatalf("got %v, want TasksPendingError{2}", err)
+	}
+	assertUntouched(t, m, repo, "pending")
+	if n := countRuns(t, counter); n != 1 {
+		t.Fatalf("validation runs = %d, want 1 (the refusal must validate nothing)", n)
+	}
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	if _, ok := wt.BranchTasks("pending"); !ok {
+		t.Fatal("worktree must be kept")
+	}
+
+	// The user ticks both tasks: the approval goes through.
+	for i := 0; i < 2; i++ {
+		if _, _, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "pending", 1+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.ApproveReview(context.Background(), "ws1", repo, "pending"); err != nil {
+		t.Fatalf("approve after ticking: %v", err)
+	}
+}
+
+func TestApprove_RefusedWhenUserUnchecksATask(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "unchecked", "- [x] done\n- [x] two\n", "true")
+	if _, done, err := m.ToggleBranchTask(context.Background(), "ws1", repo, "unchecked", 0); err != nil || done {
+		t.Fatalf("toggle: done=%v err=%v", done, err)
+	}
+	_, err := m.ApproveReview(context.Background(), "ws1", repo, "unchecked")
+	var pending *TasksPendingError
+	if !errors.As(err, &pending) || pending.Remaining != 1 {
+		t.Fatalf("got %v, want TasksPendingError{1}", err)
+	}
+}

@@ -188,6 +188,7 @@ func TestApproveFailureMapping(t *testing.T) {
 		{&pool.TargetMovingError{Rounds: 3}, 409, "target_moving"},
 		{&pool.ValidationFailedError{Err: errors.New("tests failed")}, 422, "validation_failed"},
 		{&pool.ValidationEnvError{Reason: "no command"}, 422, "validation_failed"},
+		{&pool.TasksPendingError{Remaining: 2}, 409, "tasks_pending"},
 		{errors.New("boom"), 500, "approve_failed"},
 	}
 	for _, c := range cases {
@@ -195,6 +196,17 @@ func TestApproveFailureMapping(t *testing.T) {
 		if status != c.status || body.Code != c.code {
 			t.Errorf("%v: got %d %q, want %d %q", c.err, status, body.Code, c.status, c.code)
 		}
+	}
+}
+
+func TestApproveFailureMapping_TasksPendingRemaining(t *testing.T) {
+	_, body := approveFailure(&pool.TasksPendingError{Remaining: 2})
+	if body.Remaining != 2 || body.Message == "" {
+		t.Errorf("unexpected body: %+v", body)
+	}
+	raw, _ := json.Marshal(reviewActionError{Code: "not_in_review"})
+	if strings.Contains(string(raw), "remaining") {
+		t.Errorf("remaining must be omitted when absent: %s", raw)
 	}
 }
 

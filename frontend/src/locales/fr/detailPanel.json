@@ -39,6 +39,9 @@
     "label": "Brouillon d'exploration actif",
     "freeze": "Figer le change"
   },
+  "humanReviewBadge": "Validation humaine",
+  "tasksToValidate_one": "{{count}} tâche à valider",
+  "tasksToValidate_other": "{{count}} tâches à valider",
   "reviewActions": {
     "approveAndMerge": "Approuver & Fusionner",
     "requestCorrection": "Demander correction",

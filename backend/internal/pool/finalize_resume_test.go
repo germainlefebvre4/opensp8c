@@ -76,6 +76,15 @@ func TestResumeWorker_FinalizeOnly(t *testing.T) {
 		}
 	})
 
+	t.Run("flagged remaining task still refuses the finalizing resume", func(t *testing.T) {
+		m := NewManager(nil, nil, nil, nil, nil)
+		pausedWithWorktree(t, m, "c", "- [x] a\n- [ ] b <!-- human review required -->\n")
+		var inc *ErrTasksIncomplete
+		if err := m.ResumeWorker(1, true); !errors.As(err, &inc) || inc.Remaining != 1 {
+			t.Fatalf("got %v", err)
+		}
+	})
+
 	t.Run("absent or empty list is refused", func(t *testing.T) {
 		for name, content := range map[string]string{"absent": "", "empty": "# Tasks\nnothing\n"} {
 			m := NewManager(nil, nil, nil, nil, nil)

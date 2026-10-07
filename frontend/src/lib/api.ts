@@ -421,7 +421,7 @@ export const requestCorrection = (workspaceId: string, changeName: string, feedb
 
 const REVIEW_ERROR_CODES = new Set([
   'not_in_review', 'worker_active', 'merge_in_progress', 'base_branch_mismatch',
-  'integration_conflict', 'target_moving', 'validation_failed', 'empty_feedback',
+  'integration_conflict', 'target_moving', 'validation_failed', 'empty_feedback', 'tasks_pending',
 ])
 
 // Translation key (dialogs namespace) of the message shown when a review action

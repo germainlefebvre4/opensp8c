@@ -149,6 +149,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   }
 
   const inReview = data?.kanban_status === 'to-review'
+  const tasksToValidate = data ? data.tasks.filter(task => !task.done).length : 0
 
   // The Review tab only exists while the change is in review: when it leaves
   // that status (approval, correction) fall back to the Tasks tab.
@@ -386,6 +387,9 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                   {data.tasks.length === 0 && (
                     <p className="text-sm text-slate-400">{t('emptyTasks')}</p>
                   )}
+                  {inReview && tasksToValidate > 0 && (
+                    <p className="text-xs font-medium text-amber-700">{t('tasksToValidate', { count: tasksToValidate })}</p>
+                  )}
                   {data.tasks.map((task, i) => (
                     <label key={i} className="flex gap-2 items-start text-xs cursor-pointer group">
                       <input
@@ -419,6 +423,11 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                       <span className={task.done ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-slate-900'}>
                         {task.text}
                       </span>
+                      {task.human_review && (
+                        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {t('humanReviewBadge')}
+                        </span>
+                      )}
                     </label>
                   ))}
                   {toggleError && (
@@ -548,7 +557,8 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => { setApproveError(null); setApproveOpen(true) }}
-                        disabled={reviewBusy}
+                        disabled={reviewBusy || tasksToValidate > 0}
+                        title={tasksToValidate > 0 ? t('tasksToValidate', { count: tasksToValidate }) : undefined}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {approveReview.isPending && <Loader2 size={12} className="animate-spin" />}

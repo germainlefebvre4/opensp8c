@@ -5,6 +5,7 @@ import type { Tags } from './useChanges'
 export interface TaskItem {
   text: string
   done: boolean
+  human_review?: boolean
 }
 
 export interface ChangeDetail {

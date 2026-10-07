@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -45,8 +46,58 @@ type Change struct {
 }
 
 type Task struct {
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Text        string `json:"text"`
+	Done        bool   `json:"done"`
+	HumanReview bool   `json:"human_review,omitempty"`
+}
+
+// HumanReviewMarker is the HTML comment flagging a tasks.md task that only the
+// user can validate (manual walkthrough, visual check, command to run).
+const HumanReviewMarker = "<!-- human review required -->"
+
+var humanReviewRe = regexp.MustCompile(`(?i)<!--\s*human review required\s*-->`)
+
+// TaskStats counts the tasks of a tasks.md, telling apart the unchecked ones
+// that carry the human review marker from those that do not.
+type TaskStats struct {
+	Done         int
+	Total        int
+	PendingHuman int
+	PendingOther int
+}
+
+// ParseTaskStats reads the tasks.md at tasksPath and counts its tasks.
+func ParseTaskStats(tasksPath string) TaskStats {
+	data, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return TaskStats{}
+	}
+	return ParseTaskStatsContent(string(data))
+}
+
+// ParseTaskStatsContent counts the tasks of a tasks.md content.
+func ParseTaskStatsContent(content string) TaskStats {
+	var st TaskStats
+	for _, t := range ParseTaskListContent(content) {
+		st.Total++
+		switch {
+		case t.Done:
+			st.Done++
+		case t.HumanReview:
+			st.PendingHuman++
+		default:
+			st.PendingOther++
+		}
+	}
+	return st
+}
+
+// splitHumanReview strips the human review marker from a task text.
+func splitHumanReview(text string) (string, bool) {
+	if !humanReviewRe.MatchString(text) {
+		return text, false
+	}
+	return strings.TrimSpace(humanReviewRe.ReplaceAllString(text, "")), true
 }
 
 type Artifacts struct {
@@ -182,7 +233,8 @@ func ParseTaskListContent(content string) []Task {
 			continue
 		}
 		done := strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")
-		tasks = append(tasks, Task{Text: strings.TrimSpace(line[5:]), Done: done})
+		text, human := splitHumanReview(strings.TrimSpace(line[5:]))
+		tasks = append(tasks, Task{Text: text, Done: done, HumanReview: human})
 	}
 	return tasks
 }
@@ -451,24 +503,11 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 }
 
 func parseTaskList(tasksPath string) []Task {
-	f, err := os.Open(tasksPath)
+	data, err := os.ReadFile(tasksPath)
 	if err != nil {
 		return []Task{}
 	}
-	defer f.Close()
-
-	var tasks []Task
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "- [") {
-			continue
-		}
-		done := strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")
-		text := strings.TrimSpace(line[5:])
-		tasks = append(tasks, Task{Text: text, Done: done})
-	}
-	return tasks
+	return ParseTaskListContent(string(data))
 }
 
 func readFileContent(path string) string {
@@ -585,11 +624,11 @@ func ToggleTask(workspacePath, changeName string, index int) (string, bool, erro
 				lines[i] = strings.Replace(line, "- [x]", "- [ ]", 1)
 				lines[i] = strings.Replace(lines[i], "- [X]", "- [ ]", 1)
 				done = false
-				taskText = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmed, "- [x]"), "- [X]"))
+				taskText, _ = splitHumanReview(strings.TrimSpace(trimmed[5:]))
 			} else {
 				lines[i] = strings.Replace(line, "- [ ]", "- [x]", 1)
 				done = true
-				taskText = strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ]"))
+				taskText, _ = splitHumanReview(strings.TrimSpace(trimmed[5:]))
 			}
 			found = true
 			break

@@ -111,6 +111,7 @@
     "integration_conflict": "L'intégration de la branche cible entre en conflit avec le change : rien n'a été fusionné, le change reste en revue.",
     "target_moving": "La branche cible n'arrête pas d'avancer : réessayez dans quelques instants.",
     "validation_failed": "La validation a échoué après intégration de la branche cible : rien n'a été fusionné, le change reste en revue.",
+    "tasks_pending": "Des tâches restent à valider : cochez-les toutes avant d'approuver. Rien n'a été fusionné.",
     "empty_feedback": "Le retour de correction est vide.",
     "generic": "L'action a échoué."
   }

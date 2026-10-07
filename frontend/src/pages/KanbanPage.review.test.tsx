@@ -31,7 +31,8 @@ vi.mock('../components/ExploreAnonymousBottomPanel', () => ({ ExploreAnonymousBo
 vi.mock('../hooks/useChangeReview', () => ({
   useChangeReview: () => ({ data: { branch: 'feature/add-auth', base: 'main', target_ahead: false, files: [] } }),
 }))
-vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast }) }))
 vi.mock('../hooks/useArchivedChanges', () => ({ useArchivedChanges: () => ({ data: [] }) }))
 vi.mock('../hooks/usePoolStatus', () => ({ usePoolStatus: () => ({ data: undefined }) }))
 vi.mock('../hooks/useWorkspaceLiveState', () => ({
@@ -73,6 +74,37 @@ function renderPage() {
 
 const drop = (active: string, over: string) =>
   act(async () => { await dragEnd!({ active: { id: active }, over: { id: over } } as unknown as DragEndEvent) })
+
+describe('KanbanPage drop on Done with tasks left to validate', () => {
+  it('refuses the drop with a notification, without confirmation nor request', async () => {
+    vi.mocked(useChanges).mockReturnValue({
+      data: [{ ...change('add-auth', 'to-review'), tasks_done: 8, tasks_total: 10 }], isLoading: false,
+    } as unknown as ReturnType<typeof useChanges>)
+    renderPage()
+    await drop('add-auth', 'done')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(approveReview).not.toHaveBeenCalled()
+    expect(toast).toHaveBeenCalledWith({ title: 'Cannot approve: 2 tasks to validate.', variant: 'error' })
+  })
+
+  it('opens the confirmation when every task is checked', async () => {
+    vi.mocked(useChanges).mockReturnValue({
+      data: [{ ...change('add-auth', 'to-review'), tasks_done: 10, tasks_total: 10 }], isLoading: false,
+    } as unknown as ReturnType<typeof useChanges>)
+    renderPage()
+    await drop('add-auth', 'done')
+    expect(screen.getByRole('dialog', { name: enDialogs.reviewApprove.title })).toBeTruthy()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend tasks_pending refusal in the dialog', async () => {
+    vi.mocked(approveReview).mockRejectedValue(new ApiError('c', 409, 'tasks_pending'))
+    renderPage()
+    await drop('add-auth', 'done')
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewApprove.confirm }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain(enDialogs.reviewErrors.tasks_pending))
+  })
+})
 
 describe('KanbanPage drops from To Review', () => {
   it('opens the approval confirmation on a drop on Done, without any request', async () => {

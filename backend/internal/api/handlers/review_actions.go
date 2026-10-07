@@ -27,6 +27,8 @@ type reviewActionError struct {
 	Code    string `json:"code"`
 	Message string `json:"message,omitempty"`
 	Output  string `json:"output,omitempty"`
+	// Remaining is the number of unchecked tasks of a tasks_pending refusal.
+	Remaining int `json:"remaining,omitempty"`
 }
 
 func writeReviewAction(w http.ResponseWriter, status int, body any) {
@@ -114,7 +116,10 @@ func approveFailure(err error) (int, reviewActionError) {
 	var moving *pool.TargetMovingError
 	var validation *pool.ValidationFailedError
 	var env *pool.ValidationEnvError
+	var pending *pool.TasksPendingError
 	switch {
+	case errors.As(err, &pending):
+		return http.StatusConflict, reviewActionError{Code: "tasks_pending", Message: err.Error(), Remaining: pending.Remaining}
 	case errors.Is(err, pool.ErrNotInReview):
 		return http.StatusConflict, reviewActionError{Code: "not_in_review", Message: err.Error()}
 	case errors.Is(err, pool.ErrWorkerActive):

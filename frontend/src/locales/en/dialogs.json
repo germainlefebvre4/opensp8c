@@ -111,6 +111,7 @@
     "integration_conflict": "Integrating the target branch conflicts with the change: nothing was merged, the change stays in review.",
     "target_moving": "The target branch keeps advancing: retry in a few moments.",
     "validation_failed": "Validation failed after integrating the target branch: nothing was merged, the change stays in review.",
+    "tasks_pending": "Some tasks are still to be validated: check them all before approving. Nothing was merged.",
     "empty_feedback": "The correction feedback is empty.",
     "generic": "The action failed."
   }

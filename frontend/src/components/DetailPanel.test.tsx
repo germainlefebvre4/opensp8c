@@ -167,6 +167,48 @@ describe('DetailPanel review actions', () => {
   })
 })
 
+describe('DetailPanel human validation tasks', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations(); mockResume() })
+
+  const withTasks = (status: ChangeDetail['kanban_status'], tasks: ChangeDetail['tasks']) =>
+    vi.mocked(useChangeDetail).mockReturnValue({ data: { ...detail(status), tasks }, isLoading: false } as ReturnType<typeof useChangeDetail>)
+  const approveButton = () => screen.getByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge }) as HTMLButtonElement
+
+  it('shows the badge and the count of tasks to validate in review', () => {
+    withTasks('to-review', [
+      { text: '4.2 Manual walkthrough', done: false, human_review: true },
+      { text: '4.3 Done by agent', done: true, human_review: true },
+      { text: '4.4 Plain', done: false },
+    ])
+    render(panel())
+    expect(screen.getAllByText(enDetailPanel.humanReviewBadge)).toHaveLength(2)
+    expect(screen.getByText('2 tasks to validate')).toBeTruthy()
+  })
+
+  it('shows no count outside review nor at zero', () => {
+    withTasks('in-progress', [{ text: 'a', done: false }])
+    render(panel())
+    expect(screen.queryByText(/to validate/)).toBeNull()
+    cleanup()
+    withTasks('to-review', [{ text: 'a', done: true }])
+    render(panel())
+    expect(screen.queryByText(/to validate/)).toBeNull()
+  })
+
+  it('keeps Approve & Merge visible but disabled with a tooltip until every task is checked', () => {
+    withTasks('to-review', [{ text: 'a', done: true }, { text: 'b', done: false, human_review: true }])
+    const { rerender } = render(panel())
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.tabs.actions }))
+    expect(approveButton().disabled).toBe(true)
+    expect(approveButton().title).toBe('1 task to validate')
+
+    withTasks('to-review', [{ text: 'a', done: true }, { text: 'b', done: true, human_review: true }])
+    rerender(panel())
+    expect(approveButton().disabled).toBe(false)
+    expect(approveButton().title).toBe('')
+  })
+})
+
 describe('DetailPanel paused worker banner', () => {
   beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
 

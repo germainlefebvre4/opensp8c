@@ -31,6 +31,8 @@
     "confirm": "Interrupt and demote"
   },
   "errors": {
+    "tasksToValidate_one": "Cannot approve: {{count}} task to validate.",
+    "tasksToValidate_other": "Cannot approve: {{count}} tasks to validate.",
     "unlaunchWorkerActive": "Cannot demote: an Agent Pool worker is active on this change.",
     "unlaunchFailed": "Failed to demote change.",
     "unlaunchAlreadyMerged": "The change was merged into {{target}} before the interruption: it was not demoted.",

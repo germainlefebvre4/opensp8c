@@ -213,7 +213,11 @@ export function KanbanPage({ workspaceId }: Props) {
     if (getFfStatus(changeName) === 'running') return
 
     if (sourceStatus === 'to-review') {
-      if (targetStatus === 'done') setApproveDialog(change)
+      if (targetStatus === 'done') {
+        const remaining = change.tasks_total - change.tasks_done
+        if (remaining > 0) toast({ title: t('errors.tasksToValidate', { count: remaining }), variant: 'error' })
+        else setApproveDialog(change)
+      }
       else if (targetStatus === 'in-progress') setCorrectionDialog(change)
       return
     }

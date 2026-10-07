@@ -31,6 +31,8 @@
     "confirm": "Interrompre et rétrograder"
   },
   "errors": {
+    "tasksToValidate_one": "Approbation impossible : {{count}} tâche à valider.",
+    "tasksToValidate_other": "Approbation impossible : {{count}} tâches à valider.",
     "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change.",
     "unlaunchFailed": "Échec de la rétrogradation du change.",
     "unlaunchAlreadyMerged": "Le change a été fusionné dans {{target}} avant l'interruption : il n'a pas été rétrogradé.",

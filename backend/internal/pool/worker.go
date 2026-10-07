@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/language"
@@ -295,7 +297,11 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	var proc *session.Subprocess
 	if !w.finalizeOnly {
 		var err error
-		proc, err = startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, stderrLog, customEnv, false, langDirective)
+		extraPrompt := ""
+		if cfg.DelegationMode == ModeHITLReview {
+			extraPrompt = humanReviewDirective
+		}
+		proc, err = startSubprocessFn(procCtx, w.WorktreePath, agentCfg, extraPrompt, "", false, stderrLog, customEnv, false, langDirective)
 		if err != nil {
 			log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
 			pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
@@ -326,6 +332,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			return
 		}
 
+		// 3b. Triage (hitl-review only): the remaining unflagged tasks are
+		// either finished or flagged for the user, before validation so that
+		// any work done here is validated too.
+		if cfg.DelegationMode == ModeHITLReview {
+			if !m.triageRemainingTasks(w, proc, tasksPath, pause) {
+				return
+			}
+		}
 	}
 
 	// 4-5. Local validation (compilation + tests) and self-healing loop:
@@ -388,13 +402,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// worktree's tasks.md lists at least one task and none is left unchecked,
 	// even though validation passed - the agent may have declared victory
 	// without actually doing the work. A missing or empty list is not "done".
-	done, total := openspec.ParseTaskProgress(tasksPath)
+	stats := openspec.ParseTaskStats(tasksPath)
+	done, total := stats.Done, stats.Total
 	if total == 0 {
 		log.Printf("[worker %d] validation passed but tasks.md is absent or empty; pausing without finalizing\n", w.ID)
 		pause("Validation réussie mais la liste des tâches (tasks.md) est absente ou vide")
 		return
 	}
-	if done < total {
+	if tasksBlockCompletion(cfg.DelegationMode, stats) {
 		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
 		pause(fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
 		return
@@ -522,6 +537,86 @@ type agentIdleError struct{ after time.Duration }
 
 func (e *agentIdleError) Error() string {
 	return fmt.Sprintf("agent inactif depuis %s", e.after)
+}
+
+// humanReviewDirective is appended to the system prompt of hitl-review workers.
+const humanReviewDirective = `Some tasks in tasks.md can only be validated by the user (manual walkthrough in the application, visual check, command to run outside your environment). Such a task carries the HTML comment ` + openspec.HumanReviewMarker + ` at the end of its line. NEVER check (- [x]) a task carrying that marker. When a task requires the user's intervention, do not check it as if you had done it: leave it unchecked and add ` + openspec.HumanReviewMarker + ` at the end of its line instead.`
+
+// tasksBlockCompletion reports whether unchecked tasks must stop the worker
+// from finalizing: in full-autonomy any unchecked task does, in hitl-review
+// only those the user is not expected to validate.
+func tasksBlockCompletion(mode DelegationMode, st openspec.TaskStats) bool {
+	if mode == ModeHITLReview {
+		return st.PendingOther > 0
+	}
+	return st.Done < st.Total
+}
+
+// flaggedTasks returns the texts of the human review tasks of a tasks.md.
+func flaggedTasks(tasksPath string) map[string]bool {
+	out := map[string]bool{}
+	data, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return out
+	}
+	for _, t := range openspec.ParseTaskListContent(string(data)) {
+		if t.HumanReview {
+			out[t.Text] = true
+		}
+	}
+	return out
+}
+
+// triageRemainingTasks sends the single triage turn when unchecked tasks
+// without the human review marker remain, then records the tasks the agent
+// flagged. It returns false when the worker was paused.
+func (m *Manager) triageRemainingTasks(w *Worker, proc *session.Subprocess, tasksPath string, pause func(string)) bool {
+	var remaining []string
+	for _, t := range openspec.ParseTaskListContent(readFileContent(tasksPath)) {
+		if !t.Done && !t.HumanReview {
+			remaining = append(remaining, t.Text)
+		}
+	}
+	if len(remaining) == 0 {
+		return true
+	}
+	before := flaggedTasks(tasksPath)
+	if err := m.runTurn(w, proc, triagePrompt(remaining)); err != nil {
+		log.Printf("[worker %d] agent triage error: %v\n", w.ID, err)
+		pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour trier les tâches restantes"))
+		return false
+	}
+	if m.activityStore != nil {
+		for _, t := range openspec.ParseTaskListContent(readFileContent(tasksPath)) {
+			if t.HumanReview && !before[t.Text] {
+				_ = m.activityStore.Append(w.WorkspaceID, w.ActiveChange, activity.Entry{
+					Type:     "pool.task_flagged",
+					Category: "pool",
+					Summary:  "Task flagged for human review: " + t.Text,
+					Meta: map[string]any{
+						"worker_id": w.ID,
+						"change":    w.ActiveChange,
+					},
+				})
+			}
+		}
+	}
+	return true
+}
+
+func triagePrompt(tasks []string) string {
+	var b strings.Builder
+	b.WriteString("The following tasks of tasks.md are still unchecked:\n")
+	for _, t := range tasks {
+		b.WriteString("- " + t + "\n")
+	}
+	b.WriteString("For each of them, either complete it and check it (- [x]), or, if it requires the user's intervention (manual walkthrough, visual check, action outside your environment), leave it unchecked and add " + openspec.HumanReviewMarker + " at the end of its line. Do not modify any other file just to flag a task.")
+	return b.String()
+}
+
+func readFileContent(path string) string {
+	data, _ := os.ReadFile(path)
+	return string(data)
 }
 
 func isAgentStop(err error) bool {

@@ -459,3 +459,64 @@ func TestGetChangeDetail_FollowsWorktree(t *testing.T) {
 		t.Errorf("main detail wrong: %+v", d)
 	}
 }
+
+func TestParseTaskList_HumanReviewMarker(t *testing.T) {
+	content := `- [ ] 4.2 Parcours manuel <!-- human review required -->
+- [x] 4.3 Fait <!--Human Review Required-->
+- [ ] 4.4 Ordinaire
+Texte <!-- human review required --> hors tâche
+`
+	tasks := ParseTaskListContent(content)
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Text != "4.2 Parcours manuel" || !tasks[0].HumanReview || tasks[0].Done {
+		t.Errorf("unexpected task 0: %+v", tasks[0])
+	}
+	if tasks[1].Text != "4.3 Fait" || !tasks[1].HumanReview || !tasks[1].Done {
+		t.Errorf("unexpected task 1: %+v", tasks[1])
+	}
+	if tasks[2].HumanReview {
+		t.Errorf("task 2 must not be marked: %+v", tasks[2])
+	}
+}
+
+func TestParseTaskStats_DistinguishesHumanTasks(t *testing.T) {
+	content := "- [x] a\n- [x] b <!-- human review required -->\n- [ ] c <!-- human review required -->\n- [ ] d <!-- human review required -->\n- [ ] e\n"
+	st := ParseTaskStatsContent(content)
+	want := TaskStats{Done: 2, Total: 5, PendingHuman: 2, PendingOther: 1}
+	if st != want {
+		t.Errorf("got %+v, want %+v", st, want)
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tasks.md")
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if done, total := ParseTaskProgress(p); done != 2 || total != 5 {
+		t.Errorf("ParseTaskProgress = %d/%d, want 2/5", done, total)
+	}
+	if got := ParseTaskStats(p); got != want {
+		t.Errorf("ParseTaskStats = %+v, want %+v", got, want)
+	}
+}
+
+func TestToggleTask_KeepsMarkerAndCleansText(t *testing.T) {
+	ws := t.TempDir()
+	dir := filepath.Join(ws, "openspec", "changes", "c")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "tasks.md")
+	if err := os.WriteFile(p, []byte("- [ ] Parcours <!-- human review required -->\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	text, done, err := ToggleTask(ws, "c", 0)
+	if err != nil || !done || text != "Parcours" {
+		t.Fatalf("got (%q, %v, %v)", text, done, err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "- [x] Parcours <!-- human review required -->\n" {
+		t.Errorf("unexpected file: %q", data)
+	}
+}

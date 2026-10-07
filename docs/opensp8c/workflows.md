@@ -69,17 +69,22 @@ flowchart TD
     DAG --> W[Worker takes change]
     W --> WT[Create branch feature/name + git worktree]
     WT --> RUN[Non-interactive agent session implements tasks.md]
-    RUN --> V{Build / tests pass?}
+    RUN --> TR{hitl-review and unchecked tasks without marker?}
+    TR -- yes --> TRIAGE[One triage turn: finish the task or flag it human review]
+    TR -- no --> V
+    TRIAGE --> V{Build / tests pass?}
     V -- no --> H{attempts < max_attempts?}
     H -- yes --> HEAL[Re-inject error logs in same session]
     HEAL --> V
     H -- no --> P1[paused: healing exhausted]
-    V -- yes --> T{All tasks checked?}
-    T -- no --> P2[paused: tasks remain]
-    T -- yes --> M{delegation_mode}
+    V -- yes --> T{Tasks left for the agent?}
+    T -- yes --> P2[paused: tasks remain]
+    T -- no --> M{delegation_mode}
     M -- full-autonomy --> MERGE[Auto-merge, cleanup worktree] --> DONE[Done]
     M -- hitl-review --> REV[To Review]
 ```
+
+**Human validation tasks.** A `tasks.md` line carrying the HTML comment `<!-- human review required -->` is a task only the user can validate (manual walkthrough, visual check, command to run). In `full-autonomy` every unchecked task blocks the worker, marker or not. In `hitl-review` the completion check ignores unchecked marked tasks, so a change left with only those goes to **To Review** instead of pausing; an unchecked task without marker still pauses the worker. Before validation, `hitl-review` workers get one *triage* turn when unmarked tasks remain: for each, finish and check it, or add the marker without checking it. Each task flagged by the triage is logged as a `pool.task_flagged` activity entry. The agent's system prompt also forbids it to check a marked task. The same rule applies when a worker resumes after a correction request; "Resume and finalize" still requires every task to be checked.
 
 Worker startup or invocation failures also end in `paused` with a readable reason. Stopping the pool stops all workers; a single worker can be interrupted by demoting its card with `force=true` (worktree and commits are kept). Every worker status change emits `pool_updated` and an activity entry.
 
@@ -88,6 +93,8 @@ Worker startup or invocation failures also end in `paused` with a readable reaso
 1. A finished change lands in **To Review**; clicking the card opens the review panel (changed files, interactive diff, feedback box).
 2. **Approve and Merge** → the feature branch is merged into the current branch, the worktree removed, the card moved to *Done*.
 3. **Request corrections** → feedback is sent, the card returns to *In Progress*, and the worker restarts with the feedback injected into its system prompt.
+
+**Tasks to validate.** In review, tasks carrying the marker show a *Human validation* badge in the Tasks tab, with a "N tasks to validate" count above the list. **Approve and Merge** stays visible but disabled (tooltip "N tasks to validate") while any task of the branch is unchecked, marked or not; ticking the last one enables it without reload. Dropping a To Review card with unchecked tasks on *Done* is refused with a notification. The backend enforces the same rule: `POST …/review/approve` answers `409` `tasks_pending` (with `remaining`) before any integration, validation or merge; an already merged branch (cleanup retry) skips the check.
 
 **Tasks follow the branch.** As soon as a change owns a `feature/<change>` branch and no worker holds it, the detail panel and the card counters read the tasks from the branch (its worktree if present, else the committed `tasks.md`), not from the main repository. Ticking a task then edits that file and creates **one commit per tick** in the branch (`chore(scope): Validate task N` / `Reopen task N`, body `Change:` and `Task:`), so the tick is merged by Approve and the main repository stays clean. The column is not recomputed from the branch: it still derives from the review marker, the launched state and the main repository. A tick is refused with `409` (`review_busy`) while an approval, correction or reset runs on the change, and (`worker_active`) while a worker holds it; with a worker holding the change the tick edits its worktree without commit, as before.
 

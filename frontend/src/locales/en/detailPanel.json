@@ -39,6 +39,9 @@
     "label": "Active exploration draft",
     "freeze": "Freeze the change"
   },
+  "humanReviewBadge": "Human validation",
+  "tasksToValidate_one": "{{count}} task to validate",
+  "tasksToValidate_other": "{{count}} tasks to validate",
   "reviewActions": {
     "approveAndMerge": "Approve & Merge",
     "requestCorrection": "Request correction",
