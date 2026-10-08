@@ -64,6 +64,12 @@ export function VerificationBanner({ workspaceId, change, onCorrectionSent }: Pr
 
       {hasOutcome && report && (
         <div className="flex flex-col gap-1">
+          {report.driver && (
+            <p data-testid="verification-driver" className="text-xs">
+              {t('verificationBanner.driver.label', { name: t(`verificationBanner.driver.names.${report.driver}`, { defaultValue: report.driver }) })}
+              {report.driver === 'chrome' && <span className="font-medium"> · {t('verificationBanner.driver.chromeNote')}</span>}
+            </p>
+          )}
           {report.reason && <p className="text-xs break-words">{report.reason}</p>}
           {report.report && (
             <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 text-slate-700">

@@ -138,12 +138,22 @@ export interface PoolPatch {
   validationCommand?: string | null
 }
 
+// How the UI verification agent gets a browser. `chrome` can only be chosen
+// per workspace (it drives the user's own browser).
+export type UiDriver = 'auto' | 'playwright' | 'chrome' | 'custom'
+
 // Verification: two independent steps, each on / off / inherited per level.
 export interface VerificationSettings {
   conformity: boolean
   ui: boolean
   uiStartCommand?: string
   uiBaseUrl?: string
+  uiDriver?: UiDriver
+  uiMcpConfig?: string
+  uiAllowedTools?: string[]
+  // Free text for the UI agent. Resolved values accumulate: Configuration
+  // text, then the workspace text.
+  uiGuidance?: string
 }
 
 // Partial per-workspace override; an absent field inherits.
@@ -155,6 +165,10 @@ export interface VerificationPatch {
   ui?: boolean | null
   uiStartCommand?: string | null
   uiBaseUrl?: string | null
+  uiDriver?: UiDriver | null
+  uiMcpConfig?: string | null
+  uiAllowedTools?: string[] | null
+  uiGuidance?: string | null
 }
 
 // Change level: the two steps only (launch parameters describe the project).
@@ -487,6 +501,10 @@ export interface VerificationReport {
   verified?: string[]
   /** TASK-VERIFIED lines that matched no task. */
   ignored?: string[]
+  /** UI step only: how the agent drove the browser. Absent for another step or an older run. */
+  driver?: UiDriver
+  /** UI step only: the tools passed to the agent's --allowedTools. */
+  allowed_tools?: string[]
 }
 
 const verificationURL = (workspaceId: string, changeName: string) =>

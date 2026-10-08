@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -21,6 +22,8 @@ func TestMain(m *testing.M) {
 	} {
 		os.Setenv(k, v)
 	}
+	// Never run the real claude CLI to probe its flags.
+	permissionPromptsNone = func(context.Context) bool { return true }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

@@ -38,6 +38,9 @@ type AgentConfig struct {
 	// Execution fields, set per launch (see preferences.ApplyRole).
 	Model  string
 	Effort string
+	// ExtraArgs are launch arguments appended after the model and effort
+	// flags, for the Claude agent only (see SupportsDrivers).
+	ExtraArgs []string
 }
 
 type AgentStatus struct {
@@ -52,7 +55,42 @@ type AgentStatus struct {
 // Claude uses stream-json format; other agents use the same flags as placeholders
 // until their actual CLI interfaces are validated.
 func (a AgentConfig) BuildSubprocessArgs(basePrompt, extraPrompt string) []string {
-	return append(a.baseArgs(basePrompt, extraPrompt), a.modelEffortArgs()...)
+	args := append(a.baseArgs(basePrompt, extraPrompt), a.modelEffortArgs()...)
+	if a.ID == "claude" {
+		args = append(args, a.ExtraArgs...)
+	}
+	return args
+}
+
+// SupportsDrivers reports whether the agent can run a UI verification driver
+// (MCP servers, allowed tools, Chrome integration): the Claude CLI only.
+func (a AgentConfig) SupportsDrivers() bool { return a.ID == "claude" }
+
+var (
+	claudeHelpMu    sync.Mutex
+	claudeHelpCache string
+	// claudeHelp reads the help text of the claude CLI; replaced by tests.
+	claudeHelp = func(ctx context.Context) (string, error) {
+		out, err := exec.CommandContext(ctx, "claude", "--help").CombinedOutput()
+		return string(out), err
+	}
+)
+
+// ClaudeSupportsFlag reports whether `claude --help` lists flag. The help text
+// is read once per process after a successful call; any failure answers false.
+func ClaudeSupportsFlag(ctx context.Context, flag string) bool {
+	claudeHelpMu.Lock()
+	defer claudeHelpMu.Unlock()
+	if claudeHelpCache == "" {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		out, err := claudeHelp(ctx)
+		if err != nil || out == "" {
+			return false
+		}
+		claudeHelpCache = out
+	}
+	return strings.Contains(claudeHelpCache, flag)
 }
 
 // modelEffortArgs returns the model then effort flags, each only when both the

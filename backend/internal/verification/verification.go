@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Override holds the on/off values of one level; nil means "inherit".
@@ -37,20 +38,80 @@ func (o *Override) Clone() *Override {
 	return out
 }
 
+// UI drivers: how the verifier agent gets a browser.
+const (
+	DriverAuto       = "auto"
+	DriverPlaywright = "playwright"
+	DriverChrome     = "chrome"
+	DriverCustom     = "custom"
+)
+
+// Limits of the free-form driver settings.
+const (
+	MaxGuidanceLen = 4000
+	MaxToolEntries = 50
+)
+
 // LaunchParams are the parameters of the UI verification launch.
 type LaunchParams struct {
-	UIStartCommand string `json:"uiStartCommand,omitempty"`
-	UIBaseURL      string `json:"uiBaseUrl,omitempty"`
+	UIStartCommand string   `json:"uiStartCommand,omitempty"`
+	UIBaseURL      string   `json:"uiBaseUrl,omitempty"`
+	UIDriver       string   `json:"uiDriver"`
+	UIMcpConfig    string   `json:"uiMcpConfig,omitempty"`
+	UIAllowedTools []string `json:"uiAllowedTools,omitempty"`
+	// UIGuidance is the platform guidance followed by the workspace one.
+	UIGuidance string `json:"uiGuidance,omitempty"`
 }
 
 // LaunchOverride is a partial LaunchParams; nil means "inherit".
 type LaunchOverride struct {
-	UIStartCommand *string `json:"uiStartCommand,omitempty"`
-	UIBaseURL      *string `json:"uiBaseUrl,omitempty"`
+	UIStartCommand *string   `json:"uiStartCommand,omitempty"`
+	UIBaseURL      *string   `json:"uiBaseUrl,omitempty"`
+	UIDriver       *string   `json:"uiDriver,omitempty"`
+	UIMcpConfig    *string   `json:"uiMcpConfig,omitempty"`
+	UIAllowedTools *[]string `json:"uiAllowedTools,omitempty"`
+	UIGuidance     *string   `json:"uiGuidance,omitempty"`
 }
 
 // IsEmpty reports whether no launch parameter is set.
-func (l LaunchOverride) IsEmpty() bool { return l.UIStartCommand == nil && l.UIBaseURL == nil }
+func (l LaunchOverride) IsEmpty() bool {
+	return l.UIStartCommand == nil && l.UIBaseURL == nil && l.UIDriver == nil &&
+		l.UIMcpConfig == nil && l.UIAllowedTools == nil && l.UIGuidance == nil
+}
+
+// ParseDriver validates a driver name; the empty string (after trimming)
+// means "absent" and is returned as is.
+func ParseDriver(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "", DriverAuto, DriverPlaywright, DriverChrome, DriverCustom:
+		return s, nil
+	}
+	return "", fmt.Errorf("uiDriver must be one of auto, playwright, chrome, custom")
+}
+
+// ValidateGuidance checks the length of the (trimmed) guidance text.
+func ValidateGuidance(s string) error {
+	if utf8.RuneCountInString(strings.TrimSpace(s)) > MaxGuidanceLen {
+		return fmt.Errorf("uiGuidance must be at most %d characters", MaxGuidanceLen)
+	}
+	return nil
+}
+
+// NormalizeTools trims every entry and drops the empty ones; nil when none
+// remains. More than MaxToolEntries non-empty entries is an error.
+func NormalizeTools(in []string) ([]string, error) {
+	var out []string
+	for _, t := range in {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) > MaxToolEntries {
+		return nil, fmt.Errorf("uiAllowedTools must have at most %d entries", MaxToolEntries)
+	}
+	return out, nil
+}
 
 // Level is one level above the change (platform or workspace): the on/off
 // values plus the launch parameters, which a change cannot define.
@@ -89,9 +150,56 @@ func pickText(levels ...*string) string {
 	return out
 }
 
+// pickDriver returns the first valid driver among levels (unknown values of a
+// hand-edited file are ignored), or auto.
+func pickDriver(levels ...*string) string {
+	for _, v := range levels {
+		if v == nil {
+			continue
+		}
+		if d, err := ParseDriver(*v); err == nil && d != "" {
+			return d
+		}
+	}
+	return DriverAuto
+}
+
+func pickTools(levels ...*[]string) []string {
+	for _, v := range levels {
+		if v == nil {
+			continue
+		}
+		var out []string
+		for _, t := range *v {
+			if t = strings.TrimSpace(t); t != "" {
+				out = append(out, t)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
+// joinGuidance accumulates the platform then the workspace text.
+func joinGuidance(levels ...*string) string {
+	var parts []string
+	for _, v := range levels {
+		if v == nil {
+			continue
+		}
+		if t := strings.TrimSpace(*v); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // Resolve applies the cascade change > workspace > platform > off, step by
-// step; launch parameters cascade workspace > platform, field by field. Any
-// argument may be nil.
+// step; launch parameters cascade workspace > platform, field by field, except
+// the guidance which accumulates. A platform driver "chrome" is ignored: that
+// driver can only be chosen by a workspace. Any argument may be nil.
 func Resolve(platform, workspace *Level, change *Override) Resolved {
 	var p, w Level
 	if platform != nil {
@@ -104,12 +212,19 @@ func Resolve(platform, workspace *Level, change *Override) Resolved {
 	if change != nil {
 		c = *change
 	}
+	if p.UIDriver != nil && strings.TrimSpace(*p.UIDriver) == DriverChrome {
+		p.UIDriver = nil
+	}
 	return Resolved{
 		Conformity: pickBool(false, c.Conformity, w.Conformity, p.Conformity),
 		UI:         pickBool(false, c.UI, w.UI, p.UI),
 		LaunchParams: LaunchParams{
 			UIStartCommand: pickText(w.UIStartCommand, p.UIStartCommand),
 			UIBaseURL:      pickText(w.UIBaseURL, p.UIBaseURL),
+			UIDriver:       pickDriver(w.UIDriver, p.UIDriver),
+			UIMcpConfig:    pickText(w.UIMcpConfig, p.UIMcpConfig),
+			UIAllowedTools: pickTools(w.UIAllowedTools, p.UIAllowedTools),
+			UIGuidance:     joinGuidance(p.UIGuidance, w.UIGuidance),
 		},
 	}
 }

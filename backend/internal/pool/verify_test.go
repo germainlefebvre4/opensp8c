@@ -29,6 +29,8 @@ type verifierStub struct {
 	cwds    []string
 	turns   []string
 	envs    []map[string]string
+	cfgs    []agents.AgentConfig
+	events  []string // stream lines written before the final line of each turn
 
 	answer   string // text of the result; "" with raw unused
 	raw      string // when set, the exact final line
@@ -44,6 +46,7 @@ func (s *verifierStub) start(ctx context.Context, ws string, agentCfg agents.Age
 	s.prompts = append(s.prompts, extra)
 	s.cwds = append(s.cwds, ws)
 	s.envs = append(s.envs, env)
+	s.cfgs = append(s.cfgs, agentCfg)
 	err := s.startErr
 	s.mu.Unlock()
 	if err != nil {
@@ -78,6 +81,11 @@ func (s *verifierStub) start(ctx context.Context, ws string, agentCfg agents.Age
 			}
 			if s.before != nil {
 				s.before(ws)
+			}
+			for _, ev := range s.events {
+				if _, err := outW.Write([]byte(ev + "\n")); err != nil {
+					return
+				}
 			}
 			final := s.raw
 			if final == "" {

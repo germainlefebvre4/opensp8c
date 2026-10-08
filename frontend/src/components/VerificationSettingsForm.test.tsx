@@ -106,3 +106,109 @@ describe('VerificationSettingsForm — workspace scope', () => {
     expect(screen.getByRole('status')).toBeTruthy()
   })
 })
+
+describe('VerificationSettingsForm — driver settings', () => {
+  const driverSelect = () => screen.getByLabelText('Browser driver') as HTMLSelectElement
+  const optionLabels = () => Array.from(driverSelect().options).map(o => o.textContent)
+
+  it('offers auto, playwright and custom at Configuration level, never chrome', () => {
+    render(<VerificationSettingsForm scope="global" values={undefined} onSave={onSave} />)
+    expect(driverSelect().value).toBe('auto')
+    expect(optionLabels()).toEqual([
+      'Automatic (host configuration)',
+      'Playwright (headless browser)',
+      'Custom (MCP file)',
+    ])
+  })
+
+  it('offers chrome in a workspace and warns when it is chosen', () => {
+    render(<VerificationSettingsForm scope="workspace" values={{}} inherited={{ conformity: false, ui: false }} onSave={onSave} />)
+    expect(optionLabels()).toContain('Chrome (your own browser)')
+    expect(screen.queryByText(enConfiguration.verificationSettings.chromeWarning)).toBeNull()
+    fireEvent.change(driverSelect(), { target: { value: 'chrome' } })
+    expect(screen.getByText(enConfiguration.verificationSettings.chromeWarning)).toBeTruthy()
+    fireEvent.click(saveButton())
+    expect(onSave).toHaveBeenCalledWith({ uiDriver: 'chrome' })
+  })
+
+  it('disables the custom fields unless the resolved driver is custom', () => {
+    render(<VerificationSettingsForm scope="global" values={undefined} onSave={onSave} />)
+    const config = screen.getByLabelText('MCP configuration file') as HTMLInputElement
+    const tools = screen.getByLabelText('Allowed tools') as HTMLTextAreaElement
+    expect(config.disabled).toBe(true)
+    expect(tools.disabled).toBe(true)
+    fireEvent.change(driverSelect(), { target: { value: 'playwright' } })
+    expect(config.disabled).toBe(true)
+    fireEvent.change(driverSelect(), { target: { value: 'custom' } })
+    expect(config.disabled).toBe(false)
+    expect(tools.disabled).toBe(false)
+  })
+
+  it('saves a custom driver with its file and one tool per line', () => {
+    render(<VerificationSettingsForm scope="global" values={undefined} onSave={onSave} />)
+    fireEvent.change(driverSelect(), { target: { value: 'custom' } })
+    expect(screen.getByRole('status').textContent).toBe(enConfiguration.verificationSettings.customIncomplete)
+    fireEvent.change(screen.getByLabelText('MCP configuration file'), { target: { value: ' /etc/mcp/ui.json ' } })
+    fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'mcp__cypress\n\nmcp__db ' } })
+    expect(screen.queryByRole('status')).toBeNull()
+    fireEvent.click(saveButton())
+    expect(onSave).toHaveBeenCalledWith({
+      uiDriver: 'custom',
+      uiMcpConfig: '/etc/mcp/ui.json',
+      uiAllowedTools: ['mcp__cypress', 'mcp__db'],
+    })
+  })
+
+  it('shows the inherited driver and distinguishes an override, resettable', () => {
+    const inherited = { conformity: false, ui: false, uiDriver: 'playwright' as const }
+    render(<VerificationSettingsForm scope="workspace" values={{}} inherited={inherited} onSave={onSave} />)
+    expect(driverSelect().value).toBe('inherit')
+    expect(screen.getByRole('option', { name: 'Inherited (Playwright (headless browser))' })).toBeTruthy()
+    expect(screen.queryByText('Override')).toBeNull()
+    cleanup()
+
+    render(<VerificationSettingsForm scope="workspace" values={{ uiDriver: 'custom' }} inherited={inherited} onSave={onSave} />)
+    expect(driverSelect().value).toBe('custom')
+    expect(screen.getByText('Override')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Browser driver — Back to inheritance'))
+    expect(onSave).toHaveBeenCalledWith({ uiDriver: null })
+  })
+
+  it('enables the custom fields when the inherited driver is custom', () => {
+    const inherited = { conformity: false, ui: false, uiDriver: 'custom' as const, uiMcpConfig: '/etc/mcp/ui.json', uiAllowedTools: ['mcp__a'] }
+    render(<VerificationSettingsForm scope="workspace" values={{}} inherited={inherited} onSave={onSave} />)
+    expect((screen.getByLabelText('MCP configuration file') as HTMLInputElement).disabled).toBe(false)
+    expect((screen.getByLabelText('MCP configuration file') as HTMLInputElement).placeholder).toBe('/etc/mcp/ui.json')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('shows the Configuration guidance read-only above the workspace field', () => {
+    const inherited = { conformity: false, ui: false, uiGuidance: 'Viser le desktop 1280 px' }
+    render(<VerificationSettingsForm scope="workspace" values={{ uiGuidance: 'Ignorer Admin' }} inherited={inherited} onSave={onSave} />)
+    const block = screen.getByTestId('inherited-guidance')
+    expect(block.textContent).toBe('Viser le desktop 1280 px')
+    const field = screen.getByLabelText('Guidance for the agent') as HTMLTextAreaElement
+    expect(field.value).toBe('Ignorer Admin')
+    expect(block.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // At Configuration level there is nothing inherited.
+    cleanup()
+    render(<VerificationSettingsForm scope="global" values={undefined} onSave={onSave} />)
+    expect(screen.queryByTestId('inherited-guidance')).toBeNull()
+  })
+
+  it('warns about secrets in the guidance help and saves the text', () => {
+    render(<VerificationSettingsForm scope="global" values={undefined} onSave={onSave} />)
+    expect(screen.getByText(/Do not write a password or a secret here/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Guidance for the agent'), { target: { value: ' Viser le desktop ' } })
+    fireEvent.click(saveButton())
+    expect(onSave).toHaveBeenCalledWith({ uiGuidance: 'Viser le desktop' })
+  })
+
+  it('shows the validation error of the API', async () => {
+    const failing = vi.fn().mockRejectedValue(new Error('uiDriver chrome can only be set for a workspace'))
+    render(<VerificationSettingsForm scope="workspace" values={{}} inherited={{ conformity: false, ui: false }} onSave={failing} />)
+    fireEvent.change(driverSelect(), { target: { value: 'chrome' } })
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('can only be set for a workspace'))
+  })
+})

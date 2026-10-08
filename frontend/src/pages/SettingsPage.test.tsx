@@ -200,6 +200,16 @@ describe('SettingsPage', () => {
     expect(vi.mocked(usePatchWorkspaceSettings)).toHaveBeenLastCalledWith('b')
   })
 
+  it('offers the chrome driver with a warning and saves it as a workspace override', () => {
+    renderPage('b', '/settings?workspace=b&tab=verification')
+    const driver = screen.getByLabelText('Browser driver') as HTMLSelectElement
+    expect(Array.from(driver.options).map(o => o.value)).toEqual(['inherit', 'auto', 'playwright', 'chrome', 'custom'])
+    fireEvent.change(driver, { target: { value: 'chrome' } })
+    expect(screen.getByText(/drive your own Chrome browser/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Save'))
+    expect(mutateAsync).toHaveBeenCalledWith({ verification: { uiDriver: 'chrome' } })
+  })
+
   it('marks a verification override and resets it with null', () => {
     renderPage('a', '/settings?workspace=a&tab=verification')
     expect((screen.getByLabelText('Conformity verification') as HTMLSelectElement).value).toBe('off')

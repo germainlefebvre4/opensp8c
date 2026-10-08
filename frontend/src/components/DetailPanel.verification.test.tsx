@@ -214,6 +214,39 @@ describe('DetailPanel verification banner', () => {
       expect(screen.getByTestId('verification-ignored').textContent).toContain('tâche inventée')
     })
 
+    it('labels the driver of a UI report', () => {
+      mockDetail(detail({ verification_state: 'passed' }))
+      uiReport({ verdict: 'pass', driver: 'playwright', allowed_tools: ['mcp__playwright', 'Read'] })
+      render(panel())
+      expect(screen.getByTestId('verification-driver').textContent).toBe('Driver: Playwright')
+      cleanup()
+      for (const [driver, name] of [['auto', 'automatic'], ['custom', 'custom']] as const) {
+        uiReport({ verdict: 'pass', driver })
+        render(panel())
+        expect(screen.getByTestId('verification-driver').textContent).toBe(`Driver: ${name}`)
+        cleanup()
+      }
+    })
+
+    it('mentions that the user\'s browser was driven for the Chrome driver', () => {
+      mockDetail(detail({ verification_state: 'passed' }))
+      uiReport({ verdict: 'pass', driver: 'chrome' })
+      render(panel())
+      const label = screen.getByTestId('verification-driver').textContent
+      expect(label).toContain('Chrome browser')
+      expect(label).toContain(enDetailPanel.verificationBanner.driver.chromeNote)
+    })
+
+    it('shows no driver label for a conformity report or an older run', () => {
+      mockDetail(detail({ verification_state: 'passed' }))
+      render(panel()) // the default report is the conformity one
+      expect(screen.queryByTestId('verification-driver')).toBeNull()
+      cleanup()
+      uiReport({ verdict: 'pass' })
+      render(panel())
+      expect(screen.queryByTestId('verification-driver')).toBeNull()
+    })
+
     it('labels the waiting and the UI running states', () => {
       vi.mocked(useVerificationReport).mockReturnValue({ data: undefined } as unknown as ReturnType<typeof useVerificationReport>)
       mockDetail(detail({ verification_state: 'waiting', verification_step: 'ui' }))

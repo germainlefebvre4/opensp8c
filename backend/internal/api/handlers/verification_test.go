@@ -473,7 +473,8 @@ func TestVerificationReport_PerStepAndTasks(t *testing.T) {
 	writeVerifyRun(t, store, f.workspaceID, branchChange, "2026-03-01T10-00-05Z",
 		map[string]any{"type": "verify_run_start", "step": "ui"},
 		map[string]any{"type": "verify_run_end", "step": "ui", "verdict": "fail", "reason": "échec", "report": "ui ko",
-			"verified": []string{"4.1 A"}, "ignored": []string{"inventée"}})
+			"verified": []string{"4.1 A"}, "ignored": []string{"inventée"},
+			"driver": "playwright", "allowed_tools": []string{"mcp__playwright", "Read", "Grep", "Glob"}})
 
 	get := func(url string) (*httptest.ResponseRecorder, verificationReport) {
 		req := httptest.NewRequest("GET", url, nil)
@@ -492,8 +493,12 @@ func TestVerificationReport_PerStepAndTasks(t *testing.T) {
 		len(rep.Verified) != 1 || rep.Verified[0] != "4.1 A" || len(rep.Ignored) != 1 || rep.Ignored[0] != "inventée" {
 		t.Errorf("default report = %+v", rep)
 	}
-	if _, rep := get("/report?step=conformity"); rep.Step != "conformity" || rep.Report != "conf ok" || len(rep.Verified) != 0 {
-		t.Errorf("conformity report = %+v", rep)
+	if _, rep := get("/report"); rep.Driver != "playwright" || len(rep.AllowedTools) != 4 || rep.AllowedTools[0] != "mcp__playwright" {
+		t.Errorf("ui report must carry the driver and tools: %+v", rep)
+	}
+	if rec, rep := get("/report?step=conformity"); rep.Step != "conformity" || rep.Report != "conf ok" || len(rep.Verified) != 0 ||
+		rep.Driver != "" || strings.Contains(rec.Body.String(), "driver") || strings.Contains(rec.Body.String(), "allowed_tools") {
+		t.Errorf("conformity report = %+v (%s)", rep, rec.Body.String())
 	}
 	if rec, _ := get("/report?step=other"); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown step: %d", rec.Code)

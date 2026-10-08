@@ -682,7 +682,7 @@ func (s *Service) PatchWorkspace(workspaceID string, patch WorkspaceSettingsPatc
 		ws.Pool = next
 	}
 	if patch.Verification != nil {
-		next, err := applyVerificationPatch(ws.Verification, *patch.Verification)
+		next, err := applyVerificationPatch(ws.Verification, *patch.Verification, true)
 		if err != nil {
 			return err
 		}
@@ -738,7 +738,7 @@ func (s *Service) ValidateGlobalUpdate(a *AgentSettingsPatch, pool *PoolPatch, v
 		}
 	}
 	if ver != nil {
-		if _, err := applyVerificationPatch(nil, *ver); err != nil {
+		if _, err := applyVerificationPatch(nil, *ver, false); err != nil {
 			return err
 		}
 	}

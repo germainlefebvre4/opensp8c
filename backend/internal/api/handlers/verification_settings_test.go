@@ -235,7 +235,8 @@ func TestPatchChangeVerificationErrors(t *testing.T) {
 	if rec := patchChangeVerif(h, "unknown", "my-change", `{"ui":true}`); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown workspace: %d", rec.Code)
 	}
-	for _, body := range []string{`{"uiStartCommand":"make dev"}`, `{"uiBaseUrl":"http://x"}`, `{"ui":"maybe"}`, `not json`} {
+	for _, body := range []string{`{"uiStartCommand":"make dev"}`, `{"uiBaseUrl":"http://x"}`, `{"ui":"maybe"}`, `not json`,
+		`{"uiDriver":"playwright"}`, `{"uiMcpConfig":"/x.json"}`, `{"uiAllowedTools":["a"]}`, `{"uiGuidance":"x"}`} {
 		if rec := patchChangeVerif(h, id, "my-change", body); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d", body, rec.Code)
 		}
@@ -297,4 +298,85 @@ func TestChangeVerificationReadsMainRepository(t *testing.T) {
 		t.Errorf("main repository must win: %v", v)
 	}
 	_ = dir
+}
+
+func TestVerificationDriverSettingsRoundTrip(t *testing.T) {
+	h, prefs, idA, idB := wsSettingsFixture(t)
+	ph := NewPreferencesHandler(prefs)
+
+	d := getPrefs(t, ph)["verificationDefaults"].(map[string]any)
+	if d["uiDriver"] != "auto" {
+		t.Fatalf("built-in driver must be auto: %v", d)
+	}
+	if rec := patchPrefs(t, ph, `{"verificationDefaults":{"uiDriver":"playwright","uiMcpConfig":"/etc/mcp/ui.json","uiAllowedTools":["mcp__cypress"],"uiGuidance":"Viser le desktop"}}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	d = getPrefs(t, ph)["verificationDefaults"].(map[string]any)
+	if d["uiDriver"] != "playwright" || d["uiMcpConfig"] != "/etc/mcp/ui.json" || d["uiGuidance"] != "Viser le desktop" {
+		t.Errorf("defaults: %v", d)
+	}
+
+	rec := httptest.NewRecorder()
+	h.Patch(rec, wsReq(http.MethodPatch, idA, `{"verification":{"uiDriver":"chrome","uiAllowedTools":["mcp__a","mcp__b"],"uiGuidance":"Ignorer Admin"}}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	out := decodeMap(t, rec)
+	if o := verifSection(out, "overrides"); o["uiDriver"] != "chrome" || o["uiGuidance"] != "Ignorer Admin" || len(o["uiAllowedTools"].([]any)) != 2 {
+		t.Errorf("overrides: %v", o)
+	}
+	if i := verifSection(out, "inherited"); i["uiDriver"] != "playwright" || i["uiGuidance"] != "Viser le desktop" {
+		t.Errorf("inherited: %v", i)
+	}
+	r := verifSection(out, "resolved")
+	if r["uiDriver"] != "chrome" || r["uiMcpConfig"] != "/etc/mcp/ui.json" || r["uiGuidance"] != "Viser le desktop\n\nIgnorer Admin" || len(r["uiAllowedTools"].([]any)) != 2 {
+		t.Errorf("resolved: %v", r)
+	}
+
+	// Another workspace keeps the Configuration values.
+	rec = httptest.NewRecorder()
+	h.Get(rec, wsReq(http.MethodGet, idB, ""))
+	if r := verifSection(decodeMap(t, rec), "resolved"); r["uiDriver"] != "playwright" || r["uiGuidance"] != "Viser le desktop" {
+		t.Errorf("B leaked: %v", r)
+	}
+}
+
+func TestVerificationDriverSettingsRejected(t *testing.T) {
+	h, prefs, idA, _ := wsSettingsFixture(t)
+	ph := NewPreferencesHandler(prefs)
+	if rec := patchPrefs(t, ph, `{"verificationDefaults":{"uiDriver":"playwright"}}`); rec.Code != http.StatusNoContent {
+		t.Fatal(rec.Body.String())
+	}
+	before, _ := os.ReadFile(prefs.Path())
+	for _, body := range []string{
+		`{"verificationDefaults":{"uiDriver":"chrome"}}`,
+		`{"verificationDefaults":{"uiDriver":"selenium"}}`,
+		`{"defaultAgent":"codex","verificationDefaults":{"uiDriver":"chrome"}}`,
+		`{"verificationDefaults":{"uiGuidance":"` + strings.Repeat("x", 4001) + `"}}`,
+	} {
+		if rec := patchPrefs(t, ph, body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%.60s: expected 400, got %d", body, rec.Code)
+		}
+	}
+	if after, _ := os.ReadFile(prefs.Path()); string(after) != string(before) {
+		t.Errorf("rejected updates modified the file:\n%s\n%s", before, after)
+	}
+	for _, body := range []string{`{"verification":{"uiDriver":"selenium"}}`, `{"verification":{"uiGuidance":"` + strings.Repeat("x", 4001) + `"}}`} {
+		rec := httptest.NewRecorder()
+		h.Patch(rec, wsReq(http.MethodPatch, idA, body))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%.60s: expected 400, got %d", body, rec.Code)
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.Patch(rec, wsReq(http.MethodPatch, "unknown", `{"verification":{"uiDriver":"chrome"}}`))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown workspace: %d", rec.Code)
+	}
+	// The workspace has no override after the refusals.
+	rec = httptest.NewRecorder()
+	h.Get(rec, wsReq(http.MethodGet, idA, ""))
+	if o := verifSection(decodeMap(t, rec), "overrides"); o["uiDriver"] != nil {
+		t.Errorf("refused patch left an override: %v", o)
+	}
 }

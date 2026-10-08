@@ -115,6 +115,10 @@ type verificationReport struct {
 	// TASK-VERIFIED lines that matched no task.
 	Verified []string `json:"verified"`
 	Ignored  []string `json:"ignored"`
+	// Driver and AllowedTools describe how the UI step drove the browser; absent
+	// for another step or for a run written before the drivers existed.
+	Driver       string   `json:"driver,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 }
 
 // Limits of the evidence of a run.
@@ -174,6 +178,9 @@ type runMarkers struct {
 	Report   string   `json:"report"`
 	Verified []string `json:"verified"`
 	Ignored  []string `json:"ignored"`
+	// Driver and AllowedTools are written by the UI step only.
+	Driver       string   `json:"driver"`
+	AllowedTools []string `json:"allowed_tools"`
 }
 
 // readRunReport reads the markers of one verify run; ended tells whether the
@@ -205,6 +212,9 @@ func (h *VerificationHandler) readRunReport(id, name, ts string) (rep verificati
 			}
 			if m.Ignored != nil {
 				rep.Ignored = m.Ignored
+			}
+			if m.Step == "ui" {
+				rep.Driver, rep.AllowedTools = m.Driver, m.AllowedTools
 			}
 			ended = true
 		}

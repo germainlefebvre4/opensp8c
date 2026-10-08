@@ -1,0 +1,3 @@
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_016JNfzaPSoQDeyHA8KCH1Vg", "name": "mcp__playwright__browser_navigate", "input": {"url": "https://example.com"}, "caller": {"type": "direct"}}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_01V31iq5mnbmGZVApoHF7rpF", "name": "mcp__playwright__browser_take_screenshot", "input": {"filename": "shot.png", "scale": "css"}, "caller": {"type": "direct"}}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "VERDICT: PASS"}]}}

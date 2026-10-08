@@ -550,6 +550,12 @@ type agentTurnError struct{ reason string }
 
 func (e *agentTurnError) Error() string { return "agent turn failed: " + e.reason }
 
+// driverCheckError is a turn stopped because the UI verification driver is
+// not usable; its reason is shown as is.
+type driverCheckError struct{ reason string }
+
+func (e *driverCheckError) Error() string { return "driver check failed: " + e.reason }
+
 // agentIdleError is an agent turn cut after agentIdleTimeout without output.
 type agentIdleError struct{ after time.Duration }
 
@@ -647,7 +653,10 @@ func isAgentStop(err error) bool {
 func agentTurnPauseReason(err error, fallback string) string {
 	var te *agentTurnError
 	var ie *agentIdleError
+	var de *driverCheckError
 	switch {
+	case errors.As(err, &de):
+		return de.reason
 	case errors.As(err, &te):
 		return fmt.Sprintf("L'agent a terminé son tour en erreur : %s", te.reason)
 	case errors.As(err, &ie):
@@ -689,6 +698,9 @@ type turnTarget struct {
 	setActivity func(string)
 	notify      func()
 	procCancel  func() // nil when there is nothing to cancel
+	// observe, when set, sees every line read from the agent; an error ends the
+	// turn and cancels the agent (see driverObserver).
+	observe func(line []byte) error
 }
 
 func (m *Manager) workerTurnTarget(w *Worker) turnTarget {
@@ -744,6 +756,15 @@ func (m *Manager) runTurnText(t turnTarget, proc *session.Subprocess, content st
 		idle.Reset(agentIdleTimeout)
 		line := scanner.Bytes()
 		m.logRunRef(t.ref, "out", line)
+
+		if t.observe != nil {
+			if err := t.observe(line); err != nil {
+				if t.procCancel != nil {
+					t.procCancel()
+				}
+				return "", &driverCheckError{reason: err.Error()}
+			}
+		}
 
 		switch kind, reason := classifyTurnLine(line); kind {
 		case turnOK:

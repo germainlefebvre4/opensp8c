@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RotateCcw } from 'lucide-react'
-import type { VerificationOverride, VerificationPatch, VerificationSettings } from '../lib/api'
+import type { UiDriver, VerificationOverride, VerificationPatch, VerificationSettings } from '../lib/api'
 import {
+  DRIVERS,
   buildVerificationPatch,
+  customIncomplete,
   draftFrom,
+  effectiveDriver,
   isEmptyVerificationPatch,
   isValidBaseUrl,
   missingStartCommand,
@@ -43,6 +46,10 @@ export function VerificationSettingsForm({ scope, values, inherited, isSaving, o
   const patch = buildVerificationPatch(draft, values, scope)
   const dirty = !isEmptyVerificationPatch(patch)
   const warnNoCommand = missingStartCommand(draft, isWorkspace ? inherited : undefined)
+  const inheritedForDraft = isWorkspace ? inherited : undefined
+  const driver = effectiveDriver(draft, inheritedForDraft)
+  const isCustom = driver === 'custom'
+  const warnCustom = customIncomplete(draft, inheritedForDraft)
 
   const save = async (next: VerificationPatch) => {
     setError(null)
@@ -52,6 +59,8 @@ export function VerificationSettingsForm({ scope, values, inherited, isSaving, o
       setError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  const driverLabel = (d: UiDriver) => t(`verificationSettings.driverOptions.${d}`)
 
   const fieldLabel = (field: keyof VerificationSettings) =>
     field === 'conformity' || field === 'ui' ? t(`verificationSettings.${field}.label`) : t(`verificationSettings.${field}`)
@@ -110,6 +119,125 @@ export function VerificationSettingsForm({ scope, values, inherited, isSaving, o
     )
   }
 
+  const driverRow = () => {
+    const id = `verification-uiDriver-${scope}`
+    const inheritedDriver: UiDriver = inherited?.uiDriver ?? 'auto'
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label htmlFor={id} className="text-xs font-medium text-slate-700">{t('verificationSettings.uiDriver')}</label>
+          {badge('uiDriver')}
+          {resetButton('uiDriver')}
+        </div>
+        <select
+          id={id}
+          value={draft.uiDriver}
+          onChange={e => setDraft(d => ({ ...d, uiDriver: e.target.value as UiDriver | 'inherit' }))}
+          className={`${INPUT_CLASS} w-fit`}
+        >
+          {isWorkspace && (
+            <option value="inherit">
+              {t('verificationSettings.driverInherited', { value: driverLabel(inheritedDriver) })}
+            </option>
+          )}
+          {DRIVERS[scope].map(d => (
+            <option key={d} value={d}>{driverLabel(d)}</option>
+          ))}
+        </select>
+        <span className="text-[10px] text-slate-400">{t('verificationSettings.uiDriverHint')}</span>
+        {driver === 'playwright' && (
+          <span className="text-[10px] text-slate-400">{t('verificationSettings.playwrightHint')}</span>
+        )}
+        {draft.uiDriver === 'chrome' && (
+          <p role="status" className="text-[11px] text-amber-600">{t('verificationSettings.chromeWarning')}</p>
+        )}
+      </div>
+    )
+  }
+
+  const customRows = () => (
+    <>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label htmlFor={`verification-uiMcpConfig-${scope}`} className="text-xs font-medium text-slate-700">
+            {t('verificationSettings.uiMcpConfig')}
+          </label>
+          {badge('uiMcpConfig')}
+          {resetButton('uiMcpConfig')}
+        </div>
+        <input
+          id={`verification-uiMcpConfig-${scope}`}
+          type="text"
+          value={draft.uiMcpConfig}
+          disabled={!isCustom}
+          placeholder={isWorkspace ? (inherited?.uiMcpConfig ?? '') : ''}
+          onChange={e => setDraft(d => ({ ...d, uiMcpConfig: e.target.value }))}
+          className={`${INPUT_CLASS} w-full font-mono disabled:opacity-60`}
+        />
+        <span className="text-[10px] text-slate-400">{t('verificationSettings.uiMcpConfigHint')}</span>
+        {isWorkspace && !isOverride('uiMcpConfig') && inherited?.uiMcpConfig && (
+          <span className="text-[10px] text-slate-400">{t('verificationSettings.inherited', { value: inherited.uiMcpConfig })}</span>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label htmlFor={`verification-uiAllowedTools-${scope}`} className="text-xs font-medium text-slate-700">
+            {t('verificationSettings.uiAllowedTools')}
+          </label>
+          {badge('uiAllowedTools')}
+          {resetButton('uiAllowedTools')}
+        </div>
+        <textarea
+          id={`verification-uiAllowedTools-${scope}`}
+          rows={3}
+          value={draft.uiAllowedTools}
+          disabled={!isCustom}
+          placeholder={isWorkspace ? (inherited?.uiAllowedTools ?? []).join('\n') : ''}
+          onChange={e => setDraft(d => ({ ...d, uiAllowedTools: e.target.value }))}
+          className={`${INPUT_CLASS} w-full font-mono disabled:opacity-60`}
+        />
+        <span className="text-[10px] text-slate-400">{t('verificationSettings.uiAllowedToolsHint')}</span>
+        {isWorkspace && !isOverride('uiAllowedTools') && (inherited?.uiAllowedTools ?? []).length > 0 && (
+          <span className="text-[10px] text-slate-400">
+            {t('verificationSettings.inherited', { value: (inherited?.uiAllowedTools ?? []).join(', ') })}
+          </span>
+        )}
+      </div>
+    </>
+  )
+
+  const guidanceRow = () => {
+    const id = `verification-uiGuidance-${scope}`
+    const inheritedGuidance = (inherited?.uiGuidance ?? '').trim()
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label htmlFor={id} className="text-xs font-medium text-slate-700">{t('verificationSettings.uiGuidance')}</label>
+          {badge('uiGuidance')}
+          {resetButton('uiGuidance')}
+        </div>
+        {isWorkspace && inheritedGuidance !== '' && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium text-slate-500">{t('verificationSettings.uiGuidanceInherited')}</span>
+            <pre
+              data-testid="inherited-guidance"
+              className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 whitespace-pre-wrap font-sans"
+            >{inheritedGuidance}</pre>
+          </div>
+        )}
+        <textarea
+          id={id}
+          rows={4}
+          value={draft.uiGuidance}
+          maxLength={4000}
+          onChange={e => setDraft(d => ({ ...d, uiGuidance: e.target.value }))}
+          className={`${INPUT_CLASS} w-full`}
+        />
+        <span className="text-[10px] text-slate-400">{t('verificationSettings.uiGuidanceHint')}</span>
+      </div>
+    )
+  }
+
   const textRow = (field: 'uiStartCommand' | 'uiBaseUrl') => {
     const id = `verification-${field}-${scope}`
     const inheritedText = inherited?.[field] ?? ''
@@ -163,9 +291,15 @@ export function VerificationSettingsForm({ scope, values, inherited, isSaving, o
       {stepRow('ui')}
       {textRow('uiStartCommand')}
       {textRow('uiBaseUrl')}
+      {driverRow()}
+      {customRows()}
+      {guidanceRow()}
 
       {warnNoCommand && (
         <p role="status" className="text-[11px] text-amber-600">{t('verificationSettings.missingStartCommand')}</p>
+      )}
+      {warnCustom && (
+        <p role="status" className="text-[11px] text-amber-600">{t('verificationSettings.customIncomplete')}</p>
       )}
       {error && (
         <p role="alert" className="text-[11px] text-red-500 font-medium">

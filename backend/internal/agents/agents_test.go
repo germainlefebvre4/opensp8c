@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -184,5 +186,62 @@ func TestBuildSubprocessArgs_ModelAndEffort(t *testing.T) {
 	args = withModelEffort("antigravity", "m1", "max").BuildSubprocessArgs("b", "")
 	if !containsPair(args, "--model", "m1") || !containsPair(args, "--effort", "max") {
 		t.Errorf("agy args: %v", args)
+	}
+}
+
+func TestBuildSubprocessArgs_ExtraArgs(t *testing.T) {
+	base := AgentConfig{ID: "claude"}.BuildSubprocessArgs("base", "")
+	extra := []string{"--permission-prompts", "none", "--chrome"}
+	got := AgentConfig{ID: "claude", ModelFlag: "--model", Model: "opus", EffortFlag: "--effort", Effort: "high", ExtraArgs: extra}.BuildSubprocessArgs("base", "")
+	want := append(append([]string(nil), base...), "--model", "opus", "--effort", "high", "--permission-prompts", "none", "--chrome")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	// Without ExtraArgs the arguments are those of before.
+	if got := (AgentConfig{ID: "claude", ExtraArgs: nil}).BuildSubprocessArgs("base", ""); !reflect.DeepEqual(got, base) {
+		t.Errorf("got %v, want %v", got, base)
+	}
+	// Other agents ignore ExtraArgs.
+	for _, id := range []string{"codex", "gemini", "antigravity", "copilot"} {
+		with := AgentConfig{ID: id, ExtraArgs: extra}.BuildSubprocessArgs("base", "")
+		without := AgentConfig{ID: id}.BuildSubprocessArgs("base", "")
+		if !reflect.DeepEqual(with, without) {
+			t.Errorf("%s must ignore ExtraArgs: %v", id, with)
+		}
+	}
+}
+
+func TestSupportsDrivers(t *testing.T) {
+	for id, want := range map[string]bool{"claude": true, "codex": false, "gemini": false, "antigravity": false, "copilot": false} {
+		if got := (AgentConfig{ID: id}).SupportsDrivers(); got != want {
+			t.Errorf("%s: got %v", id, got)
+		}
+	}
+}
+
+func TestClaudeSupportsFlag(t *testing.T) {
+	old := claudeHelp
+	defer func() { claudeHelp = old; claudeHelpCache = "" }()
+
+	calls := 0
+	claudeHelp = func(context.Context) (string, error) {
+		calls++
+		return "  --permission-prompts <target>  Who answers\n  --chrome", nil
+	}
+	claudeHelpCache = ""
+	if !ClaudeSupportsFlag(context.Background(), "--permission-prompts") {
+		t.Error("flag listed in the help must be detected")
+	}
+	if ClaudeSupportsFlag(context.Background(), "--nope") {
+		t.Error("flag absent from the help must not be detected")
+	}
+	if calls != 1 {
+		t.Errorf("help must be read once, got %d calls", calls)
+	}
+
+	claudeHelp = func(context.Context) (string, error) { return "", errors.New("not installed") }
+	claudeHelpCache = ""
+	if ClaudeSupportsFlag(context.Background(), "--permission-prompts") {
+		t.Error("a failing CLI must answer false")
 	}
 }

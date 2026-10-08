@@ -147,6 +147,16 @@
       "viewer": "Capture"
     },
     "verifiedTasks": "Tâches cochées par la vérification",
-    "ignoredLines": "Lignes TASK-VERIFIED ignorées"
+    "ignoredLines": "Lignes TASK-VERIFIED ignorées",
+    "driver": {
+      "label": "Pilote : {{name}}",
+      "names": {
+        "auto": "automatique",
+        "playwright": "Playwright",
+        "chrome": "navigateur Chrome",
+        "custom": "personnalisé"
+      },
+      "chromeNote": "Votre navigateur a été piloté."
+    }
   }
 }

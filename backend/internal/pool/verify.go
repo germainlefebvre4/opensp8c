@@ -48,6 +48,10 @@ type stepResult struct {
 	// TASK-VERIFIED lines that matched no unchecked human-review task.
 	Verified []string
 	Ignored  []string
+	// Driver and AllowedTools describe how the UI step drove the browser;
+	// empty for the other steps.
+	Driver       string
+	AllowedTools []string
 }
 
 // verifyStep is one ordered stage of the verification.
@@ -80,6 +84,8 @@ type verifyRun struct {
 	ts            string // its run identifier ("" without conversation store)
 	resolved      verification.Resolved
 	worktreesRoot string
+	// uiPlan is the driver plan of the UI step, set by it for its report.
+	uiPlan driverPlan
 }
 
 // resolveVerification returns the effective verification settings of change:
@@ -322,6 +328,12 @@ func (m *Manager) runVerification(ctx context.Context, v *verifyJob, worktreesRo
 		if len(last.Ignored) > 0 {
 			end["ignored"] = last.Ignored
 		}
+		if last.Driver != "" {
+			end["driver"] = last.Driver
+		}
+		if len(last.AllowedTools) > 0 {
+			end["allowed_tools"] = last.AllowedTools
+		}
 		m.logRunMarkerRef(run.ref, end)
 		if runLog != nil {
 			m.finishRunRef(run.ref)
@@ -368,7 +380,7 @@ func (conformityStep) Run(ctx context.Context, r *verifyRun) stepResult {
 		return fail(fmt.Sprintf("Impossible de lire l'état du worktree : %v", err), "")
 	}
 
-	text, reason := m.runVerifierTurn(ctx, r, worktreePath, verifyDirective, nil, "/opsx:verify "+change)
+	text, reason := m.runVerifierTurn(ctx, r, worktreePath, verifyDirective, nil, "/opsx:verify "+change, verifierOpts{})
 	if reason != "" {
 		return fail(reason, "")
 	}
@@ -391,18 +403,32 @@ func (conformityStep) Run(ctx context.Context, r *verifyRun) stepResult {
 	}
 }
 
+// verifierOpts are the launch options of a verifier turn that depend on the
+// step: extra agent arguments and an observer of the agent's stream.
+type verifierOpts struct {
+	extraArgs []string
+	observe   func(line []byte) error
+}
+
+// verifierAgentConfig is the configuration of the verifier role of a workspace
+// (zero when the pool has no session manager).
+func (m *Manager) verifierAgentConfig(workspaceID string) agents.AgentConfig {
+	if m.sessionMgr == nil {
+		return agents.AgentConfig{}
+	}
+	return m.sessionMgr.ResolveRoleConfig(workspaceID, preferences.RoleVerifier)
+}
+
 // runVerifierTurn starts a verifier-role agent in dir with directive appended
 // to its system prompt (and extraEnv added to its environment), sends it one
 // turn and returns the text of its answer. A non-empty reason reports why no
 // answer was obtained. The agent is always torn down on return.
-func (m *Manager) runVerifierTurn(ctx context.Context, r *verifyRun, dir, directive string, extraEnv map[string]string, turn string) (text, reason string) {
+func (m *Manager) runVerifierTurn(ctx context.Context, r *verifyRun, dir, directive string, extraEnv map[string]string, turn string, opts verifierOpts) (text, reason string) {
 	procCtx, procCancel := context.WithCancel(ctx)
 	defer procCancel()
 
-	var agentCfg agents.AgentConfig
-	if m.sessionMgr != nil {
-		agentCfg = m.sessionMgr.ResolveRoleConfig(r.v.workspaceID, preferences.RoleVerifier)
-	}
+	agentCfg := m.verifierAgentConfig(r.v.workspaceID)
+	agentCfg.ExtraArgs = opts.extraArgs
 	customEnv := map[string]string{}
 	langDirective := language.Directive(language.Worker, language.Resolve(language.Levels{}, ""))
 	if m.prefs != nil {
@@ -449,6 +475,7 @@ func (m *Manager) runVerifierTurn(ctx context.Context, r *verifyRun, dir, direct
 		setActivity: func(string) {},
 		notify:      func() {},
 		procCancel:  procCancel,
+		observe:     opts.observe,
 	}
 	text, err = m.runTurnText(target, proc, turn)
 	if err != nil {

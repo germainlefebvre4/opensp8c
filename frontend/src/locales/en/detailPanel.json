@@ -147,6 +147,16 @@
       "viewer": "Screenshot"
     },
     "verifiedTasks": "Tasks checked by the verification",
-    "ignoredLines": "Ignored TASK-VERIFIED lines"
+    "ignoredLines": "Ignored TASK-VERIFIED lines",
+    "driver": {
+      "label": "Driver: {{name}}",
+      "names": {
+        "auto": "automatic",
+        "playwright": "Playwright",
+        "chrome": "Chrome browser",
+        "custom": "custom"
+      },
+      "chromeNote": "Your own browser was driven."
+    }
   }
 }

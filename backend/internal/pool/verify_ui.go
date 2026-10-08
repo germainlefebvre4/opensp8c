@@ -30,7 +30,7 @@ func (uiStep) Enabled(r verification.Resolved) bool { return r.UI }
 func (uiStep) Run(ctx context.Context, r *verifyRun) stepResult {
 	m, v := r.m, r.v
 	fail := func(reason, report string) stepResult {
-		return stepResult{Verdict: verdictError, Reason: reason, Report: report}
+		return stepResult{Verdict: verdictError, Reason: reason, Report: report, Driver: r.driverName()}
 	}
 	if r.resolved.UIStartCommand == "" {
 		return fail("uiStartCommand non configurée", "")
@@ -51,6 +51,7 @@ func (uiStep) Run(ctx context.Context, r *verifyRun) stepResult {
 	stepCtx, cancel := context.WithTimeout(ctx, uiStepTimeout)
 	defer cancel()
 	res := r.runLocked(stepCtx)
+	res.Driver, res.AllowedTools = r.driverName(), r.uiPlan.AllowedTools
 	if ctx.Err() == nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
 		res.Verdict = verdictError
 		res.Reason = fmt.Sprintf("délai maximal de l'étape dépassé (%s)", uiStepTimeout)
@@ -65,6 +66,20 @@ func (r *verifyRun) runLocked(ctx context.Context) stepResult {
 	fail := func(reason, report string) stepResult {
 		return stepResult{Verdict: verdictError, Reason: reason, Report: report}
 	}
+
+	// The driver is checked before anything is started: an impossible driver
+	// must not launch the application.
+	artifacts, cleanupArtifacts, err := r.artifactsDir()
+	if err != nil {
+		return fail(fmt.Sprintf("Impossible de créer le dossier de preuves : %v", err), "")
+	}
+	defer cleanupArtifacts()
+	plan, err := planDriver(ctx, r.resolved, m.verifierAgentConfig(v.workspaceID), artifacts)
+	defer plan.cleanup()
+	if err != nil {
+		return fail(err.Error(), "")
+	}
+	r.uiPlan = plan
 
 	worktreePath, err := r.wt.Provision(change)
 	if err != nil {
@@ -83,12 +98,6 @@ func (r *verifyRun) runLocked(ctx context.Context) stepResult {
 		return fail(err.Error(), "")
 	}
 
-	artifacts, cleanup, err := r.artifactsDir()
-	if err != nil {
-		return fail(fmt.Sprintf("Impossible de créer le dossier de preuves : %v", err), "")
-	}
-	defer cleanup()
-
 	// The baseline is taken once the application is up: its start command may
 	// legitimately install or build.
 	before, err := gitStatusTracked(worktreePath)
@@ -100,8 +109,10 @@ func (r *verifyRun) runLocked(ctx context.Context) stepResult {
 	if content, ok := r.wt.BranchTasks(change); ok {
 		human = pendingHumanTasks(content)
 	}
-	turn := buildUITurn(app.URL(), artifacts, openspec.ChangeScenarios(worktreePath, change), human)
-	text, reason := m.runVerifierTurn(ctx, r, worktreePath, uiVerifyDirective, map[string]string{artifactsEnv: artifacts}, turn)
+	turn := buildUITurn(app.URL(), artifacts, openspec.ChangeScenarios(worktreePath, change), human, r.resolved.UIGuidance)
+	obs := newDriverObserver(plan)
+	text, reason := m.runVerifierTurn(ctx, r, worktreePath, buildUIDirective(plan), map[string]string{artifactsEnv: artifacts}, turn,
+		verifierOpts{extraArgs: plan.Args, observe: obs.Observe})
 	if reason != "" {
 		return fail(reason, "")
 	}
@@ -124,6 +135,9 @@ func (r *verifyRun) runLocked(ctx context.Context) stepResult {
 		}
 		return stepResult{Verdict: verdictPass, Report: text}
 	case "PASS":
+		if plan.Driver != verification.DriverAuto && obs.Calls() == 0 {
+			return fail("aucun outil du pilote n'a été utilisé", text)
+		}
 		ticked, ignored, err := r.tickVerifiedTasks(worktreePath, declared)
 		res := stepResult{Verdict: verdictPass, Report: text, Verified: ticked, Ignored: ignored}
 		if err != nil {
@@ -133,6 +147,14 @@ func (r *verifyRun) runLocked(ctx context.Context) stepResult {
 	default:
 		return fail("verdict absent", text)
 	}
+}
+
+// driverName is the driver of the run, auto when none was resolved.
+func (r *verifyRun) driverName() string {
+	if r.resolved.UIDriver == "" {
+		return verification.DriverAuto
+	}
+	return r.resolved.UIDriver
 }
 
 // artifactsDir creates the evidence directory of the run, next to its journal,

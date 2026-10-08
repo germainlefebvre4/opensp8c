@@ -28,7 +28,7 @@ Voir `proposal.md` (Why). Ce change s'applique sur `verification-settings`, `ver
 
 ### D1. La plateforme construit les paramètres de lancement selon le pilote ; l'agent choisit dans le périmètre du pilote
 
-Cette décision remplace D1 de `ui-verify-step` (« l'agent choisit l'outil, la plateforme possède tout le reste ») : le reste demeure, mais le périmètre d'outils devient un réglage. `auto` conserve l'ancien comportement à l'identique. Un pilote explicite est restreint par `--allowedTools` aux outils de son serveur MCP plus `Read`, `Grep` et `Glob` (lecture seule du dépôt) : sans `Bash` ni `Edit`, la lecture seule n'est plus seulement une consigne, et le contrôle `git status` devient un second filet.
+Cette décision remplace D1 de `ui-verify-step` (« l'agent choisit l'outil, la plateforme possède tout le reste ») : le reste demeure, mais le périmètre d'outils devient un réglage. `auto` conserve l'ancien comportement à l'identique. Un pilote explicite passe `--allowedTools` avec les outils de son serveur MCP plus `Read`, `Grep` et `Glob` (lecture seule du dépôt). **Correction après la tâche 1.1 :** `--allowedTools` est *additif* aux règles de l'hôte, il ne restreint pas : un `Bash` ou un `Write` que la config de l'hôte autorise reste utilisable. La lecture seule reste donc une consigne, doublée du contrôle `git status` ; une restriction réelle demanderait `--tools` ou `--disallowedTools`, hors périmètre de ce change (voir Constats).
 
 *Alternatives :* (a) un seul mode, Playwright imposé : ne couvre ni les projets qui ont un outillage propre, ni ceux qui préfèrent Chrome ; (b) laisser l'utilisateur écrire les flags : expose des options de sécurité sans garde-fou ; `custom` en donne le minimum utile (fichier MCP et outils).
 
@@ -64,7 +64,7 @@ type driverPlan struct {
     Directive     string     // phrase de consigne propre au pilote
     cleanup       func()
 }
-func planDriver(res verification.Resolved, artifactsDir string) (driverPlan, error)
+func planDriver(ctx context.Context, res verification.Resolved, agent agents.AgentConfig, artifactsDir string) (driverPlan, error)
 ```
 
 Elle ne lance rien : elle vérifie ce qui ne dépend pas de l'agent (`exec.LookPath("npx")` pour `playwright`, fichier `uiMcpConfig` lisible et contenant `mcpServers` pour `custom`, `uiAllowedTools` non vide, type d'agent via `SupportsDrivers`), écrit la configuration MCP temporaire de `playwright` dans `os.MkdirTemp` (hors du worktree), et renvoie les paramètres. Elle est appelée au début de `runLocked`, avant `startApp` : un pilote impossible échoue avant d'avoir lancé l'application. Tous les cas d'échec se testent sans `claude`.
@@ -119,6 +119,20 @@ Le marqueur `verify_run_end` de l'étape `ui` gagne `driver` et `allowed_tools` 
 `chrome` n'est pas isolé : l'agent agit dans un navigateur réel. Les garde-fous sont (a) l'opt-in réservé au workspace (D3), (b) l'avertissement dans l'écran de réglages, (c) la consigne de n'ouvrir que ses propres onglets, (d) le verrou exclusif existant qui garantit un seul agent à la fois. Ce sont des garde-fous de comportement, pas de sécurité : on ne les présente pas comme tels. Les captures prises par l'intégration Chrome ne sont pas garanties d'atterrir dans le dossier de preuves ; leur absence n'est pas une erreur.
 
 *Alternative :* ne pas proposer `chrome` du tout. Écartée : c'est le choix demandé ; le risque est contenu par l'opt-in, l'avertissement et la visibilité du pilote dans chaque rapport.
+
+**Écarts d'implémentation.** `planDriver` reçoit aussi le contexte (détection de `--permission-prompts`) et la configuration de l'agent `verifier` (contrôle `SupportsDrivers`). Le dossier de preuves est créé avant `planDriver`, donc avant `startApp`. Le rapport expose `allowed_tools` en snake_case, comme `started_at`.
+
+## Constats (tâche 1.1, `claude` 2.1.294, essais réels)
+
+Données capturées (anonymisées) dans `backend/internal/pool/testdata/`.
+
+- **(a) Outil non autorisé.** Le refus est immédiat (moins d'une seconde), sans blocage, avec et sans `--permission-prompts none`, y compris stdin ouvert (le tour se termine par un `result`). Les deux cas émettent un événement `{"type":"system","subtype":"permission_denied","tool_name",…}` (`claude_permission_denied.jsonl`) puis un `tool_result` d'erreur ; seul le message change (avec `none` : « no approval surface… denied automatically »). **D7 confirmée** : le flag rend le refus explicite et ne coûte rien ; la détection par `claude --help` est conservée.
+- **`--allowedTools` n'est qu'additif.** Avec `--allowedTools Read`, `Bash(echo)`, `Write` et `WebFetch` ont tout de même été exécutés (règles de l'hôte). Seuls les outils absents des règles de l'hôte sont refusés. **D1 corrigée** (voir plus haut). Suite possible, non faite ici : `--tools`/`--disallowedTools` pour fermer `Bash`, `Edit`, `Write`.
+- **(b) Événement `init`.** Forme : `{"type":"system","subtype":"init","mcp_servers":[{"name","status","source"}],"tools":["…"],…}`. Il n'est émis **qu'après réception du premier tour** (aucune ligne sans message sur stdin). **D6 confirmée** : contrôle à la réception de l'`init`, avant tout `tool_use`. Statuts vus : `connected`, `failed` (commande introuvable, aucun outil du serveur listé), `needs-auth`, `pending` (serveurs claude.ai de l'hôte, ignorés car seuls les serveurs attendus comptent). Un `--mcp-config` qui n'est pas du JSON valide fait sortir la CLI avec le code 1 et « Invalid MCP configuration » sur stderr, sans `init`.
+- **(c) Syntaxe `--allowedTools`.** `mcp__playwright` et `mcp__playwright__*` autorisent tous deux les outils du serveur, `Read Grep Glob` passent. **D4 confirmée** avec `mcp__playwright` (forme du spec).
+- **(d) `--chrome`.** Chrome ouvert : `mcp_servers` contient `claude-in-chrome` (`connected`) et `tools` liste 22 outils `mcp__claude-in-chrome__*`. Sans `--chrome` : aucun. Le cas « Chrome fermé » n'a pas été essayé (il aurait fallu fermer le navigateur de l'utilisateur) ; il reste au parcours manuel 6.3(c), et le contrôle échoue de toute façon fermé (aucun outil Chrome listé).
+- **(e) Bloc `tool_use`.** Message `{"type":"assistant","message":{"content":[{"type":"tool_use","id","name","input","caller"}]}}` ; le nom d'un outil MCP est `mcp__<serveur>__<outil>`. `ToolSearch` est aussi un `tool_use` (hors préfixe du pilote, donc non compté).
+- **(f) `@playwright/mcp@0.0.83`.** `npx -y … --headless --isolated --output-dir <dir>` passe à `connected`. **Écart avec D5 :** `<dir>` reçoit les instantanés `page-*.yml`, mais une capture demandée avec un nom de fichier *relatif* est écrite dans le répertoire courant de l'agent (le worktree), et un nom *absolu* est écrit à l'endroit demandé. La consigne (D8) doit donc demander des chemins absolus sous `$OPENSP8C_VERIFY_ARTIFACTS` pour les captures, faute de quoi le worktree est modifié.
 
 ## Risks / Trade-offs
 

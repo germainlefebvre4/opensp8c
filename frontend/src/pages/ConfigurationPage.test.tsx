@@ -519,6 +519,19 @@ describe('ConfigurationPage Vérification sub-tab', () => {
     expect(mutateAsync).toHaveBeenCalledWith({ verificationDefaults: { conformity: true, uiStartCommand: 'make dev' } })
   })
 
+  it('offers no chrome driver and saves the driver settings', () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(usePreferences).mockReturnValue({ data: prefs } as ReturnType<typeof usePreferences>)
+    mockPatch(mutateAsync)
+    render(<VerificationTab />)
+    const select = screen.getByLabelText('Pilote du navigateur') as HTMLSelectElement
+    expect(Array.from(select.options).map(o => o.value)).toEqual(['auto', 'playwright', 'custom'])
+    fireEvent.change(select, { target: { value: 'playwright' } })
+    fireEvent.change(screen.getByLabelText('Indications pour l\'agent'), { target: { value: 'Viser le desktop' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    expect(mutateAsync).toHaveBeenCalledWith({ verificationDefaults: { uiDriver: 'playwright', uiGuidance: 'Viser le desktop' } })
+  })
+
   it('shows the backend error', async () => {
     const mutateAsync = vi.fn().mockRejectedValue(new Error('uiBaseUrl must be an absolute http or https URL'))
     vi.mocked(usePreferences).mockReturnValue({ data: prefs } as ReturnType<typeof usePreferences>)

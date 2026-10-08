@@ -1,6 +1,7 @@
 package preferences
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/glefebvre/opensp8c/internal/verification"
@@ -9,22 +10,44 @@ import (
 // VerificationSettings are the Configuration-level verification defaults.
 // Zero values mean "no setting": at this level off and absent are equivalent.
 type VerificationSettings struct {
-	Conformity     bool   `json:"conformity,omitempty"`
-	UI             bool   `json:"ui,omitempty"`
-	UIStartCommand string `json:"uiStartCommand,omitempty"`
-	UIBaseURL      string `json:"uiBaseUrl,omitempty"`
+	Conformity     bool     `json:"conformity,omitempty"`
+	UI             bool     `json:"ui,omitempty"`
+	UIStartCommand string   `json:"uiStartCommand,omitempty"`
+	UIBaseURL      string   `json:"uiBaseUrl,omitempty"`
+	UIDriver       string   `json:"uiDriver,omitempty"`
+	UIMcpConfig    string   `json:"uiMcpConfig,omitempty"`
+	UIAllowedTools []string `json:"uiAllowedTools,omitempty"`
+	UIGuidance     string   `json:"uiGuidance,omitempty"`
+}
+
+func (v VerificationSettings) isZero() bool {
+	return !v.Conformity && !v.UI && v.UIStartCommand == "" && v.UIBaseURL == "" && v.UIDriver == "" &&
+		v.UIMcpConfig == "" && len(v.UIAllowedTools) == 0 && v.UIGuidance == ""
 }
 
 // VerificationOverride is a partial per-workspace configuration; nil means inherit.
 type VerificationOverride struct {
-	Conformity     *bool   `json:"conformity,omitempty"`
-	UI             *bool   `json:"ui,omitempty"`
-	UIStartCommand *string `json:"uiStartCommand,omitempty"`
-	UIBaseURL      *string `json:"uiBaseUrl,omitempty"`
+	Conformity     *bool     `json:"conformity,omitempty"`
+	UI             *bool     `json:"ui,omitempty"`
+	UIStartCommand *string   `json:"uiStartCommand,omitempty"`
+	UIBaseURL      *string   `json:"uiBaseUrl,omitempty"`
+	UIDriver       *string   `json:"uiDriver,omitempty"`
+	UIMcpConfig    *string   `json:"uiMcpConfig,omitempty"`
+	UIAllowedTools *[]string `json:"uiAllowedTools,omitempty"`
+	UIGuidance     *string   `json:"uiGuidance,omitempty"`
 }
 
 func (o *VerificationOverride) isEmpty() bool {
-	return o == nil || (o.Conformity == nil && o.UI == nil && o.UIStartCommand == nil && o.UIBaseURL == nil)
+	return o == nil || (o.Conformity == nil && o.UI == nil && o.UIStartCommand == nil && o.UIBaseURL == nil &&
+		o.UIDriver == nil && o.UIMcpConfig == nil && o.UIAllowedTools == nil && o.UIGuidance == nil)
+}
+
+func cloneStr(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func (o *VerificationOverride) clone() *VerificationOverride {
@@ -48,6 +71,13 @@ func (o *VerificationOverride) clone() *VerificationOverride {
 		v := *o.UIBaseURL
 		out.UIBaseURL = &v
 	}
+	out.UIDriver = cloneStr(o.UIDriver)
+	out.UIMcpConfig = cloneStr(o.UIMcpConfig)
+	out.UIGuidance = cloneStr(o.UIGuidance)
+	if o.UIAllowedTools != nil {
+		v := append([]string(nil), *o.UIAllowedTools...)
+		out.UIAllowedTools = &v
+	}
 	return out
 }
 
@@ -57,8 +87,11 @@ func (o *VerificationOverride) level() *verification.Level {
 		return nil
 	}
 	return &verification.Level{
-		Override:       verification.Override{Conformity: o.Conformity, UI: o.UI},
-		LaunchOverride: verification.LaunchOverride{UIStartCommand: o.UIStartCommand, UIBaseURL: o.UIBaseURL},
+		Override: verification.Override{Conformity: o.Conformity, UI: o.UI},
+		LaunchOverride: verification.LaunchOverride{
+			UIStartCommand: o.UIStartCommand, UIBaseURL: o.UIBaseURL,
+			UIDriver: o.UIDriver, UIMcpConfig: o.UIMcpConfig, UIAllowedTools: o.UIAllowedTools, UIGuidance: o.UIGuidance,
+		},
 	}
 }
 
@@ -82,6 +115,30 @@ func (v *VerificationSettings) level() *verification.Level {
 	}
 	if u := strings.TrimSpace(v.UIBaseURL); u != "" {
 		out.UIBaseURL = &u
+	}
+	if d := strings.TrimSpace(v.UIDriver); d != "" {
+		out.UIDriver = &d
+	}
+	if c := strings.TrimSpace(v.UIMcpConfig); c != "" {
+		out.UIMcpConfig = &c
+	}
+	if tools := cleanTools(v.UIAllowedTools); len(tools) > 0 {
+		out.UIAllowedTools = &tools
+	}
+	if g := strings.TrimSpace(v.UIGuidance); g != "" {
+		out.UIGuidance = &g
+	}
+	return out
+}
+
+// cleanTools trims entries and drops the blank ones, without the size limit
+// (a hand-edited file is not rejected at load time).
+func cleanTools(in []string) []string {
+	var out []string
+	for _, t := range in {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
 	}
 	return out
 }
@@ -107,7 +164,39 @@ func (v *VerificationSettings) override() *VerificationOverride {
 		u := v.UIBaseURL
 		out.UIBaseURL = &u
 	}
+	if v.UIDriver != "" {
+		d := v.UIDriver
+		out.UIDriver = &d
+	}
+	if v.UIMcpConfig != "" {
+		c := v.UIMcpConfig
+		out.UIMcpConfig = &c
+	}
+	if len(v.UIAllowedTools) > 0 {
+		t := append([]string(nil), v.UIAllowedTools...)
+		out.UIAllowedTools = &t
+	}
+	if v.UIGuidance != "" {
+		g := v.UIGuidance
+		out.UIGuidance = &g
+	}
 	return out
+}
+
+// StringListPatch distinguishes an absent JSON field (Set false) from a
+// present one; null resets the field, as does a list without a non-blank entry.
+type StringListPatch struct {
+	Set   bool
+	Value []string
+}
+
+func (s *StringListPatch) UnmarshalJSON(b []byte) error {
+	s.Set = true
+	if string(b) == "null" {
+		s.Value = nil
+		return nil
+	}
+	return json.Unmarshal(b, &s.Value)
 }
 
 // VerificationPatch is a partial update of the verification settings of a
@@ -117,11 +206,16 @@ type VerificationPatch struct {
 	UI             verification.BoolPatch `json:"ui"`
 	UIStartCommand StringPatch            `json:"uiStartCommand"`
 	UIBaseURL      StringPatch            `json:"uiBaseUrl"`
+	UIDriver       StringPatch            `json:"uiDriver"`
+	UIMcpConfig    StringPatch            `json:"uiMcpConfig"`
+	UIAllowedTools StringListPatch        `json:"uiAllowedTools"`
+	UIGuidance     StringPatch            `json:"uiGuidance"`
 }
 
 // applyVerificationPatch merges a patch into a VerificationOverride (nil = no
-// override). The result is nil when nothing remains.
-func applyVerificationPatch(cur *VerificationOverride, patch VerificationPatch) (*VerificationOverride, error) {
+// override). The result is nil when nothing remains. allowChrome is false for
+// the Configuration level: the chrome driver can only be chosen per workspace.
+func applyVerificationPatch(cur *VerificationOverride, patch VerificationPatch, allowChrome bool) (*VerificationOverride, error) {
 	out := cur.clone()
 	if out == nil {
 		out = &VerificationOverride{}
@@ -146,10 +240,47 @@ func applyVerificationPatch(cur *VerificationOverride, patch VerificationPatch) 
 			out.UIBaseURL = &v
 		}
 	}
+	if patch.UIDriver.Set {
+		d, err := verification.ParseDriver(patch.UIDriver.Value)
+		if err != nil {
+			return nil, invalid("%s", err.Error())
+		}
+		if d == verification.DriverChrome && !allowChrome {
+			return nil, invalid("uiDriver chrome can only be set for a workspace")
+		}
+		out.UIDriver = nilIfEmpty(d)
+	}
+	if patch.UIMcpConfig.Set {
+		out.UIMcpConfig = nilIfEmpty(verification.NormalizeText(patch.UIMcpConfig.Value))
+	}
+	if patch.UIAllowedTools.Set {
+		tools, err := verification.NormalizeTools(patch.UIAllowedTools.Value)
+		if err != nil {
+			return nil, invalid("%s", err.Error())
+		}
+		if len(tools) == 0 {
+			out.UIAllowedTools = nil
+		} else {
+			out.UIAllowedTools = &tools
+		}
+	}
+	if patch.UIGuidance.Set {
+		if err := verification.ValidateGuidance(patch.UIGuidance.Value); err != nil {
+			return nil, invalid("%s", err.Error())
+		}
+		out.UIGuidance = nilIfEmpty(verification.NormalizeText(patch.UIGuidance.Value))
+	}
 	if out.isEmpty() {
 		return nil, nil
 	}
 	return out, nil
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // ResolveVerification resolves the verification settings of a workspace
@@ -177,7 +308,7 @@ func (s *Service) SetVerificationDefaults(patch VerificationPatch) error {
 	if err != nil {
 		return err
 	}
-	next, err := applyVerificationPatch(p.VerificationDefaults.override(), patch)
+	next, err := applyVerificationPatch(p.VerificationDefaults.override(), patch, false)
 	if err != nil {
 		return err
 	}
@@ -198,7 +329,19 @@ func (s *Service) SetVerificationDefaults(patch VerificationPatch) error {
 	if next.UIBaseURL != nil {
 		d.UIBaseURL = *next.UIBaseURL
 	}
-	if *d == (VerificationSettings{}) {
+	if next.UIDriver != nil {
+		d.UIDriver = *next.UIDriver
+	}
+	if next.UIMcpConfig != nil {
+		d.UIMcpConfig = *next.UIMcpConfig
+	}
+	if next.UIAllowedTools != nil {
+		d.UIAllowedTools = *next.UIAllowedTools
+	}
+	if next.UIGuidance != nil {
+		d.UIGuidance = *next.UIGuidance
+	}
+	if d.isZero() {
 		d = nil
 	}
 	p.VerificationDefaults = d

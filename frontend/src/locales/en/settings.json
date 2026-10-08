@@ -34,6 +34,6 @@
     "save": "Save"
   },
   "verificationTab": {
-    "description": "Override of Configuration for this workspace only. \"Inherited\" follows Configuration; a change can still override this setting."
+    "description": "Override of Configuration for this workspace only. \"Inherited\" follows Configuration; a change can still override the on/off steps. The browser driver (Chrome is reserved for a workspace) and the guidance are set here or in Configuration, never per change."
   }
 }
