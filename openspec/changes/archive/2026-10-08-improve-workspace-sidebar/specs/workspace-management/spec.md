@@ -1,25 +1,6 @@
-# Spec: workspace-management
+# Spec Delta
 
-## Purpose
-
-Gestion des workspaces de l'application : ajout, sélection du workspace actif, et suppression, persistés dans `config.yaml`.
-
-## Requirements
-
-### Requirement: Ajouter un workspace
-L'utilisateur SHALL pouvoir ajouter un workspace en fournissant le chemin absolu d'un répertoire contenant un sous-dossier `openspec/`. L'application SHALL proposer un explorateur de fichiers système pour sélectionner le répertoire. Le workspace est persisté dans `config.yaml` à la racine de l'application.
-
-#### Scenario: Ajout d'un workspace valide
-- **WHEN** l'utilisateur sélectionne un répertoire contenant un dossier `openspec/`
-- **THEN** le workspace est ajouté à la liste, persisté dans `config.yaml`, et sélectionné comme workspace actif
-
-#### Scenario: Ajout d'un répertoire sans openspec/
-- **WHEN** l'utilisateur sélectionne un répertoire ne contenant pas de dossier `openspec/`
-- **THEN** l'application affiche un message d'erreur et n'ajoute pas le workspace
-
-#### Scenario: Ajout d'un workspace déjà existant
-- **WHEN** l'utilisateur tente d'ajouter un répertoire déjà présent dans `config.yaml`
-- **THEN** l'application affiche un message indiquant que le workspace existe déjà et ne crée pas de doublon
+## MODIFIED Requirements
 
 ### Requirement: Sélectionner le workspace actif
 L'application SHALL afficher la liste des workspaces configurés avec leurs compteurs Kanban et permettre à l'utilisateur de basculer entre eux, à la souris comme au clavier. Le workspace actif détermine les changements et specs affichés dans le Kanban et dans la vue Specs, ainsi que les surcharges affichées dans Settings.
@@ -62,6 +43,8 @@ L'utilisateur SHALL pouvoir supprimer un workspace de la liste depuis un menu d'
 #### Scenario: Confirmation explicite
 - **WHEN** la confirmation de suppression est affichée
 - **THEN** elle nomme le workspace et indique que son dossier n'est pas supprimé
+
+## ADDED Requirements
 
 ### Requirement: Erreurs d'ajout affichées dans la sidebar
 Lorsque l'ajout d'un workspace échoue (répertoire sans dossier `openspec/`, workspace déjà configuré, chemin invalide), la sidebar SHALL afficher le message d'erreur à proximité du formulaire d'ajout, laisser le formulaire ouvert avec la valeur saisie, et effacer l'erreur dès que l'utilisateur modifie le champ ou annule.

@@ -14,5 +14,33 @@
     "chooseAgent": "Choose the code agent",
     "configureEnv": "Configure the agent's environment variables",
     "notInstalled": "not installed"
-  }
+  },
+  "attentionCount": "{{count}} change(s) waiting for action",
+  "signal": {
+    "review": "To review",
+    "paused": "Paused",
+    "hitl": "Human validation",
+    "verify-failed": "Verification failed"
+  },
+  "moreSignals": "+{{count}} more",
+  "status": {
+    "to-explore": "To explore",
+    "ready": "Ready",
+    "todo": "To do",
+    "in-progress": "In progress",
+    "verifying": "Verifying",
+    "to-review": "To review",
+    "done": "Done"
+  },
+  "statusSegment": "{{label}}: {{count}}",
+  "total": "{{count}} change(s) in total",
+  "expand": "Expand pending actions",
+  "collapse": "Collapse pending actions",
+  "actions": "Actions for project {{name}}",
+  "removeFromTracking": "Remove from tracking",
+  "removeTitle": "Remove \"{{name}}\" from tracking?",
+  "removeBody": "The project is removed from the list, but its folder is not deleted.",
+  "removeConfirm": "Remove",
+  "openChange": "Open change {{name}}",
+  "attentionDot": "Pending actions"
 }

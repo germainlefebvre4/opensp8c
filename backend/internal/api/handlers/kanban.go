@@ -87,10 +87,14 @@ func activeWorkerChanges(reg *pool.Registry, workspaceID string) map[string]held
 // applyVerificationState turns the queued state of a verifying change into
 // running (with its step) when the pool executes its verification.
 func (h *KanbanHandler) applyVerificationState(workspaceID string, ch *openspec.Change) {
-	if ch.KanbanStatus != "verifying" || ch.VerificationState != "queued" || h.poolReg == nil {
+	applyVerificationState(h.poolReg, workspaceID, ch)
+}
+
+func applyVerificationState(reg *pool.Registry, workspaceID string, ch *openspec.Change) {
+	if ch.KanbanStatus != "verifying" || ch.VerificationState != "queued" || reg == nil {
 		return
 	}
-	mgr := h.poolReg.For(workspaceID)
+	mgr := reg.For(workspaceID)
 	if mgr.VerificationRunning(ch.Name) {
 		ch.VerificationState = "running"
 		ch.VerificationStep = mgr.VerificationStep(ch.Name)
@@ -103,7 +107,36 @@ func (h *KanbanHandler) applyVerificationState(workspaceID string, ch *openspec.
 // branchTasks returns the tasks.md carried by feature/<change>, without
 // provisioning a worktree.
 func (h *KanbanHandler) branchTasks(workspaceID, workspacePath, change string) (string, bool) {
+	return branchTasks(workspaceID, workspacePath, change)
+}
+
+func branchTasks(workspaceID, workspacePath, change string) (string, bool) {
 	return pool.NewWorktreeController(workspacePath, workspaceID, "").BranchTasks(change)
+}
+
+// applyLiveState overlays on the repository's changes the live state shared by
+// the Kanban and the workspace list: pool workers, worktree or branch task
+// progress and verification state. It returns the workers holding changes.
+func applyLiveState(reg *pool.Registry, workspaceID, path string, changes []openspec.Change) map[string]heldWorker {
+	activeWorkers := activeWorkerChanges(reg, workspaceID)
+	for i := range changes {
+		applyVerificationState(reg, workspaceID, &changes[i])
+		if hw, held := activeWorkers[changes[i].Name]; held {
+			changes[i].WorkerActive = !hw.Paused
+			changes[i].WorkerPaused = hw.Paused
+			workerID := hw.ID
+			changes[i].WorkerID = &workerID
+			if openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath) {
+				continue
+			}
+		}
+		if changes[i].HasBranch {
+			if content, ok := branchTasks(workspaceID, path, changes[i].Name); ok {
+				openspec.ApplyBranchProgress(&changes[i], content)
+			}
+		}
+	}
+	return activeWorkers
 }
 
 func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
@@ -123,24 +156,7 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		changes = []openspec.Change{}
 	}
 
-	activeWorkers := h.activeWorkerChanges(id)
-	for i := range changes {
-		h.applyVerificationState(id, &changes[i])
-		if hw, held := activeWorkers[changes[i].Name]; held {
-			changes[i].WorkerActive = !hw.Paused
-			changes[i].WorkerPaused = hw.Paused
-			workerID := hw.ID
-			changes[i].WorkerID = &workerID
-			if openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath) {
-				continue
-			}
-		}
-		if changes[i].HasBranch {
-			if content, ok := h.branchTasks(id, path, changes[i].Name); ok {
-				openspec.ApplyBranchProgress(&changes[i], content)
-			}
-		}
-	}
+	applyLiveState(h.poolReg, id, path, changes)
 
 	// Merge ghost records (app-level explorations) into the changes list.
 	if h.prefs != nil {

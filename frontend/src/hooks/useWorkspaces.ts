@@ -1,11 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
+export type SignalKind = 'review' | 'paused' | 'hitl' | 'verify-failed'
+
+export interface Signal {
+  kind: SignalKind
+  reason?: string
+}
+
+export interface Attention {
+  change: string
+  signals: Signal[]
+}
+
 export interface Workspace {
   id: string
   name: string
   path: string
   task_counts: Record<string, number>
+  attention?: Attention[]
 }
 
 export function useWorkspaces() {

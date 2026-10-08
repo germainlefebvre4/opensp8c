@@ -1,8 +1,6 @@
-## Purpose
+# Spec Delta
 
-Afficher une pastille de comptage visuelle dans le menu latéral pour les changes au statut "done" (terminés, non archivés) par workspace.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Pastille Done dans le menu latéral
 Le menu latéral SHALL afficher, pour chaque workspace, le nombre de changes au statut "done" (terminés, non archivés) comme segment `done` de la barre segmentée du projet (couleur emerald, `bg-emerald-500`) lorsque ce compteur est supérieur à zéro, ainsi que dans le total de la barre.

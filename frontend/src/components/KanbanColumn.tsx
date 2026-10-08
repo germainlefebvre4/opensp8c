@@ -5,6 +5,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { ChangeCard } from './ChangeCard'
+import { STATUS_STYLES, DEFAULT_STATUS_STYLE, type StatusStyle } from '../lib/statusColors'
 
 interface Props {
   title: string
@@ -36,20 +37,9 @@ interface Props {
   dragSourceStatus: string | null
 }
 
-const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
-  'to-explore': { badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-400' },
-  'ready': { badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400' },
-  'todo': { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  'in-progress': { badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
-  'verifying': { badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
-  'to-review': { badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  'done': { badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-  'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
-}
-
 export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, collapsed: collapsedProp, onCollapsedChange, visibleCount: visibleCountProp, onVisibleCountChange, onFold, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
-  const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
+  const style = (STATUS_STYLES as Record<string, StatusStyle>)[status] ?? DEFAULT_STATUS_STYLE
   const [visibleCountState, setVisibleCountState] = useState(maxVisible ?? Infinity)
   const [collapsedState, setCollapsedState] = useState(false)
   const visibleCount = visibleCountProp ?? visibleCountState

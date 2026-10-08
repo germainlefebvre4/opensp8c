@@ -62,8 +62,8 @@ L'étape `ui` SHALL lancer l'agent de rôle `verifier` selon le pilote résolu (
 - **WHEN** l'étape `ui` en pilote `playwright` se termine, par réussite, échec ou annulation
 - **THEN** le fichier de configuration MCP généré n'existe plus et aucun fichier n'a été créé dans le worktree
 
-### Requirement: Pilote réellement disponible avant le tour
-Avant d'envoyer le tour à l'agent, l'étape `ui` en pilote autre que `auto` SHALL vérifier la disponibilité du pilote. Elle SHALL échouer, avec une raison désignant la cause, dans les cas suivants : le pilote `playwright` ou `custom` alors que `npx` (ou la commande du serveur) est introuvable sur l'hôte ; le pilote `custom` sans `uiMcpConfig`, sans `uiAllowedTools`, ou avec un fichier absent, illisible ou qui ne contient pas de `mcpServers` ; l'agent de rôle `verifier` autre que Claude ; l'événement d'initialisation du flux de l'agent qui ne liste pas comme `connected` chaque serveur MCP attendu (`playwright`, ou ceux du fichier `custom`) ; l'événement d'initialisation du pilote `chrome` qui ne liste aucun outil de l'intégration Chrome. Dans ces cas l'agent ne SHALL recevoir aucun tour. Les vérifications qui ne dépendent pas de l'agent (commande introuvable, fichier, type d'agent) SHALL avoir lieu avant le lancement de l'application. Une raison relative à `chrome` SHALL suggérer de vérifier que Chrome est ouvert avec l'extension connectée.
+### Requirement: Pilote réellement disponible
+Pour un pilote autre que `auto`, l'étape `ui` SHALL vérifier la disponibilité du pilote avant de lancer l'application, puis dès l'événement d'initialisation du flux de l'agent. Avant le lancement de l'application, elle SHALL échouer, avec une raison désignant la cause, dans les cas suivants : le pilote `playwright` alors que `npx` est introuvable sur l'hôte ; le pilote `custom` sans `uiMcpConfig`, sans `uiAllowedTools`, ou avec un fichier absent, illisible ou qui ne contient pas de `mcpServers` ; l'agent de rôle `verifier` autre que Claude. Dès l'événement d'initialisation de l'agent, elle SHALL échouer et arrêter l'agent, avant qu'il n'ait exécuté un outil, si cet événement ne liste pas comme `connected` chaque serveur MCP attendu (`playwright`, ou ceux du fichier `custom`), si le pilote `chrome` n'y liste aucun outil de l'intégration Chrome, ou si l'événement n'a pas la forme attendue. Une raison relative à `chrome` SHALL suggérer de vérifier que Chrome est ouvert avec l'extension connectée.
 
 #### Scenario: npx introuvable
 - **WHEN** le pilote est `playwright` et que `npx` n'est pas dans le `PATH`
@@ -79,15 +79,19 @@ Avant d'envoyer le tour à l'agent, l'étape `ui` en pilote autre que `auto` SHA
 
 #### Scenario: Agent non compatible
 - **WHEN** le pilote est `playwright` et que le rôle `verifier` est configuré avec un agent autre que Claude
-- **THEN** l'étape échoue avec une raison indiquant que ce pilote n'est supporté que par Claude
+- **THEN** l'étape échoue avec une raison indiquant que ce pilote n'est supporté que par Claude, sans avoir lancé l'application
 
 #### Scenario: Serveur MCP non connecté
 - **WHEN** l'événement d'initialisation de l'agent liste le serveur `playwright` avec un statut autre que `connected`
-- **THEN** l'étape échoue avec ce statut dans la raison et aucun tour n'est envoyé
+- **THEN** l'étape échoue avec ce statut dans la raison, l'agent est arrêté et aucun outil n'a été exécuté
+
+#### Scenario: Événement d'initialisation illisible
+- **WHEN** l'événement d'initialisation ne contient pas la liste des serveurs ou des outils attendue par le pilote
+- **THEN** l'étape échoue avec la raison « événement d'initialisation illisible » plutôt que de poursuivre sans contrôle
 
 #### Scenario: Chrome indisponible
 - **WHEN** le pilote est `chrome` et que l'événement d'initialisation ne liste aucun outil de l'intégration Chrome
-- **THEN** l'étape échoue avec une raison suggérant de vérifier que Chrome est ouvert avec l'extension connectée, sans qu'aucun tour ne soit envoyé
+- **THEN** l'étape échoue avec une raison suggérant de vérifier que Chrome est ouvert avec l'extension connectée, et l'agent est arrêté
 
 #### Scenario: Pilote auto non contrôlé
 - **WHEN** le pilote est `auto`

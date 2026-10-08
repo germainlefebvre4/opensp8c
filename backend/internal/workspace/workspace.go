@@ -12,6 +12,28 @@ type Workspace struct {
 	Name       string         `json:"name"`
 	Path       string         `json:"path"`
 	TaskCounts map[string]int `json:"task_counts"`
+	// Attention lists the changes waiting for a user action; never null.
+	Attention []Attention `json:"attention"`
+}
+
+// Signal kinds carried by an Attention entry.
+const (
+	SignalReview       = "review"
+	SignalPaused       = "paused"
+	SignalHITL         = "hitl"
+	SignalVerifyFailed = "verify-failed"
+)
+
+// Signal is one reason a change waits for the user.
+type Signal struct {
+	Kind   string `json:"kind"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// Attention is a change carrying at least one Signal, most blocking first.
+type Attention struct {
+	Change  string   `json:"change"`
+	Signals []Signal `json:"signals"`
 }
 
 func StableID(absPath string) string {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -37,9 +37,13 @@ import type { Change } from '../hooks/useChanges'
 
 interface Props {
   workspaceId: string
+  /** Change whose DetailPanel the URL asks to open (`?change=`). */
+  requestedChange?: string | null
+  /** Called when the URL parameter is consumed (change opened, absent or panel closed). */
+  onRequestedChangeHandled?: () => void
 }
 
-export function KanbanPage({ workspaceId }: Props) {
+export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHandled }: Props) {
   const { t } = useTranslation('kanban')
   const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
@@ -73,6 +77,26 @@ export function KanbanPage({ workspaceId }: Props) {
   const [correctionDialog, setCorrectionDialog] = useState<Change | null>(null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
+
+  const openedFromUrlRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!requestedChange) {
+      openedFromUrlRef.current = null
+      return
+    }
+    if (isLoading || openedFromUrlRef.current === requestedChange) return
+    if (changes.some(c => !c.is_ghost && c.name === requestedChange)) {
+      openedFromUrlRef.current = requestedChange
+      setDetailOpen({ name: requestedChange })
+    } else {
+      onRequestedChangeHandled?.()
+    }
+  }, [requestedChange, isLoading, changes, onRequestedChangeHandled])
+
+  const closeDetail = () => {
+    setDetailOpen(null)
+    if (requestedChange) onRequestedChangeHandled?.()
+  }
 
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false)
   const isPoolRunning = poolStatus?.is_running ?? false
@@ -368,7 +392,7 @@ export function KanbanPage({ workspaceId }: Props) {
     const name = correctionDialog.name
     await requestCorrection.mutateAsync({ changeName: name, feedback })
     setCorrectionDialog(null)
-    if (detailOpen?.name === name) setDetailOpen(null)
+    if (detailOpen?.name === name) closeDetail()
   }
 
   const handleStopWorker = (change: Change) => {
@@ -577,7 +601,7 @@ export function KanbanPage({ workspaceId }: Props) {
                   <DetailPanel
                     workspaceId={workspaceId}
                     changeName={detailOpen.name}
-                    onClose={() => setDetailOpen(null)}
+                    onClose={closeDetail}
                     associatedGhostId={changes.find(c => c.is_ghost && c.name === detailOpen.name)?.ghost_id}
                   />
                 </div>

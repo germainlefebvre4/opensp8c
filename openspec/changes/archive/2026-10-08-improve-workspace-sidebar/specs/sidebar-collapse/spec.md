@@ -1,10 +1,6 @@
-# Spec: sidebar-collapse
+# Spec Delta
 
-## Purpose
-
-Gestion du comportement rétractable de la sidebar : toggle d'ouverture/fermeture via un bouton dédié, positionnement du bouton toggle, et suppression du bouton fullscreen de la navigation principale.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Sidebar rétractable via bouton toggle
 
@@ -48,12 +44,3 @@ Le bouton toggle SHALL être positionné dans le header de la sidebar, aligné a
 
 - **WHEN** la sidebar est en état collapsed
 - **THEN** le bouton `▶` est visible en haut du rail `w-10`, à la même hauteur que le header
-
-### Requirement: Suppression du bouton fullscreen de la navigation
-
-Le bouton `Maximize2`/`Minimize2` dans la barre de navigation principale SHALL être supprimé.
-
-#### Scenario: Absence du bouton fullscreen
-
-- **WHEN** l'utilisateur consulte l'interface
-- **THEN** aucun bouton `Maximize2` ou `Minimize2` n'est présent dans la barre de navigation principale

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { useCallback } from 'react'
+import { BrowserRouter, Route, Routes, useSearchParams } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { KanbanPage } from './pages/KanbanPage'
 import { SpecsPage } from './pages/SpecsPage'
@@ -14,6 +15,15 @@ import { ToastProvider } from './components/ui/Toast'
 
 const queryClient = new QueryClient()
 
+function KanbanRoute({ workspaceId }: { workspaceId: string }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const clearChange = useCallback(
+    () => setSearchParams(prev => { prev.delete('change'); return prev }, { replace: true }),
+    [setSearchParams],
+  )
+  return <KanbanPage workspaceId={workspaceId} requestedChange={searchParams.get('change')} onRequestedChangeHandled={clearChange} />
+}
+
 function AppRoutes() {
   useUiLocaleSync()
   const { isLoading } = useWorkspaces()
@@ -26,7 +36,7 @@ function AppRoutes() {
         <Routes>
           <Route
             path="/"
-            element={workspaceId ? <KanbanPage workspaceId={workspaceId} /> : <NoWorkspaceState />}
+            element={workspaceId ? <KanbanRoute workspaceId={workspaceId} /> : <NoWorkspaceState />}
           />
           <Route
             path="/specs"
