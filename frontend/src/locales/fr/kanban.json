@@ -48,7 +48,9 @@
     "newExplorationCard": "+ Nouvelle exploration",
     "showColumn": "Afficher la colonne",
     "hideColumn": "Réduire la colonne",
-    "showMore": "Afficher plus ({{count}})"
+    "showMore": "Afficher plus ({{count}})",
+    "foldDone": "Replier Done et Archived",
+    "unfoldDone": "Déplier Done et Archived"
   },
   "card": {
     "figerLabel": "Figer",

@@ -89,6 +89,25 @@ describe('kanbanCollisionDetection', () => {
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('archived')).toBe(true)
   })
 
+  it('recognises a folded 40px done rail as a drop target', () => {
+    const rail: ClientRect = { top: 0, left: 600, right: 640, bottom: 800, width: 40, height: 800 }
+    const colTodo = createMockContainer('todo', todoColRect)
+    const colDone = createMockContainer('done', rail)
+    const active = createMockActive('card-1', {
+      top: 20, left: 590, right: 650, bottom: 120, width: 60, height: 100,
+    }, { status: 'to-review' })
+
+    const result = kanbanCollisionDetection({
+      active,
+      collisionRect: active.rect.current.translated!,
+      droppableContainers: [colTodo.container, colDone.container],
+      droppableRects: new Map([['todo', colTodo.rect], ['done', colDone.rect]]),
+      pointerCoordinates: { x: 620, y: 100 },
+    })
+
+    expect(result[0].id).toBe('done')
+  })
+
   it('detects column via pointerWithin when pointer is inside column bounds', () => {
     const colExplore = createMockContainer('to-explore', toExploreColRect)
     const colReady = createMockContainer('ready', readyColRect)

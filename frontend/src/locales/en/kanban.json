@@ -48,7 +48,9 @@
     "newExplorationCard": "+ New exploration",
     "showColumn": "Show column",
     "hideColumn": "Collapse column",
-    "showMore": "Show more ({{count}})"
+    "showMore": "Show more ({{count}})",
+    "foldDone": "Collapse Done and Archived",
+    "unfoldDone": "Expand Done and Archived"
   },
   "card": {
     "figerLabel": "Freeze",

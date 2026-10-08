@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsRight } from 'lucide-react'
 import { useDroppable, useDndContext } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTranslation } from 'react-i18next'
@@ -23,6 +23,8 @@ interface Props {
   verificationPendingNames?: ReadonlySet<string>
   maxVisible?: number
   collapsible?: boolean
+  /** Folds the slot this column belongs to into a rail. */
+  onFold?: () => void
   className?: string
   getFfStatus: (name: string) => 'running' | 'failed' | null
   validDropSources: string[]
@@ -40,7 +42,7 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, onFold, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
@@ -58,7 +60,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
   return (
     <div
       ref={setNodeRef}
-      className={`${className ?? 'flex-1'} min-w-[220px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
+      className={`${className ?? 'flex-1'} min-w-[190px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
         isValidForDrag && isOverColumn
           ? 'bg-violet-50 border-violet-300'
           : isValidForDrag
@@ -84,6 +86,16 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${style.badge}`}>
             {changes.length}
           </span>
+          {onFold && (
+            <button
+              onClick={onFold}
+              title={t('columnActions.foldDone')}
+              aria-label={t('columnActions.foldDone')}
+              className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <ChevronsRight size={12} />
+            </button>
+          )}
           {collapsible && (
             <button
               onClick={() => setCollapsed(v => !v)}

@@ -7,6 +7,9 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { createKanbanCollisionDetection } from '../lib/kanbanCollision'
 import { VALID_DROPS } from '../lib/kanbanDrops'
 import { KanbanColumn } from '../components/KanbanColumn'
+import { DoneRail } from '../components/DoneRail'
+import { computeKanbanLayout, toggleManualFolded } from '../lib/kanbanLayout'
+import { useElementWidth } from '../hooks/useElementWidth'
 import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
 import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBottomPanel'
@@ -75,6 +78,9 @@ export function KanbanPage({ workspaceId }: Props) {
   const isPoolRunning = poolStatus?.is_running ?? false
 
   const columnsContainerRef = useRef<HTMLDivElement>(null)
+  // Session-only override of the Done/Archived fold (null = automatic).
+  const [manualFolded, setManualFolded] = useState<boolean | null>(null)
+  const [rowRef, rowWidth] = useElementWidth()
   const dragContainerRectRef = useRef<ClientRect | null>(null)
   const clampModifier = useMemo(
     () => createClampToRectModifier(() => dragContainerRectRef.current),
@@ -385,6 +391,14 @@ export function KanbanPage({ workspaceId }: Props) {
     if (error) toast({ title: error, variant: 'error' })
   }
 
+  // Unmeasured width (first render, no layout) behaves like an unconstrained row.
+  const layoutInput = { width: rowWidth ?? Number.MAX_SAFE_INTEGER, panelOpen: detailOpen !== null, manualFolded }
+  const layout = computeKanbanLayout(layoutInput)
+  const toggleDoneFolded = () => setManualFolded(toggleManualFolded(layoutInput))
+  const doneValidSources = Object.entries(VALID_DROPS)
+    .filter(([, targets]) => targets.includes('done'))
+    .map(([src]) => src)
+
   const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
 
   if (isLoading) return (
@@ -444,9 +458,9 @@ export function KanbanPage({ workspaceId }: Props) {
             </div>
 
             {/* Top: Kanban columns + DetailPanel */}
-            <div className="flex-1 flex flex-row overflow-hidden min-h-0">
-              <div ref={columnsContainerRef} className="flex-1 overflow-x-auto min-h-0 p-4">
-                <div className="flex gap-3 h-full min-w-max">
+            <div ref={rowRef} className="relative flex-1 flex flex-row overflow-hidden min-h-0">
+              <div ref={columnsContainerRef} data-scroll={layout.scroll} className="flex-1 min-w-0 overflow-x-auto min-h-0 p-2">
+                <div className="flex gap-2 h-full">
                   {leadingColumns.map(col => {
                     const column = (
                       <KanbanColumn
@@ -479,7 +493,7 @@ export function KanbanPage({ workspaceId }: Props) {
                     if (col.status !== 'in-progress' || !showVerifying) return column
                     // In Progress + Verifying stacked in one slot, like Done / Archived.
                     return (
-                      <div key={col.status} className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
+                      <div key={col.status} className="flex-1 min-w-[190px] flex flex-col min-h-0 gap-2">
                         {column}
                         <div className="h-px bg-slate-200 shrink-0" />
                         <KanbanColumn
@@ -500,41 +514,59 @@ export function KanbanPage({ workspaceId }: Props) {
                     )
                   })}
 
-                  {/* Done + Archived stacked in shared slot */}
-                  <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
-                    <KanbanColumn
-                      title={t('columns.done')}
-                      status="done"
-                      changes={filteredChanges.filter(c => c.kanban_status === 'done')}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, 'done')}
-                      className="flex-1 min-h-0"
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={Object.entries(VALID_DROPS)
-                        .filter(([, targets]) => targets.includes('done'))
-                        .map(([src]) => src)}
+                  {/* Done + Archived stacked in shared slot, folded into a rail when space is short */}
+                  {layout.doneFolded ? (
+                    <DoneRail
+                      count={filteredChanges.filter(c => c.kanban_status === 'done').length}
+                      isValidForDrag={dragSourceStatus ? doneValidSources.includes(dragSourceStatus) : false}
+                      onToggle={toggleDoneFolded}
                     />
-                    <div className="h-px bg-slate-200 shrink-0" />
-                    <KanbanColumn
-                      title={t('columns.archived')}
-                      status="archived"
-                      changes={filteredArchived}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, 'archived')}
-                      maxVisible={3}
-                      collapsible
-                      className="max-h-[40%] overflow-y-auto"
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={[]}
-                    />
-                  </div>
+                  ) : (
+                    <div className="flex-1 min-w-[190px] flex flex-col min-h-0 gap-2">
+                      <KanbanColumn
+                        title={t('columns.done')}
+                        status="done"
+                        changes={filteredChanges.filter(c => c.kanban_status === 'done')}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, 'done')}
+                        onFold={toggleDoneFolded}
+                        className="flex-1 min-h-0"
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={doneValidSources}
+                      />
+                      <div className="h-px bg-slate-200 shrink-0" />
+                      <KanbanColumn
+                        title={t('columns.archived')}
+                        status="archived"
+                        changes={filteredArchived}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, 'archived')}
+                        maxVisible={3}
+                        collapsible
+                        className="max-h-[40%] overflow-y-auto"
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={[]}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
               {detailOpen && (
-                <div className="w-[420px] shrink-0 border-l border-slate-200 flex flex-col overflow-hidden">
+                <div
+                  data-testid="detail-panel-slot"
+                  data-mode={layout.panelMode}
+                  style={{ width: layout.panelWidth }}
+                  className={
+                    layout.panelMode === 'overlay'
+                      ? `absolute right-0 inset-y-0 z-30 bg-white shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden transition-opacity duration-150 ${
+                          activeDragId ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                        }`
+                      : 'shrink-0 border-l border-slate-200 flex flex-col overflow-hidden'
+                  }
+                >
                   <DetailPanel
                     workspaceId={workspaceId}
                     changeName={detailOpen.name}
