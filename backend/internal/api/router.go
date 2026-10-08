@@ -102,6 +102,7 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 	poolRunsHandler := handlers.NewPoolRunsHandler(wsHandler, poolRegistry, convStore, activityStore)
 	reviewHandler := handlers.NewReviewHandler(wsHandler)
 	reviewActionsHandler := handlers.NewReviewActionsHandler(wsHandler, poolRegistry)
+	verificationHandler := handlers.NewVerificationHandler(wsHandler, poolRegistry, convStore)
 	wsSettingsHandler := handlers.NewWorkspaceSettingsHandler(wsHandler, prefsSvc)
 
 	r.Route("/api", func(r chi.Router) {
@@ -133,6 +134,10 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 		r.Get("/workspaces/{id}/changes/{name}/review/file", reviewHandler.File)
 		r.Post("/workspaces/{id}/changes/{name}/review/approve", reviewActionsHandler.Approve)
 		r.Post("/workspaces/{id}/changes/{name}/review/request-correction", reviewActionsHandler.RequestCorrection)
+		r.Post("/workspaces/{id}/changes/{name}/verification/rerun", verificationHandler.Rerun)
+		r.Post("/workspaces/{id}/changes/{name}/verification/finalize", verificationHandler.Finalize)
+		r.Post("/workspaces/{id}/changes/{name}/verification/request-correction", verificationHandler.RequestCorrection)
+		r.Get("/workspaces/{id}/changes/{name}/verification/report", verificationHandler.Report)
 		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)

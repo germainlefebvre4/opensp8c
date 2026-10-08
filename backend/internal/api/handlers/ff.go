@@ -246,6 +246,11 @@ func (h *FFHandler) releaseForReset(w http.ResponseWriter, wsID, workspacePath, 
 			return nil, false
 		}
 		release = unlock
+		if mgr.VerificationRunning(changeName) {
+			release()
+			writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "verification_busy", Message: "une vérification est en cours sur ce changement"})
+			return nil, false
+		}
 		if hw, held := activeWorkerChanges(h.poolReg, wsID)[changeName]; held {
 			if !hw.Paused {
 				release()

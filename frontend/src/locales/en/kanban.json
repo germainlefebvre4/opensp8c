@@ -5,6 +5,7 @@
     "ready": "Ready",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "Verifying",
     "toReview": "To Review",
     "done": "Done",
     "archived": "Archived"
@@ -39,7 +40,8 @@
     "unlaunchWorkerStillRunning": "The worker is still running: please try again in a moment.",
     "resetWorkerActive": "Cannot reset: an Agent Pool worker is active on this change.",
     "resetReviewBusy": "Cannot reset: a review action is in progress on this change.",
-    "resetFailed": "Failed to reset change."
+    "resetFailed": "Failed to reset change.",
+    "resetVerificationBusy": "Cannot reset: a verification is running on this change."
   },
   "columnActions": {
     "newExploration": "New exploration",
@@ -66,6 +68,21 @@
     "resumeTooltip": "Resume the worker (the agent runs again on the remaining tasks)",
     "resumeFinalizeTooltip": "Resume and finalize without running the agent",
     "resumeFinalizeRemaining_one": "{{count}} task left to check",
-    "resumeFinalizeRemaining_other": "{{count}} tasks left to check"
+    "resumeFinalizeRemaining_other": "{{count}} tasks left to check",
+    "verification": {
+      "queued": "queued",
+      "running": "verifying · {{step}}",
+      "failed": "failed",
+      "passed": "verified",
+      "rerun": "Rerun",
+      "finalize": "Finalize",
+      "rerunTooltip": "Rerun the verification",
+      "finalizeTooltip": "Finalize without verification",
+      "finalizeRemaining_one": "{{count}} task left to check",
+      "finalizeRemaining_other": "{{count}} tasks left to check",
+      "steps": {
+        "conformity": "conformity"
+      }
+    }
   }
 }

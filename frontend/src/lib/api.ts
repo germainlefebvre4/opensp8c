@@ -284,6 +284,7 @@ export const resetErrorKey = (err: unknown): string => {
   const code = err instanceof ApiError ? err.code : undefined
   if (code === 'worker_active') return 'errors.resetWorkerActive'
   if (code === 'review_busy') return 'errors.resetReviewBusy'
+  if (code === 'verification_busy') return 'errors.resetVerificationBusy'
   return 'errors.resetFailed'
 }
 
@@ -463,6 +464,31 @@ export const approveReview = (workspaceId: string, changeName: string) =>
 
 export const requestCorrection = (workspaceId: string, changeName: string, feedback: string) =>
   api.post(`${reviewURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+
+export type VerificationState = 'queued' | 'running' | 'failed' | 'passed'
+
+export interface VerificationReport {
+  step: string
+  verdict: 'pass' | 'fail' | 'error' | ''
+  reason: string
+  report: string
+  started_at: string
+}
+
+const verificationURL = (workspaceId: string, changeName: string) =>
+  `/api/workspaces/${workspaceId}/changes/${encodeURIComponent(changeName)}/verification`
+
+export const rerunVerification = (workspaceId: string, changeName: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/rerun`).then(() => undefined)
+
+export const finalizeVerification = (workspaceId: string, changeName: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/finalize`).then(() => undefined)
+
+export const requestVerificationCorrection = (workspaceId: string, changeName: string, feedback: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+
+export const getVerificationReport = (workspaceId: string, changeName: string) =>
+  api.get<VerificationReport>(`${verificationURL(workspaceId, changeName)}/report`).then(r => r.data)
 
 const REVIEW_ERROR_CODES = new Set([
   'not_in_review', 'worker_active', 'merge_in_progress', 'base_branch_mismatch',

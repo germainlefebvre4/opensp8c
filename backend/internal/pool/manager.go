@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"sync"
 	"time"
@@ -36,13 +37,16 @@ type Manager struct {
 	// the intention to the new worker. In memory only, like the pauses.
 	finalizeChanges  map[string]bool
 	lastWorkerStatus map[int]WorkerStatus
-	cancelLoop       context.CancelFunc
-	isRunning        bool
-	broadcaster      Broadcaster
-	sessionMgr       *session.Manager
-	prefs            *preferences.Service
-	activityStore    *activity.Store
-	convStore        *conversation.Store
+	// verifications holds the verifications in flight, by change name; they
+	// are counted apart from the workers.
+	verifications map[string]*verifyJob
+	cancelLoop    context.CancelFunc
+	isRunning     bool
+	broadcaster   Broadcaster
+	sessionMgr    *session.Manager
+	prefs         *preferences.Service
+	activityStore *activity.Store
+	convStore     *conversation.Store
 
 	// worktreesRoot is the root directory of the worktrees, read once from
 	// OPENSP8C_WORKTREES_DIR (or the default) at construction.
@@ -76,6 +80,7 @@ func NewManager(broadcaster Broadcaster, sessionMgr *session.Manager, prefs *pre
 		finalizeChanges:  make(map[string]bool),
 		worktreesRoot:    DefaultWorktreesRoot(),
 		lastWorkerStatus: make(map[int]WorkerStatus),
+		verifications:    make(map[string]*verifyJob),
 		broadcaster:      broadcaster,
 		sessionMgr:       sessionMgr,
 		prefs:            prefs,
@@ -176,6 +181,12 @@ func (m *Manager) Stop() {
 			w.CancelFunc()
 		}
 	}
+	// A cancelled verification leaves its marker pending: the next start of
+	// the pool runs it again.
+	for _, v := range m.verifications {
+		v.cancel()
+	}
+	m.verifications = make(map[string]*verifyJob)
 	m.activeWorkers = make(map[int]*Worker)
 	m.pausedWorkers = make(map[int]*Worker)
 	m.finalizeChanges = make(map[string]bool)
@@ -414,34 +425,44 @@ func (m *Manager) tick() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if len(m.activeWorkers) >= m.config.Size {
-		return
-	}
-
 	changes, err := openspec.ListChanges(m.workspacePath)
 	if err != nil {
+		return
+	}
+	m.tickWorkers(changes)
+	m.tickVerifications(changes, m.heldChanges())
+}
+
+// heldChanges returns the changes an active or paused worker holds.
+func (m *Manager) heldChanges() map[string]bool {
+	held := make(map[string]bool)
+	for _, w := range m.activeWorkers {
+		held[w.ActiveChange] = true
+	}
+	// A paused change stays excluded until explicitly resumed (or the pool is
+	// stopped), otherwise the dispatcher would relaunch it on the next tick.
+	for _, w := range m.pausedWorkers {
+		held[w.ActiveChange] = true
+	}
+	return held
+}
+
+// tickWorkers hands the runnable To Do changes to free worker slots. Callers
+// hold m.mu.
+func (m *Manager) tickWorkers(changes []openspec.Change) {
+	if len(m.activeWorkers) >= m.config.Size {
 		return
 	}
 
 	scheduler := NewScheduler(changes)
 	runnable := scheduler.GetRunnableChanges()
-
-	// Filter out changes already being worked on
-	activeChangeSet := make(map[string]bool)
-	for _, w := range m.activeWorkers {
-		activeChangeSet[w.ActiveChange] = true
-	}
-	// A paused change stays excluded until explicitly resumed (or the pool is
-	// stopped), otherwise the dispatcher would relaunch it on the next tick.
-	for _, w := range m.pausedWorkers {
-		activeChangeSet[w.ActiveChange] = true
-	}
+	held := m.heldChanges()
 
 	for _, changeName := range runnable {
 		if len(m.activeWorkers) >= m.config.Size {
 			break
 		}
-		if activeChangeSet[changeName] {
+		if held[changeName] {
 			continue
 		}
 
@@ -449,7 +470,20 @@ func (m *Manager) tick() {
 	}
 }
 
-func (m *Manager) startWorker(changeName string) {
+func (m *Manager) startWorker(changeName string) { m.startWorkerFor(changeName, false) }
+
+// startWorkerFor starts a worker on changeName. With verified, the change's
+// verification marker is `passed`: the worker only finalizes, and the marker is
+// lifted before it starts, so the change leaves the verifying column and the
+// verification does not run again.
+func (m *Manager) startWorkerFor(changeName string, verified bool) {
+	if verified {
+		wt := NewWorktreeController(m.workspacePath, m.workspaceID, m.worktreesRoot)
+		if err := wt.ClearVerify(changeName); err != nil {
+			log.Printf("[pool] cannot lift the verification marker of %s: %v\n", changeName, err)
+			return
+		}
+	}
 	// Find next available ID, skipping both active and (still displayed)
 	// paused workers so a new worker never collides with a paused one's ID.
 	id := 1
@@ -472,7 +506,7 @@ func (m *Manager) startWorker(changeName string) {
 		DelegationMode: m.config.DelegationMode,
 		StartedAt:      time.Now(),
 		CancelFunc:     cancel,
-		finalizeOnly:   m.finalizeChanges[changeName],
+		finalizeOnly:   m.finalizeChanges[changeName] || verified,
 		done:           make(chan struct{}),
 	}
 	delete(m.finalizeChanges, changeName)

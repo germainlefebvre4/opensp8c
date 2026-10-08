@@ -21,6 +21,7 @@ import { ReviewTab } from './ReviewTab'
 import { ChangeVerificationSection } from './ChangeVerificationSection'
 import { ApproveDialog } from './ApproveDialog'
 import { CorrectionDialog } from './CorrectionDialog'
+import { VerificationBanner } from './VerificationBanner'
 
 interface Props {
   workspaceId: string
@@ -36,6 +37,7 @@ const STATUS_KEY_MAP: Record<string, string> = {
   'to-explore': 'toExplore',
   'todo': 'toDo',
   'in-progress': 'inProgress',
+  'verifying': 'verifying',
   'to-review': 'toReview',
   'done': 'done',
   'archived': 'archived',
@@ -308,6 +310,10 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
               </div>
             )
           })()}
+
+          {data.kanban_status === 'verifying' && (
+            <VerificationBanner workspaceId={workspaceId} change={data} onCorrectionSent={onClose} />
+          )}
 
           {/* Content */}
           {activeTab === 'conversation' ? (

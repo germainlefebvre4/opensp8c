@@ -31,6 +31,7 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 			"ready":       0,
 			"todo":        0,
 			"in-progress": 0,
+			"verifying":   0,
 			"to-review":   0,
 			"done":        0,
 		}

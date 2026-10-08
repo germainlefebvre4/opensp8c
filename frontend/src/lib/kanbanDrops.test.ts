@@ -28,4 +28,9 @@ describe('VALID_DROPS', () => {
       expect(VALID_DROPS['to-review']).not.toContain(target)
     }
   })
+
+  it('keeps Verifying system-driven: neither a source nor a target', () => {
+    expect(VALID_DROPS['verifying']).toBeUndefined()
+    expect(Object.values(VALID_DROPS).flat()).not.toContain('verifying')
+  })
 })

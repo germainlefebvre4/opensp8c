@@ -1,0 +1,27 @@
+schema: spec-driven
+created: "2026-10-07"
+tags:
+    type:
+        - backend
+    complexity: 4
+    components:
+        - verification-stage
+        - verification-settings
+        - agent-pool-orchestrator
+        - kanban-board
+        - kanban-drag-drop
+        - kanban-change-detail
+        - workspace-kanban-counts
+        - change-status
+        - conversation-store
+        - api-router
+        - change-review-actions
+        - task-progress
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - testing
+        - documentation
+    _auto: true
+    _tagged_at: "2026-10-07"

@@ -1,2 +1,18 @@
 schema: spec-driven
-created: 2026-10-07
+created: "2026-10-07"
+tags:
+    type:
+        - frontend
+    complexity: 3
+    components:
+        - kanban-board
+        - kanban-change-detail
+        - kanban-drag-drop
+        - kanban-done-rail
+        - kanban-layout
+    agent_specialization:
+        - frontend
+        - testing
+        - ux-design
+    _auto: true
+    _tagged_at: "2026-10-07"

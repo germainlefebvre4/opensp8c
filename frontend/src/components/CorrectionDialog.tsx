@@ -7,9 +7,11 @@ interface Props {
   /** Sends the feedback; a rejection is shown in the dialog and the text kept. */
   onSubmit: (feedback: string) => Promise<unknown>
   onCancel: () => void
+  /** Text shown for a rejected submit; defaults to the review error of its code. */
+  errorMessage?: (err: unknown) => string
 }
 
-export function CorrectionDialog({ changeName, onSubmit, onCancel }: Props) {
+export function CorrectionDialog({ changeName, onSubmit, onCancel, errorMessage }: Props) {
   const { t } = useTranslation('dialogs')
   const [feedback, setFeedback] = useState('')
   const [pending, setPending] = useState(false)
@@ -32,7 +34,7 @@ export function CorrectionDialog({ changeName, onSubmit, onCancel }: Props) {
     try {
       await onSubmit(feedback)
     } catch (err) {
-      setError(t(reviewErrorKey(err)))
+      setError(errorMessage ? errorMessage(err) : t(reviewErrorKey(err)))
       setPending(false)
     }
   }

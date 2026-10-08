@@ -18,6 +18,9 @@ interface Props {
   onStopWorker?: (change: Change) => void
   onResumeWorker?: (change: Change, finalizeOnly: boolean) => void
   resumingWorkerIds?: ReadonlySet<number>
+  onRerunVerification?: (change: Change) => void
+  onFinalizeVerification?: (change: Change) => void
+  verificationPendingNames?: ReadonlySet<string>
   maxVisible?: number
   collapsible?: boolean
   className?: string
@@ -31,12 +34,13 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'ready': { badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400' },
   'todo': { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   'in-progress': { badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
+  'verifying': { badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
   'to-review': { badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
   'done': { badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
   const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
@@ -122,6 +126,9 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
                   onStopWorker={onStopWorker}
                   onResumeWorker={onResumeWorker}
                   resumingWorkerIds={resumingWorkerIds}
+                  onRerunVerification={onRerunVerification}
+                  onFinalizeVerification={onFinalizeVerification}
+                  verificationPendingNames={verificationPendingNames}
                 />
               )
             })}

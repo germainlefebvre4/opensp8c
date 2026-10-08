@@ -12,6 +12,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "En vérification",
     "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
@@ -119,5 +120,22 @@
     "conformity": "Conformité",
     "ui": "UI",
     "saveError": "Échec de l'enregistrement : {{message}}"
+  },
+  "verificationBanner": {
+    "title": "Vérification",
+    "state": {
+      "queued": "en attente",
+      "running": "en cours ({{step}})",
+      "failed": "échec",
+      "passed": "réussie, en attente de finalisation"
+    },
+    "steps": {
+      "conformity": "conformité"
+    },
+    "rerun": "Relancer la vérification",
+    "finalize": "Finaliser sans vérification",
+    "requestCorrection": "Demander des corrections",
+    "remaining_one": "{{count}} tâche restante",
+    "remaining_other": "{{count}} tâches restantes"
   }
 }

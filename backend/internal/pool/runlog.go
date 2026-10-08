@@ -2,6 +2,7 @@ package pool
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -18,8 +19,10 @@ const runEventInterval = time.Second
 const (
 	OutcomeCompleted      = "completed"
 	OutcomeAwaitingReview = "awaiting-review"
-	OutcomePaused         = "paused"
-	OutcomeStopped        = "stopped"
+	// OutcomeAwaitingVerification: the change entered the verification stage.
+	OutcomeAwaitingVerification = "awaiting-verification"
+	OutcomePaused               = "paused"
+	OutcomeStopped              = "stopped"
 )
 
 // runTimestampLayout is the run identifier format shared with chat/ff runs.
@@ -33,17 +36,44 @@ type poolRunLog struct {
 	failed bool
 }
 
+// runRef is what the run journal needs to know about its owner: a worker for
+// a "pool" run, a verification for a "verify" run.
+type runRef struct {
+	workspaceID string
+	change      string
+	id          int // worker id; 0 for a verification
+	log         *poolRunLog
+}
+
+func (r runRef) label() string {
+	if r.id == 0 {
+		return "verify " + r.change
+	}
+	return fmt.Sprintf("worker %d", r.id)
+}
+
+// ref returns the journal reference of w. Only the worker's own goroutine
+// reads w.runLog.
+func (w *Worker) ref() runRef {
+	return runRef{workspaceID: w.WorkspaceID, change: w.ActiveChange, id: w.ID, log: w.runLog}
+}
+
 // openRunLog creates the "pool" run for w's change. It returns nil, "" when no
 // conversation store is configured or the file cannot be created: journaling
 // must never prevent a worker from running.
 func (m *Manager) openRunLog(w *Worker) (*poolRunLog, string) {
+	return m.openRunLogFor(w.ref(), "pool")
+}
+
+// openRunLogFor creates a run of the given conversation type for ref's change.
+func (m *Manager) openRunLogFor(ref runRef, runType string) (*poolRunLog, string) {
 	if m.convStore == nil {
 		return nil, ""
 	}
 	ts := time.Now().UTC().Format(runTimestampLayout)
-	f, err := m.convStore.OpenRun(w.WorkspaceID, w.ActiveChange, "pool", ts)
+	f, err := m.convStore.OpenRun(ref.workspaceID, ref.change, runType, ts)
 	if err != nil {
-		log.Printf("[worker %d] failed to open pool run journal: %v\n", w.ID, err)
+		log.Printf("[%s] failed to open %s run journal: %v\n", ref.label(), runType, err)
 		return nil, ""
 	}
 	return &poolRunLog{sess: conversation.NewSessionLog(f)}, ts
@@ -52,7 +82,11 @@ func (m *Manager) openRunLog(w *Worker) (*poolRunLog, string) {
 // logRun appends one line to w's run journal. A write failure is logged once
 // and otherwise ignored: the worker keeps running.
 func (m *Manager) logRun(w *Worker, dir string, data []byte) {
-	rl := w.runLog
+	m.logRunRef(w.ref(), dir, data)
+}
+
+func (m *Manager) logRunRef(ref runRef, dir string, data []byte) {
+	rl := ref.log
 	if rl == nil {
 		return
 	}
@@ -62,19 +96,23 @@ func (m *Manager) logRun(w *Worker, dir string, data []byte) {
 	if err := rl.sess.WriteLine(dir, data); err != nil {
 		if !rl.failed {
 			rl.failed = true
-			log.Printf("[worker %d] pool run journal write failed (further failures not logged): %v\n", w.ID, err)
+			log.Printf("[%s] run journal write failed (further failures not logged): %v\n", ref.label(), err)
 		}
 		return
 	}
-	m.noteRunAppended(w)
+	m.noteRunRef(ref)
 }
 
 func (m *Manager) logRunMarker(w *Worker, marker map[string]any) {
+	m.logRunMarkerRef(w.ref(), marker)
+}
+
+func (m *Manager) logRunMarkerRef(ref runRef, marker map[string]any) {
 	data, err := json.Marshal(marker)
 	if err != nil {
 		return
 	}
-	m.logRun(w, "meta", data)
+	m.logRunRef(ref, "meta", data)
 }
 
 // stopper is the subset of *time.Timer the run-event limiter needs.
@@ -129,10 +167,12 @@ func (t *runThrottle) Flush() {
 	t.emit()
 }
 
-func (m *Manager) throttleFor(w *Worker) *runThrottle {
+func (m *Manager) throttleFor(w *Worker) *runThrottle { return m.throttleForRef(w.ref()) }
+
+func (m *Manager) throttleForRef(ref runRef) *runThrottle {
 	m.runMu.Lock()
 	defer m.runMu.Unlock()
-	if t, ok := m.runThrottles[w.ActiveChange]; ok {
+	if t, ok := m.runThrottles[ref.change]; ok {
 		return t
 	}
 	now := m.clock
@@ -143,7 +183,7 @@ func (m *Manager) throttleFor(w *Worker) *runThrottle {
 	if after == nil {
 		after = func(d time.Duration, f func()) stopper { return time.AfterFunc(d, f) }
 	}
-	wsID, change := w.WorkspaceID, w.ActiveChange
+	wsID, change := ref.workspaceID, ref.change
 	t := &runThrottle{
 		interval:  runEventInterval,
 		now:       now,
@@ -162,13 +202,17 @@ func (m *Manager) throttleFor(w *Worker) *runThrottle {
 }
 
 // noteRunAppended signals that w's run received a new line (rate limited).
-func (m *Manager) noteRunAppended(w *Worker) { m.throttleFor(w).Note() }
+func (m *Manager) noteRunAppended(w *Worker) { m.noteRunRef(w.ref()) }
+
+func (m *Manager) noteRunRef(ref runRef) { m.throttleForRef(ref).Note() }
 
 // finishRunEvents emits the final pool_run_appended of w's run and drops its limiter.
-func (m *Manager) finishRunEvents(w *Worker) {
-	t := m.throttleFor(w)
+func (m *Manager) finishRunEvents(w *Worker) { m.finishRunRef(w.ref()) }
+
+func (m *Manager) finishRunRef(ref runRef) {
+	t := m.throttleForRef(ref)
 	t.Flush()
 	m.runMu.Lock()
-	delete(m.runThrottles, w.ActiveChange)
+	delete(m.runThrottles, ref.change)
 	m.runMu.Unlock()
 }

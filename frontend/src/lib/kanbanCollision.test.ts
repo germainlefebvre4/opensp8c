@@ -81,6 +81,7 @@ describe('kanbanCollisionDetection', () => {
   it('defines all default kanban column ids', () => {
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('to-explore')).toBe(true)
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('ready')).toBe(true)
+    expect(DEFAULT_KANBAN_COLUMN_IDS.has('verifying')).toBe(true)
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('todo')).toBe(true)
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('in-progress')).toBe(true)
     expect(DEFAULT_KANBAN_COLUMN_IDS.has('to-review')).toBe(true)

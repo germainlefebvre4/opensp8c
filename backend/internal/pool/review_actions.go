@@ -214,6 +214,15 @@ func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspaceP
 	if err := m.checkReviewable(wt, change); err != nil {
 		return err
 	}
+	return m.applyCorrection(workspaceID, wt, change, feedback, wt.ClearReview, "levée du marqueur de revue")
+}
+
+// applyCorrection appends feedback as an unchecked task of the "## Corrections"
+// section of the worktree's tasks.md, commits it into feature/<change>, then
+// lifts the marker through clear and publishes the update. The marker is kept
+// when writing or committing fails. The caller holds the change's lock and has
+// checked that the change is eligible.
+func (m *Manager) applyCorrection(workspaceID string, wt *WorktreeController, change, feedback string, clear func(string) error, clearLabel string) error {
 	dir, err := wt.Provision(change)
 	if err != nil {
 		return fmt.Errorf("impossible de préparer le worktree : %w", err)
@@ -233,8 +242,8 @@ func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspaceP
 		_ = os.WriteFile(tasksPath, original, 0o644)
 		return fmt.Errorf("commit de la correction : %w", err)
 	}
-	if err := wt.ClearReview(change); err != nil {
-		return fmt.Errorf("levée du marqueur de revue : %w", err)
+	if err := clear(change); err != nil {
+		return fmt.Errorf("%s : %w", clearLabel, err)
 	}
 	m.publishChangeUpdated(workspaceID, change)
 	return nil

@@ -831,3 +831,63 @@ func TestBranchTasks_CommittedWithoutWorktree(t *testing.T) {
 		t.Fatal("BranchTasks must not recreate the worktree")
 	}
 }
+
+func TestVerifyMarker(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("no marker expected")
+	}
+	if err := wc.ClearVerify("add-auth"); err != nil {
+		t.Fatalf("clearing an absent marker: %v", err)
+	}
+	if err := wc.SetVerify("add-auth", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitIn(t, repo, "config", "--get", "branch.feature/add-auth.opensp8c-verify"); got != "pending" {
+		t.Fatalf("raw marker = %q", got)
+	}
+	if st, ok := wc.VerifyState("add-auth"); !ok || st != "pending" {
+		t.Fatalf("state = %q %v", st, ok)
+	}
+	if status := gitIn(t, repo, "status", "--porcelain"); status != "" {
+		t.Fatalf("marker touched tracked files: %q", status)
+	}
+	gitIn(t, repo, "config", "branch.feature/add-auth.opensp8c-verify", "weird")
+	if st, _ := wc.VerifyState("add-auth"); st != "failed" {
+		t.Fatalf("unknown value = %q, want failed", st)
+	}
+	if err := wc.ClearVerify("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("marker should be lifted")
+	}
+}
+
+func TestVerifyMarkerDroppedWithBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.SetVerify("add-auth", "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Discard("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("marker should vanish with the branch")
+	}
+}
+
+func TestVerifyMarkerNonGitRepo(t *testing.T) {
+	wc := NewWorktreeController(t.TempDir(), "ws-a", t.TempDir())
+	if _, ok := wc.VerifyState("x"); ok {
+		t.Fatal("non git repo: no marker expected")
+	}
+}

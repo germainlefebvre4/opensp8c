@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { VerificationState } from '../lib/api'
 
 export interface Tags {
   type: string[]
@@ -12,7 +13,7 @@ export interface Tags {
 
 export interface Change {
   name: string
-  kanban_status: 'to-explore' | 'ready' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
+  kanban_status: 'to-explore' | 'ready' | 'todo' | 'in-progress' | 'verifying' | 'to-review' | 'done' | 'archived'
   tasks_done: number
   tasks_total: number
   created: string
@@ -27,6 +28,9 @@ export interface Change {
   worker_id?: number
   order?: number
   has_branch?: boolean
+  // Only when kanban_status is 'verifying'; the step only while 'running'.
+  verification_state?: VerificationState
+  verification_step?: string
 }
 
 export function useChanges(workspaceId: string | null) {

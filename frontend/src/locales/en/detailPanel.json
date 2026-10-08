@@ -12,6 +12,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "Verifying",
     "toReview": "To Review",
     "done": "Done",
     "archived": "Archived"
@@ -119,5 +120,22 @@
     "conformity": "Conformity",
     "ui": "UI",
     "saveError": "Could not save: {{message}}"
+  },
+  "verificationBanner": {
+    "title": "Verification",
+    "state": {
+      "queued": "queued",
+      "running": "running ({{step}})",
+      "failed": "failed",
+      "passed": "passed, awaiting finalization"
+    },
+    "steps": {
+      "conformity": "conformity"
+    },
+    "rerun": "Rerun verification",
+    "finalize": "Finalize without verification",
+    "requestCorrection": "Request corrections",
+    "remaining_one": "{{count}} task left to check",
+    "remaining_other": "{{count}} tasks left to check"
   }
 }

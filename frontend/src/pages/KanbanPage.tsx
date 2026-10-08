@@ -20,6 +20,8 @@ import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { createClampToRectModifier } from '../lib/clampToRect'
 import { useChanges } from '../hooks/useChanges'
 import { useResumeWorker } from '../hooks/useResumeWorker'
+import { useVerificationActions } from '../hooks/useVerificationActions'
+import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
@@ -44,6 +46,8 @@ export function KanbanPage({ workspaceId }: Props) {
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
   const { data: poolStatus } = usePoolStatus(workspaceId)
   const { resume: resumeWorkerRequest, pending: resumingWorkerIds } = useResumeWorker(workspaceId)
+  const { rerun: rerunVerification, finalize: finalizeVerification, pending: verificationPending } = useVerificationActions(workspaceId)
+  const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
   const qc = useQueryClient()
   const approveReview = useApproveReview(workspaceId)
   const requestCorrection = useRequestCorrection(workspaceId)
@@ -87,6 +91,12 @@ export function KanbanPage({ workspaceId }: Props) {
       }),
     [changes]
   )
+  // Verifying shares the In Progress slot; it is shown when the verification is
+  // enabled for the workspace or while it still holds a card.
+  const workspaceVerification = workspaceSettings?.resolved.verification
+  const showVerifying =
+    changes.some(c => c.kanban_status === 'verifying') ||
+    Boolean(workspaceVerification?.conformity || workspaceVerification?.ui)
   const leadingColumns = [
     { title: t('columns.toExplore'), status: 'to-explore' },
     { title: t('columns.ready'), status: 'ready' },
@@ -364,6 +374,17 @@ export function KanbanPage({ workspaceId }: Props) {
     if (error) toast({ title: error, variant: 'error' })
   }
 
+  // A refusal shows the backend's message; the card stays as it is.
+  const handleRerunVerification = async (change: Change) => {
+    const error = await rerunVerification(change.name)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
+  const handleFinalizeVerification = async (change: Change) => {
+    const error = await finalizeVerification(change.name)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
   const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
 
   if (isLoading) return (
@@ -426,33 +447,58 @@ export function KanbanPage({ workspaceId }: Props) {
             <div className="flex-1 flex flex-row overflow-hidden min-h-0">
               <div ref={columnsContainerRef} className="flex-1 overflow-x-auto min-h-0 p-4">
                 <div className="flex gap-3 h-full min-w-max">
-                  {leadingColumns.map(col => (
-                    <KanbanColumn
-                      key={col.status}
-                      title={col.title}
-                      status={col.status}
-                      changes={
-                        col.status === 'ready'
-                          ? filteredChanges
-                            .filter(c => c.kanban_status === 'ready')
-                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                          : filteredChanges.filter(c => c.kanban_status === col.status)
-                      }
-                      allChanges={changes}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, col.status)}
-                      onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
-                      onDeleteGhost={handleDeleteGhostRequest}
-                      onStopWorker={handleStopWorker}
-                      onResumeWorker={handleResumeWorker}
-                      resumingWorkerIds={resumingWorkerIds}
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={Object.entries(VALID_DROPS)
-                        .filter(([, targets]) => targets.includes(col.status))
-                        .map(([src]) => src)}
-                    />
-                  ))}
+                  {leadingColumns.map(col => {
+                    const column = (
+                      <KanbanColumn
+                        key={col.status}
+                        title={col.title}
+                        status={col.status}
+                        className={col.status === 'in-progress' && showVerifying ? 'flex-1 min-h-0' : undefined}
+                        changes={
+                          col.status === 'ready'
+                            ? filteredChanges
+                              .filter(c => c.kanban_status === 'ready')
+                              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                            : filteredChanges.filter(c => c.kanban_status === col.status)
+                        }
+                        allChanges={changes}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, col.status)}
+                        onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
+                        onDeleteGhost={handleDeleteGhostRequest}
+                        onStopWorker={handleStopWorker}
+                        onResumeWorker={handleResumeWorker}
+                        resumingWorkerIds={resumingWorkerIds}
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={Object.entries(VALID_DROPS)
+                          .filter(([, targets]) => targets.includes(col.status))
+                          .map(([src]) => src)}
+                      />
+                    )
+                    if (col.status !== 'in-progress' || !showVerifying) return column
+                    // In Progress + Verifying stacked in one slot, like Done / Archived.
+                    return (
+                      <div key={col.status} className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
+                        {column}
+                        <div className="h-px bg-slate-200 shrink-0" />
+                        <KanbanColumn
+                          title={t('columns.verifying')}
+                          status="verifying"
+                          changes={filteredChanges.filter(c => c.kanban_status === 'verifying')}
+                          workspaceId={workspaceId}
+                          onOpen={name => handleOpen(name, 'verifying')}
+                          onRerunVerification={handleRerunVerification}
+                          onFinalizeVerification={handleFinalizeVerification}
+                          verificationPendingNames={verificationPending}
+                          className="max-h-[40%] overflow-y-auto"
+                          getFfStatus={getFfStatus}
+                          dragSourceStatus={dragSourceStatus}
+                          validDropSources={[]}
+                        />
+                      </div>
+                    )
+                  })}
 
                   {/* Done + Archived stacked in shared slot */}
                   <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">

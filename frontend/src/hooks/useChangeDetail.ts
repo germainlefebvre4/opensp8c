@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { ChangeVerification } from '../lib/api'
+import type { ChangeVerification, VerificationState } from '../lib/api'
 import type { Tags } from './useChanges'
 
 export interface TaskItem {
@@ -11,7 +11,7 @@ export interface TaskItem {
 
 export interface ChangeDetail {
   name: string
-  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'to-review' | 'done' | 'archived'
+  kanban_status: 'to-explore' | 'todo' | 'in-progress' | 'verifying' | 'to-review' | 'done' | 'archived'
   tasks_done: number
   tasks_total: number
   created: string
@@ -26,6 +26,8 @@ export interface ChangeDetail {
   worker_paused?: boolean
   worker_id?: number
   worker_blocked_reason?: string
+  verification_state?: VerificationState
+  verification_step?: string
   // Absent for an archived change.
   verification?: ChangeVerification
 }

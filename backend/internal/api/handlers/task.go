@@ -70,6 +70,11 @@ func (h *TaskHandler) PatchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.poolReg != nil && h.poolReg.For(id).VerificationRunning(name) {
+		writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "verification_busy", Message: "une vérification est en cours sur ce changement"})
+		return
+	}
+
 	var taskText string
 	var done bool
 	target, root := h.resolveTaskTarget(id, path, name)

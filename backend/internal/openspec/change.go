@@ -44,6 +44,10 @@ type Change struct {
 	Order             int      `json:"order,omitempty"`
 	// HasBranch reports that feature/<change> exists in the repository.
 	HasBranch bool `json:"has_branch,omitempty"`
+	// VerificationState and VerificationStep describe a verifying change:
+	// queued, running, failed or passed, and the running step.
+	VerificationState string `json:"verification_state,omitempty"`
+	VerificationStep  string `json:"verification_step,omitempty"`
 }
 
 type Task struct {
@@ -184,6 +188,56 @@ func ReviewMarkers(workspacePath string) map[string]bool {
 	return markers
 }
 
+// VerifyKeySuffix is the suffix of the git config key
+// (branch.feature/<change>.<suffix>) holding the verification marker of a
+// change: pending, failed or passed.
+const VerifyKeySuffix = "opensp8c-verify"
+
+// Verification marker values.
+const (
+	VerifyPending = "pending"
+	VerifyFailed  = "failed"
+	VerifyPassed  = "passed"
+)
+
+// VerifyKey returns the git config key holding the verification marker of a change.
+func VerifyKey(changeName string) string {
+	return "branch.feature/" + changeName + "." + VerifyKeySuffix
+}
+
+// NormalizeVerifyState maps a raw marker value to pending, failed or passed;
+// an unknown value is read as failed (never rerun or finalized implicitly).
+func NormalizeVerifyState(v string) string {
+	switch v {
+	case VerifyPending, VerifyPassed:
+		return v
+	default:
+		return VerifyFailed
+	}
+}
+
+// VerifyMarkers returns the verification marker value of every change that
+// carries one, in a single git call. The map is empty when the folder is not
+// a git repository or git fails: the error is never propagated.
+func VerifyMarkers(workspacePath string) map[string]string {
+	markers := map[string]string{}
+	cmd := exec.Command("git", "config", "--get-regexp", `^branch\..*\.`+VerifyKeySuffix+`$`)
+	cmd.Dir = workspacePath
+	out, err := cmd.Output()
+	if err != nil {
+		return markers
+	}
+	const prefix, suffix = "branch.feature/", "." + VerifyKeySuffix
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) || len(key) <= len(prefix)+len(suffix) {
+			continue
+		}
+		markers[key[len(prefix):len(key)-len(suffix)]] = NormalizeVerifyState(strings.TrimSpace(value))
+	}
+	return markers
+}
+
 // branchExists reports whether feature/<change> exists in the repository.
 func branchExists(workspacePath, changeName string) bool {
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/feature/"+changeName)
@@ -274,6 +328,7 @@ func ListChanges(workspacePath string) ([]Change, error) {
 	}
 
 	markers := ReviewMarkers(workspacePath)
+	verifyMarkers := VerifyMarkers(workspacePath)
 	branches := FeatureBranches(workspacePath)
 	var changes []Change
 	for _, e := range entries {
@@ -287,6 +342,8 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		ch.HasBranch = branches[ch.Name]
 		if markers[ch.Name] && ch.HasBranch {
 			markReviewed(ch)
+		} else if state := verifyMarkers[ch.Name]; state != "" && ch.HasBranch {
+			markVerifying(ch, state)
 		}
 		changes = append(changes, *ch)
 	}
@@ -299,11 +356,31 @@ func InReview(workspacePath, changeName string) bool {
 	return ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName)
 }
 
+// InVerification reports whether the change carries a verification marker and
+// its branch still exists, i.e. whether it sits in the Verifying column
+// (unless a review marker takes precedence).
+func InVerification(workspacePath, changeName string) bool {
+	_, ok := VerifyMarkers(workspacePath)[changeName]
+	return ok && branchExists(workspacePath, changeName)
+}
+
 // markReviewed gives ch the to-review status, which takes precedence over the
 // status derived from its tasks. Staleness does not apply to a change in review.
 func markReviewed(ch *Change) {
 	ch.KanbanStatus = "to-review"
 	ch.IsStale = false
+}
+
+// markVerifying gives ch the verifying status, which takes precedence over the
+// status derived from its tasks (but not over to-review). state is a
+// normalized marker value; pending is exposed as queued.
+func markVerifying(ch *Change, state string) {
+	ch.KanbanStatus = "verifying"
+	ch.IsStale = false
+	if state == VerifyPending {
+		state = "queued"
+	}
+	ch.VerificationState = state
 }
 
 func ListArchivedChanges(workspacePath string) ([]Change, error) {
@@ -451,7 +528,7 @@ func ApplyWorktreeProgress(ch *Change, workspacePath, worktreePath string) bool 
 	if status == "done" {
 		status = "in-progress"
 	}
-	inReview := ch.KanbanStatus == "to-review"
+	inReview := ch.KanbanStatus == "to-review" || ch.KanbanStatus == "verifying"
 	ch.TasksDone = done
 	ch.TasksTotal = total
 	if !inReview {
@@ -499,6 +576,11 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 	}
 	if !isArchived {
 		ch.HasBranch = branchExists(workspacePath, changeName)
+		if ch.KanbanStatus != "to-review" && ch.HasBranch {
+			if state := VerifyMarkers(workspacePath)[changeName]; state != "" {
+				markVerifying(ch, state)
+			}
+		}
 	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))

@@ -443,6 +443,24 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		return
 	}
 
+	// 7b. Verification stage: with at least one verification step enabled, the
+	// change is not finalized here. The persistent marker queues it for the
+	// verification executor and the worker leaves with its slot freed; the
+	// worktree and branch stay. A worker that only finalizes (resume, or after
+	// a successful verification) never comes back through here.
+	if !w.finalizeOnly && m.verificationRequired(w.WorkspaceID, repoPath, w.ActiveChange) {
+		log.Printf("[worker %d] change %s awaits verification\n", w.ID, w.ActiveChange)
+		if err := wt.SetVerify(w.ActiveChange, openspec.VerifyPending); err != nil {
+			log.Printf("[worker %d] failed to record verification state: %v\n", w.ID, err)
+			pause(fmt.Sprintf("L'état de vérification n'a pas pu être enregistré : %s", truncateReason(err)))
+			return
+		}
+		// The marker touches no OpenSpec file: publish the update explicitly.
+		m.publishChangeUpdated(w.WorkspaceID, w.ActiveChange)
+		outcome = OutcomeAwaitingVerification
+		return
+	}
+
 	// 8. State transitions based on delegation mode.
 	if cfg.DelegationMode == ModeFullAutonomy {
 		// Integrate what landed on the target meanwhile and revalidate that
@@ -659,6 +677,36 @@ func (m *Manager) invokeAgentHeal(w *Worker, proc *session.Subprocess, validatio
 // (never once per line). It returns an error if the subprocess ends before
 // signaling completion.
 func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) error {
+	_, err := m.runTurnText(m.workerTurnTarget(w), proc, content)
+	return err
+}
+
+// turnTarget is what a turn needs of its owner: the run journal, the activity
+// display and the cancellation of the agent's process group. A worker and a
+// verification both provide one.
+type turnTarget struct {
+	ref         runRef
+	setActivity func(string)
+	notify      func()
+	procCancel  func() // nil when there is nothing to cancel
+}
+
+func (m *Manager) workerTurnTarget(w *Worker) turnTarget {
+	return turnTarget{
+		ref:         w.ref(),
+		setActivity: func(a string) { m.setActivity(w, a) },
+		notify:      m.notify,
+		procCancel: func() {
+			if w.procCancel != nil {
+				w.procCancel()
+			}
+		},
+	}
+}
+
+// runTurnText is runTurn returning the text of the turn: the "result" field of
+// the final event or, failing that, the text deltas accumulated during the turn.
+func (m *Manager) runTurnText(t turnTarget, proc *session.Subprocess, content string) (string, error) {
 	turn := map[string]interface{}{
 		"type": "user",
 		"message": map[string]string{
@@ -668,11 +716,11 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	}
 	data, err := json.Marshal(turn)
 	if err != nil {
-		return fmt.Errorf("failed to encode turn: %w", err)
+		return "", fmt.Errorf("failed to encode turn: %w", err)
 	}
-	m.logRun(w, "in", data)
+	m.logRunRef(t.ref, "in", data)
 	if _, err := proc.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("failed to write turn to agent subprocess: %w", err)
+		return "", fmt.Errorf("failed to write turn to agent subprocess: %w", err)
 	}
 
 	scanner := bufio.NewScanner(proc.Stdout())
@@ -683,41 +731,91 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	var idled atomic.Bool
 	idle := time.AfterFunc(agentIdleTimeout, func() {
 		idled.Store(true)
-		if w.procCancel != nil {
-			w.procCancel()
+		if t.procCancel != nil {
+			t.procCancel()
 		}
 		_ = proc.Stdout().Close()
 	})
 	defer idle.Stop()
 
+	var deltas strings.Builder
 	var lastNotify time.Time
 	for scanner.Scan() {
 		idle.Reset(agentIdleTimeout)
 		line := scanner.Bytes()
-		m.logRun(w, "out", line)
+		m.logRunRef(t.ref, "out", line)
 
 		switch kind, reason := classifyTurnLine(line); kind {
 		case turnOK:
-			return nil
+			if text := turnResultText(line); text != "" {
+				return text, nil
+			}
+			return deltas.String(), nil
 		case turnError:
-			return &agentTurnError{reason: reason}
+			return "", &agentTurnError{reason: reason}
 		}
 
+		deltas.WriteString(extractTextDelta(line))
 		if activity := extractActivity(line); activity != "" {
-			m.setActivity(w, activity)
+			t.setActivity(activity)
 			if now := time.Now(); lastNotify.IsZero() || now.Sub(lastNotify) >= activityBroadcastInterval {
-				m.notify()
+				t.notify()
 				lastNotify = now
 			}
 		}
 	}
 	if idled.Load() {
-		return &agentIdleError{after: agentIdleTimeout}
+		return "", &agentIdleError{after: agentIdleTimeout}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("agent subprocess stdout error before completion: %w", err)
+		return "", fmt.Errorf("agent subprocess stdout error before completion: %w", err)
 	}
-	return fmt.Errorf("agent subprocess ended before returning a result")
+	return "", fmt.Errorf("agent subprocess ended before returning a result")
+}
+
+// turnResultText returns the "result" text of an end-of-turn line, or "".
+func turnResultText(line []byte) string {
+	var data struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(line, &data) != nil {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(data.Result, &text) != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+// extractTextDelta returns the assistant text carried by a streaming delta
+// line (thinking and tool events excluded), or "".
+func extractTextDelta(line []byte) string {
+	var data struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Text string `json:"text"`
+		} `json:"delta"`
+		Event json.RawMessage `json:"event"`
+	}
+	if json.Unmarshal(line, &data) != nil {
+		return ""
+	}
+	if data.Type == "content_block_delta" {
+		return data.Delta.Text
+	}
+	if data.Type == "stream_event" && len(data.Event) > 0 {
+		var evt struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal(data.Event, &evt) == nil && evt.Type == "content_block_delta" {
+			return evt.Delta.Text
+		}
+	}
+	return ""
 }
 
 // turnKind classifies a stdout line with respect to the end of a turn.

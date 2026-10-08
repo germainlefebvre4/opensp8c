@@ -39,8 +39,14 @@ func writeReviewAction(w http.ResponseWriter, status int, body any) {
 
 // resolve checks the workspace and the change, writing the error itself.
 func (h *ReviewActionsHandler) resolve(w http.ResponseWriter, r *http.Request) (id, path, name string, ok bool) {
+	return resolveChange(h.ws, w, r)
+}
+
+// resolveChange checks the workspace and the change of a request, writing the
+// error itself.
+func resolveChange(ws *WorkspaceHandler, w http.ResponseWriter, r *http.Request) (id, path, name string, ok bool) {
 	id, name = chi.URLParam(r, "id"), chi.URLParam(r, "name")
-	path, found := h.ws.workspacePath(id)
+	path, found := ws.workspacePath(id)
 	if !found {
 		http.Error(w, "workspace not found", http.StatusNotFound)
 		return "", "", "", false

@@ -12,6 +12,9 @@ stateDiagram-v2
     ToDo --> Ready: demote (409 if worker active, force=true interrupts)
     ToDo --> InProgress: first task checked (user or worker)
     InProgress --> Done: all tasks checked (full-autonomy / manual)
+    InProgress --> Verifying: worker done, a verification step enabled
+    Verifying --> InProgress: verification passed (finalizing worker) or corrections requested
+    Verifying --> Verifying: failed, rerun
     InProgress --> ToReview: all tasks done by worker in hitl-review
     ToReview --> Done: Approve and Merge
     ToReview --> InProgress: Request corrections (feedback injected)
@@ -22,7 +25,7 @@ stateDiagram-v2
     Archived --> [*]
 ```
 
-Allowed drag-and-drop transitions are exactly: `to-explore → ready` (FF, or promote dialog for named ghosts), `ready → todo`, `todo → ready`, `ready|todo|in-progress → to-explore` (reset with confirmation), and reordering inside *Ready*. *Done* and *Archived* cards cannot be dragged; a card with a running FF is locked.
+Allowed drag-and-drop transitions are exactly: `to-explore → ready` (FF, or promote dialog for named ghosts), `ready → todo`, `todo → ready`, `ready|todo|in-progress → to-explore` (reset with confirmation), and reordering inside *Ready*. *Done*, *Archived* and *Verifying* cards cannot be dragged and *Verifying* is not a drop target; a card with a running FF is locked.
 
 ## 2. Exploration to change
 
@@ -79,10 +82,20 @@ flowchart TD
     H -- no --> P1[paused: healing exhausted]
     V -- yes --> T{Tasks left for the agent?}
     T -- yes --> P2[paused: tasks remain]
-    T -- no --> M{delegation_mode}
+    T -- no --> VS{Verification step enabled?}
+    VS -- yes --> VER[Marker pending: slot freed, change waits in Verifying]
+    VS -- no --> M{delegation_mode}
+    VER --> VX[Verification executor: /opsx:verify in the worktree]
+    VX -- VERDICT PASS --> PAS[Marker passed] --> FIN[finalizeOnly worker: validation, commit]
+    VX -- FAIL, no verdict, error --> FAILV[Marker failed: wait for a human]
+    FIN --> M
     M -- full-autonomy --> MERGE[Auto-merge, cleanup worktree] --> DONE[Done]
     M -- hitl-review --> REV[To Review]
 ```
+
+**Verification stage.** When the verification settings (change, workspace, Configuration: first defined wins, off by default) enable at least one step, a worker that has implemented, validated and committed a change does not finalize it: it sets the marker `branch.feature/<change>.opensp8c-verify` to `pending` in the repository's git configuration (like the review marker: no tracked file, dropped with the branch, survives a restart), ends with the outcome `awaiting-verification` and frees its slot; worktree and branch stay. The change is then in the **Verifying** column, stacked under *In Progress* in the same slot (shown when a step is enabled for the workspace or when it holds a card; its cards cannot be dragged). The pool's `tick` starts a verification for each `pending` change, by name order, up to the pool size; this limit is separate from the worker slots, and it stops with the pool (the marker stays `pending`, so the verification restarts from scratch with the pool). The conformity step starts an agent with the `verifier` role in the change's worktree, with a system prompt forbidding any file change and requiring a last line `VERDICT: PASS` or `VERDICT: FAIL`, and sends one `/opsx:verify <change>` turn. The last `VERDICT:` line of the answer decides; a missing verdict, an agent error or idleness, or any change to the worktree is a failure (fail-closed). The run is journalled as a `verify` conversation run (end marker with step, verdict, reason and report) and logged in the change's activity (`pool.verification_started` / `passed` / `failed`).
+
+On success the marker becomes `passed`: the next tick that finds a free worker slot starts a `finalizeOnly` worker for the change (no agent; it lifts the marker first, then validates, commits and merges or moves to To Review), without going through the verification again. On failure the marker becomes `failed`: the card stays in *Verifying* with a failure badge, nothing is retried or repaired automatically, and the detail panel shows the report with three actions: **Rerun** (`pending` again), **Finalize without verification** (`passed`; refused with `409 tasks_incomplete` while a task of the branch is unchecked) and **Request corrections** (a correction task is committed in the branch, the marker lifted, the change goes back to a worker). While a verification runs, task ticks and a reset to To Explore are refused (`verification_busy`).
 
 **Human validation tasks.** A `tasks.md` line carrying the HTML comment `<!-- human review required -->` is a task only the user can validate (manual walkthrough, visual check, command to run). In `full-autonomy` every unchecked task blocks the worker, marker or not. In `hitl-review` the completion check ignores unchecked marked tasks, so a change left with only those goes to **To Review** instead of pausing; an unchecked task without marker still pauses the worker. Before validation, `hitl-review` workers get one *triage* turn when unmarked tasks remain: for each, finish and check it, or add the marker without checking it. Each task flagged by the triage is logged as a `pool.task_flagged` activity entry. The agent's system prompt also forbids it to check a marked task. The same rule applies when a worker resumes after a correction request; "Resume and finalize" still requires every task to be checked.
 

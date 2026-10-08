@@ -84,6 +84,19 @@ func activeWorkerChanges(reg *pool.Registry, workspaceID string) map[string]held
 	return active
 }
 
+// applyVerificationState turns the queued state of a verifying change into
+// running (with its step) when the pool executes its verification.
+func (h *KanbanHandler) applyVerificationState(workspaceID string, ch *openspec.Change) {
+	if ch.KanbanStatus != "verifying" || ch.VerificationState != "queued" || h.poolReg == nil {
+		return
+	}
+	mgr := h.poolReg.For(workspaceID)
+	if mgr.VerificationRunning(ch.Name) {
+		ch.VerificationState = "running"
+		ch.VerificationStep = mgr.VerificationStep(ch.Name)
+	}
+}
+
 // branchTasks returns the tasks.md carried by feature/<change>, without
 // provisioning a worktree.
 func (h *KanbanHandler) branchTasks(workspaceID, workspacePath, change string) (string, bool) {
@@ -109,6 +122,7 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 
 	activeWorkers := h.activeWorkerChanges(id)
 	for i := range changes {
+		h.applyVerificationState(id, &changes[i])
 		if hw, held := activeWorkers[changes[i].Name]; held {
 			changes[i].WorkerActive = !hw.Paused
 			changes[i].WorkerPaused = hw.Paused
@@ -211,6 +225,7 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	h.applyVerificationState(id, &detail.Change)
 	detail.WorkerActive = held && !hw.Paused
 	detail.WorkerPaused = held && hw.Paused
 	if held {
@@ -259,7 +274,11 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 	// A change in review owns a branch, a worktree and a marker that the folder
 	// removal would leave orphaned: clean them first, and keep the change when
 	// that fails.
-	if openspec.InReview(path, name) {
+	if openspec.InReview(path, name) || openspec.InVerification(path, name) {
+		if h.poolReg != nil && h.poolReg.For(id).VerificationRunning(name) {
+			http.Error(w, "a verification is running on this change", http.StatusConflict)
+			return
+		}
 		if err := pool.NewWorktreeController(path, id, "").Cleanup(name); err != nil {
 			http.Error(w, "cleanup of the change's branch and worktree failed: "+err.Error(), http.StatusInternalServerError)
 			return

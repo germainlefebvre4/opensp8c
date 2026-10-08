@@ -297,6 +297,9 @@ func (wc *WorktreeController) Cleanup(changeName string) error {
 			return err
 		}
 	}
+	if err := wc.ClearVerify(changeName); err != nil {
+		return err
+	}
 	return wc.ClearReview(changeName)
 }
 
@@ -414,6 +417,38 @@ func (wc *WorktreeController) ClearReview(changeName string) error {
 	default:
 		return fmt.Errorf("git config --unset exited with status %d", code)
 	}
+}
+
+// SetVerify records the verification state (pending, failed or passed) of a
+// change in the repository's git configuration. Git drops it with the branch
+// and it touches no tracked file.
+func (wc *WorktreeController) SetVerify(changeName, state string) error {
+	_, err := wc.runGit("config", openspec.VerifyKey(changeName), state)
+	return err
+}
+
+// ClearVerify lifts the verification marker of a change; lifting an absent
+// marker is not an error.
+func (wc *WorktreeController) ClearVerify(changeName string) error {
+	_, code, err := wc.runGitCode("config", "--unset", openspec.VerifyKey(changeName))
+	switch {
+	case err != nil:
+		return err
+	case code == 0, code == 5:
+		return nil
+	default:
+		return fmt.Errorf("git config --unset exited with status %d", code)
+	}
+}
+
+// VerifyState returns the verification state of a change (an unknown value
+// reads as failed); ok is false when the change carries no marker.
+func (wc *WorktreeController) VerifyState(changeName string) (state string, ok bool) {
+	out, code, err := wc.runGitCode("config", "--get", openspec.VerifyKey(changeName))
+	if err != nil || code != 0 {
+		return "", false
+	}
+	return openspec.NormalizeVerifyState(strings.TrimSpace(out)), true
 }
 
 // HasReview reports whether the change carries a review marker.

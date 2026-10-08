@@ -5,6 +5,7 @@
     "ready": "Ready",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "En vérification",
     "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
@@ -39,7 +40,8 @@
     "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants.",
     "resetWorkerActive": "Réinitialisation impossible : un worker est actif sur ce change.",
     "resetReviewBusy": "Réinitialisation impossible : une action de revue est en cours sur ce change.",
-    "resetFailed": "Échec de la réinitialisation du change."
+    "resetFailed": "Échec de la réinitialisation du change.",
+    "resetVerificationBusy": "Réinitialisation impossible : une vérification est en cours sur ce change."
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",
@@ -66,6 +68,21 @@
     "resumeTooltip": "Reprendre le worker (l'agent retravaille les tâches restantes)",
     "resumeFinalizeTooltip": "Reprendre en finalisant, sans relancer l'agent",
     "resumeFinalizeRemaining_one": "Il reste {{count}} tâche à cocher",
-    "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher"
+    "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher",
+    "verification": {
+      "queued": "en attente",
+      "running": "vérification · {{step}}",
+      "failed": "échec",
+      "passed": "vérifié",
+      "rerun": "Relancer",
+      "finalize": "Finaliser",
+      "rerunTooltip": "Relancer la vérification",
+      "finalizeTooltip": "Finaliser sans vérification",
+      "finalizeRemaining_one": "Il reste {{count}} tâche à cocher",
+      "finalizeRemaining_other": "Il reste {{count}} tâches à cocher",
+      "steps": {
+        "conformity": "conformité"
+      }
+    }
   }
 }
