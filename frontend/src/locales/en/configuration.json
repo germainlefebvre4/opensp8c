@@ -143,9 +143,9 @@
       "hint": "A walkthrough in the running application."
     },
     "uiStartCommand": "Start command",
-    "uiStartCommandHint": "Starts the application to verify, for example \"make dev\".",
+    "uiStartCommandHint": "Starts the application to verify, for example \"make dev\". Use {port} for the free port picked at launch (also exported as PORT).",
     "uiBaseUrl": "Base URL",
-    "uiBaseUrlHint": "Absolute http or https URL, for example http://localhost:5173.",
+    "uiBaseUrlHint": "Absolute http or https URL, for example http://localhost:5173 or http://localhost:{port}.",
     "uiBaseUrlInvalid": "Enter an absolute http or https URL.",
     "missingStartCommand": "UI verification is on without a start command: it will not be able to start the application.",
     "inherited": "Inherited: {{value}}",

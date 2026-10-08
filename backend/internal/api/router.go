@@ -138,6 +138,7 @@ func NewRouterWithPools(cfg *config.Config, cfgPath string) (http.Handler, *pool
 		r.Post("/workspaces/{id}/changes/{name}/verification/finalize", verificationHandler.Finalize)
 		r.Post("/workspaces/{id}/changes/{name}/verification/request-correction", verificationHandler.RequestCorrection)
 		r.Get("/workspaces/{id}/changes/{name}/verification/report", verificationHandler.Report)
+		r.Get("/workspaces/{id}/changes/{name}/verification/artifacts/{run}/{file}", verificationHandler.Artifact)
 		r.Get("/workspaces/{id}/archived-changes", kanbanHandler.ListArchivedChanges)
 
 		r.Get("/workspaces/{id}/specs", specsHandler.ListSpecs)

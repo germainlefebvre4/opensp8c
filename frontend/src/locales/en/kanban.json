@@ -71,7 +71,9 @@
     "resumeFinalizeRemaining_other": "{{count}} tasks left to check",
     "verification": {
       "queued": "queued",
+      "waiting": "waiting for the UI",
       "running": "verifying · {{step}}",
+      "runningUi": "UI verification running",
       "failed": "failed",
       "passed": "verified",
       "rerun": "Rerun",
@@ -81,7 +83,8 @@
       "finalizeRemaining_one": "{{count}} task left to check",
       "finalizeRemaining_other": "{{count}} tasks left to check",
       "steps": {
-        "conformity": "conformity"
+        "conformity": "conformity",
+        "ui": "UI"
       }
     }
   }

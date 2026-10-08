@@ -47,12 +47,12 @@ func TestResolveLaunchParamsFieldByField(t *testing.T) {
 }
 
 func TestValidateBaseURL(t *testing.T) {
-	for _, ok := range []string{"", "   ", "http://localhost:3000", "https://example.com/app"} {
+	for _, ok := range []string{"", "   ", "http://localhost:3000", "https://example.com/app", "http://localhost:{port}", "https://h:{port}/app"} {
 		if err := ValidateBaseURL(ok); err != nil {
 			t.Errorf("%q should be valid: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"localhost:5173", "ftp://hote", "/relative", "http://"} {
+	for _, bad := range []string{"localhost:5173", "ftp://hote", "/relative", "http://", "{port}://localhost", "http://{port}", "http://localhost:{port}/{port}"} {
 		if err := ValidateBaseURL(bad); err == nil {
 			t.Errorf("%q should be invalid", bad)
 		}
@@ -83,5 +83,14 @@ func TestPatch(t *testing.T) {
 	var bad Patch
 	if err := json.Unmarshal([]byte(`{"ui": "maybe"}`), &bad); err == nil {
 		t.Fatal("non-boolean must be rejected")
+	}
+}
+
+func TestSubstitute(t *testing.T) {
+	if got := Substitute("run --port {port} # {port}", 4242); got != "run --port 4242 # 4242" {
+		t.Fatalf("got %q", got)
+	}
+	if got := Substitute("make dev", 4242); got != "make dev" {
+		t.Fatalf("got %q", got)
 	}
 }

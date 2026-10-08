@@ -43,8 +43,11 @@ export function draftFrom(values: VerificationOverride | undefined, scope: Verif
 
 // An absolute http(s) URL; empty means "no value" and is valid.
 export function isValidBaseUrl(value: string): boolean {
-  const v = value.trim()
+  let v = value.trim()
   if (v === '') return true
+  // The "{port}" token is accepted as a port only (mirrors the backend).
+  v = v.replace(':{port}', ':0')
+  if (v.includes('{port}')) return false
   try {
     const u = new URL(v)
     return (u.protocol === 'http:' || u.protocol === 'https:') && u.host !== ''

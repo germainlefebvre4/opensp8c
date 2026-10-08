@@ -465,14 +465,28 @@ export const approveReview = (workspaceId: string, changeName: string) =>
 export const requestCorrection = (workspaceId: string, changeName: string, feedback: string) =>
   api.post(`${reviewURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
 
-export type VerificationState = 'queued' | 'running' | 'failed' | 'passed'
+// 'waiting': the UI step waits for the machine-wide UI lock.
+export type VerificationState = 'queued' | 'waiting' | 'running' | 'failed' | 'passed'
+
+export interface VerificationArtifact {
+  name: string
+  size: number
+}
 
 export interface VerificationReport {
+  /** Identifier of the run: locates its artifacts. */
+  run?: string
   step: string
   verdict: 'pass' | 'fail' | 'error' | ''
   reason: string
   report: string
   started_at: string
+  /** Screenshots of a UI verification run. */
+  artifacts?: VerificationArtifact[]
+  /** Human-review tasks the verification checked off. */
+  verified?: string[]
+  /** TASK-VERIFIED lines that matched no task. */
+  ignored?: string[]
 }
 
 const verificationURL = (workspaceId: string, changeName: string) =>
@@ -487,8 +501,14 @@ export const finalizeVerification = (workspaceId: string, changeName: string) =>
 export const requestVerificationCorrection = (workspaceId: string, changeName: string, feedback: string) =>
   api.post(`${verificationURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
 
-export const getVerificationReport = (workspaceId: string, changeName: string) =>
-  api.get<VerificationReport>(`${verificationURL(workspaceId, changeName)}/report`).then(r => r.data)
+// Report of the most recent run, or of the most recent run of `step`.
+export const getVerificationReport = (workspaceId: string, changeName: string, step?: string) =>
+  api
+    .get<VerificationReport>(`${verificationURL(workspaceId, changeName)}/report`, { params: step ? { step } : undefined })
+    .then(r => r.data)
+
+export const verificationArtifactURL = (workspaceId: string, changeName: string, run: string, name: string) =>
+  `${verificationURL(workspaceId, changeName)}/artifacts/${encodeURIComponent(run)}/${encodeURIComponent(name)}`
 
 const REVIEW_ERROR_CODES = new Set([
   'not_in_review', 'worker_active', 'merge_in_progress', 'base_branch_mismatch',

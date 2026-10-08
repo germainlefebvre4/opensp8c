@@ -125,17 +125,28 @@
     "title": "Vérification",
     "state": {
       "queued": "en attente",
+      "waiting": "en attente de l'interface",
       "running": "en cours ({{step}})",
+      "runningUi": "vérification UI en cours",
       "failed": "échec",
       "passed": "réussie, en attente de finalisation"
     },
     "steps": {
-      "conformity": "conformité"
+      "conformity": "conformité",
+      "ui": "UI"
     },
     "rerun": "Relancer la vérification",
     "finalize": "Finaliser sans vérification",
     "requestCorrection": "Demander des corrections",
     "remaining_one": "{{count}} tâche restante",
-    "remaining_other": "{{count}} tâches restantes"
+    "remaining_other": "{{count}} tâches restantes",
+    "artifacts": {
+      "title": "Captures",
+      "open": "Ouvrir {{name}}",
+      "close": "Fermer",
+      "viewer": "Capture"
+    },
+    "verifiedTasks": "Tâches cochées par la vérification",
+    "ignoredLines": "Lignes TASK-VERIFIED ignorées"
   }
 }

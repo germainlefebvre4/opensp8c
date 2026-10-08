@@ -54,6 +54,31 @@ func TestVerificationDefaultsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestVerificationPortTokenKeptAsIs(t *testing.T) {
+	h, prefs, idA, _ := wsSettingsFixture(t)
+	ph := NewPreferencesHandler(prefs)
+	if rec := patchPrefs(t, ph, `{"verificationDefaults":{"uiStartCommand":"npm run dev -- --port {port}","uiBaseUrl":"http://localhost:{port}"}}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	d := getPrefs(t, ph)["verificationDefaults"].(map[string]any)
+	if d["uiStartCommand"] != "npm run dev -- --port {port}" || d["uiBaseUrl"] != "http://localhost:{port}" {
+		t.Errorf("defaults: %v", d)
+	}
+	rec := httptest.NewRecorder()
+	h.Patch(rec, wsReq(http.MethodPatch, idA, `{"verification":{"uiBaseUrl":"http://127.0.0.1:{port}","uiStartCommand":"make dev PORT={port}"}}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	if r := verifSection(decodeMap(t, rec), "resolved"); r["uiBaseUrl"] != "http://127.0.0.1:{port}" || r["uiStartCommand"] != "make dev PORT={port}" {
+		t.Errorf("resolved: %v", r)
+	}
+	rec = httptest.NewRecorder()
+	h.Patch(rec, wsReq(http.MethodPatch, idA, `{"verification":{"uiBaseUrl":"{port}://localhost"}}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("misplaced token: %d", rec.Code)
+	}
+}
+
 func TestWorkspaceVerificationSettings(t *testing.T) {
 	h, prefs, idA, idB := wsSettingsFixture(t)
 	ph := NewPreferencesHandler(prefs)

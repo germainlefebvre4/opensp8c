@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -171,14 +172,24 @@ func (p Patch) Apply(cur *Override) *Override {
 // empty result means "absent".
 func NormalizeText(s string) string { return strings.TrimSpace(s) }
 
+// PortToken is the placeholder of the free port the UI step picks at launch.
+const PortToken = "{port}"
+
+// Substitute replaces every PortToken of s with port.
+func Substitute(s string, port int) string {
+	return strings.ReplaceAll(s, PortToken, strconv.Itoa(port))
+}
+
 // ValidateBaseURL checks that a non-empty value is an absolute http(s) URL.
+// The port may be the PortToken (":{port}"), which is accepted nowhere else.
 func ValidateBaseURL(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
+	s = strings.Replace(s, ":"+PortToken, ":0", 1)
 	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil || strings.Contains(s, PortToken) || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("uiBaseUrl must be an absolute http or https URL")
 	}
 	return nil

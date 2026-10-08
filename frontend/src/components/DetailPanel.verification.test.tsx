@@ -157,4 +157,71 @@ describe('DetailPanel verification banner', () => {
     expect(screen.getByRole('alert').textContent).toBe('Il reste 1 tâche non cochée')
     expect(screen.getByTestId('verification-banner').textContent).toContain('failed')
   })
+
+  describe('UI verification evidence', () => {
+    const uiReport = (extra: Record<string, unknown> = {}) => {
+      vi.mocked(useVerificationReport).mockReturnValue({
+        data: {
+          run: '2026-03-01T10-00-05Z', step: 'ui', verdict: 'fail', reason: 'échec UI', report: 'ui report', started_at: '',
+          artifacts: [{ name: 'nav-1.png', size: 10 }, { name: 'nav-2.png', size: 12 }], ...extra,
+        },
+      } as unknown as ReturnType<typeof useVerificationReport>)
+    }
+
+    it('shows one thumbnail per screenshot, served by the artifact endpoint', () => {
+      mockDetail(detail())
+      uiReport()
+      render(panel())
+      const thumbs = screen.getAllByTestId('verification-thumbnail')
+      expect(thumbs).toHaveLength(2)
+      expect(thumbs[0].querySelector('img')?.getAttribute('src'))
+        .toBe('/api/workspaces/ws1/changes/add-auth/verification/artifacts/2026-03-01T10-00-05Z/nav-1.png')
+    })
+
+    it('opens a screenshot in a viewer that can be closed', () => {
+      mockDetail(detail())
+      uiReport()
+      render(panel())
+      expect(screen.queryByTestId('verification-viewer')).toBeNull()
+      fireEvent.click(screen.getAllByTestId('verification-thumbnail')[1])
+      const viewer = screen.getByTestId('verification-viewer')
+      expect(viewer.querySelector('img')?.getAttribute('src')).toContain('/nav-2.png')
+      fireEvent.click(screen.getByRole('button', { name: enDetailPanel.verificationBanner.artifacts.close }))
+      expect(screen.queryByTestId('verification-viewer')).toBeNull()
+
+      fireEvent.click(screen.getAllByTestId('verification-thumbnail')[0])
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByTestId('verification-viewer')).toBeNull()
+    })
+
+    it('shows no thumbnail area without evidence', () => {
+      mockDetail(detail())
+      uiReport({ artifacts: [] })
+      render(panel())
+      expect(screen.queryByTestId('verification-artifacts')).toBeNull()
+      cleanup()
+      uiReport({ artifacts: undefined })
+      render(panel())
+      expect(screen.queryByTestId('verification-artifacts')).toBeNull()
+    })
+
+    it('tells the checked tasks from the ignored lines', () => {
+      mockDetail(detail({ verification_state: 'passed' }))
+      uiReport({ verdict: 'pass', verified: ['4.2 Parcours'], ignored: ['tâche inventée'] })
+      render(panel())
+      expect(screen.getByTestId('verification-verified').textContent).toContain('4.2 Parcours')
+      expect(screen.getByTestId('verification-verified').textContent).not.toContain('tâche inventée')
+      expect(screen.getByTestId('verification-ignored').textContent).toContain('tâche inventée')
+    })
+
+    it('labels the waiting and the UI running states', () => {
+      vi.mocked(useVerificationReport).mockReturnValue({ data: undefined } as unknown as ReturnType<typeof useVerificationReport>)
+      mockDetail(detail({ verification_state: 'waiting', verification_step: 'ui' }))
+      const { rerender } = render(panel())
+      expect(screen.getByTestId('verification-banner').textContent).toContain('waiting for the UI')
+      mockDetail(detail({ verification_state: 'running', verification_step: 'ui' }))
+      rerender(panel())
+      expect(screen.getByTestId('verification-banner').textContent).toContain('UI verification running')
+    })
+  })
 })

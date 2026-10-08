@@ -238,6 +238,13 @@ func (s *Store) OpenRun(wsID, changeName, kind, ts string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(dir, ts+".jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
+// RunDir is the directory holding the side files of a run (the evidence of a
+// verify run): next to its journal, named after its timestamp. listDir ignores
+// it, so it never appears as a run.
+func (s *Store) RunDir(wsID, changeName, kind, ts string) string {
+	return filepath.Join(s.dir(wsID, changeName, kind), ts)
+}
+
 func (s *Store) List(wsID, changeName, kind string) ([]RunMeta, error) {
 	return listDir(s.dir(wsID, changeName, kind))
 }

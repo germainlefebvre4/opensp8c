@@ -94,6 +94,9 @@ func (h *KanbanHandler) applyVerificationState(workspaceID string, ch *openspec.
 	if mgr.VerificationRunning(ch.Name) {
 		ch.VerificationState = "running"
 		ch.VerificationStep = mgr.VerificationStep(ch.Name)
+		if mgr.VerificationWaiting(ch.Name) {
+			ch.VerificationState = "waiting"
+		}
 	}
 }
 

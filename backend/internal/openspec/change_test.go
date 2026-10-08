@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -518,5 +519,53 @@ func TestToggleTask_KeepsMarkerAndCleansText(t *testing.T) {
 	data, _ := os.ReadFile(p)
 	if string(data) != "- [x] Parcours <!-- human review required -->\n" {
 		t.Errorf("unexpected file: %q", data)
+	}
+}
+
+func TestChangeScenarios(t *testing.T) {
+	root := t.TempDir()
+	specs := filepath.Join(root, "openspec", "changes", "c", "specs")
+	write := func(rel, content string) string {
+		p := filepath.Join(specs, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("b-cap/spec.md", "## ADDED Requirements\n\n### Requirement: R\ntext\n\n#### Scenario: Premier\n- **WHEN** a\n- **THEN** b\n- **AND** c\n\n#### Scenario: Sans then\n- **WHEN** seul\n\n### Requirement: Autre\n- **THEN** hors scénario\n")
+	write("a-cap/spec.md", "#### Scenario: Unique\n- **WHEN** x\n- **THEN** y\n")
+	write("a-cap/notes.md", "#### Scenario: Ignoré\n- **WHEN** z\n")
+	write("empty/spec.md", "# rien\n")
+	if p := write("locked/spec.md", "#### Scenario: Illisible\n- **WHEN** q\n"); os.Chmod(p, 0) == nil && os.Geteuid() != 0 {
+		defer os.Chmod(p, 0o644)
+	}
+
+	got := ChangeScenarios(root, "c")
+	if len(got) < 2 || got[0].File != "a-cap/spec.md" {
+		t.Fatalf("expected files in alphabetical order, got %+v", got)
+	}
+	var b SpecScenarios
+	for _, g := range got {
+		if g.File == "locked/spec.md" && os.Geteuid() != 0 {
+			t.Fatal("unreadable file must be skipped")
+		}
+		if g.File == "b-cap/spec.md" {
+			b = g
+		}
+		if g.File == "empty/spec.md" || strings.HasSuffix(g.File, "notes.md") {
+			t.Fatalf("unexpected file %s", g.File)
+		}
+	}
+	if len(b.Scenarios) != 2 || b.Scenarios[0].Name != "Premier" || len(b.Scenarios[0].Lines) != 3 {
+		t.Fatalf("b-cap: %+v", b)
+	}
+	if s := b.Scenarios[1]; s.Name != "Sans then" || len(s.Lines) != 1 || s.Lines[0] != "- **WHEN** seul" {
+		t.Fatalf("scenario without THEN must be kept as is: %+v", s)
+	}
+	if got := ChangeScenarios(root, "absent"); len(got) != 0 {
+		t.Fatalf("change without delta spec: %+v", got)
 	}
 }

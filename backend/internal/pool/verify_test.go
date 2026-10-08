@@ -28,6 +28,7 @@ type verifierStub struct {
 	prompts []string
 	cwds    []string
 	turns   []string
+	envs    []map[string]string
 
 	answer   string // text of the result; "" with raw unused
 	raw      string // when set, the exact final line
@@ -36,12 +37,13 @@ type verifierStub struct {
 	startErr error
 }
 
-func (s *verifierStub) start(ctx context.Context, ws string, agentCfg agents.AgentConfig, extra, _ string, _ bool, _ *conversation.SessionLog, _ map[string]string, _ bool, _ string) (*session.Subprocess, error) {
+func (s *verifierStub) start(ctx context.Context, ws string, agentCfg agents.AgentConfig, extra, _ string, _ bool, _ *conversation.SessionLog, env map[string]string, _ bool, _ string) (*session.Subprocess, error) {
 	s.mu.Lock()
 	s.starts++
 	s.models = append(s.models, agentCfg.Model)
 	s.prompts = append(s.prompts, extra)
 	s.cwds = append(s.cwds, ws)
+	s.envs = append(s.envs, env)
 	err := s.startErr
 	s.mu.Unlock()
 	if err != nil {

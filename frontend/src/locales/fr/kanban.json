@@ -71,7 +71,9 @@
     "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher",
     "verification": {
       "queued": "en attente",
+      "waiting": "en attente de l'interface",
       "running": "vérification · {{step}}",
+      "runningUi": "vérification UI en cours",
       "failed": "échec",
       "passed": "vérifié",
       "rerun": "Relancer",
@@ -81,7 +83,8 @@
       "finalizeRemaining_one": "Il reste {{count}} tâche à cocher",
       "finalizeRemaining_other": "Il reste {{count}} tâches à cocher",
       "steps": {
-        "conformity": "conformité"
+        "conformity": "conformité",
+        "ui": "UI"
       }
     }
   }

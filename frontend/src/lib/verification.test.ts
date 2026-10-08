@@ -49,10 +49,10 @@ describe('buildVerificationPatch', () => {
 
 describe('isValidBaseUrl', () => {
   it('accepts empty and absolute http(s) URLs', () => {
-    for (const ok of ['', '  ', 'http://localhost:3000', 'https://example.com/app']) expect(isValidBaseUrl(ok)).toBe(true)
+    for (const ok of ['', '  ', 'http://localhost:3000', 'https://example.com/app', 'http://localhost:{port}']) expect(isValidBaseUrl(ok)).toBe(true)
   })
   it('refuses other values', () => {
-    for (const bad of ['localhost:5173', 'ftp://hote', '/relative', 'http://']) expect(isValidBaseUrl(bad)).toBe(false)
+    for (const bad of ['localhost:5173', 'ftp://hote', '/relative', 'http://', '{port}://localhost', 'http://{port}']) expect(isValidBaseUrl(bad)).toBe(false)
   })
 })
 

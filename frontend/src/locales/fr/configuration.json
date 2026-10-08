@@ -143,9 +143,9 @@
       "hint": "Parcours dans l'application lancée."
     },
     "uiStartCommand": "Commande de lancement",
-    "uiStartCommandHint": "Lance l'application à vérifier, par exemple « make dev ».",
+    "uiStartCommandHint": "Lance l'application à vérifier, par exemple « make dev ». Utilisez {port} pour le port libre choisi au lancement (aussi exporté en PORT).",
     "uiBaseUrl": "URL de base",
-    "uiBaseUrlHint": "URL absolue http ou https, par exemple http://localhost:5173.",
+    "uiBaseUrlHint": "URL absolue http ou https, par exemple http://localhost:5173 ou http://localhost:{port}.",
     "uiBaseUrlInvalid": "Saisissez une URL absolue http ou https.",
     "missingStartCommand": "La vérification UI est activée sans commande de lancement : elle ne pourra pas démarrer l'application.",
     "inherited": "Hérité : {{value}}",

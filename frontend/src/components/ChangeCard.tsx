@@ -31,6 +31,7 @@ interface Props {
 
 const VERIFICATION_BADGE_STYLES: Record<VerificationState, string> = {
   queued: 'bg-slate-100 text-slate-600 border-slate-200',
+  waiting: 'bg-amber-50 text-amber-700 border-amber-200',
   running: 'bg-teal-50 text-teal-700 border-teal-200',
   failed: 'bg-red-50 text-red-600 border-red-200',
   passed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -347,9 +348,11 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
           >
             {verificationState === 'running' && <Loader2 size={9} className="animate-spin" />}
             {verificationState === 'running'
-              ? tKanban('card.verification.running', {
-                  step: tKanban(`card.verification.steps.${change.verification_step ?? ''}`, { defaultValue: change.verification_step ?? '' }),
-                })
+              ? change.verification_step === 'ui'
+                ? tKanban('card.verification.runningUi')
+                : tKanban('card.verification.running', {
+                    step: tKanban(`card.verification.steps.${change.verification_step ?? ''}`, { defaultValue: change.verification_step ?? '' }),
+                  })
               : tKanban(`card.verification.${verificationState}`)}
           </span>
           {verificationState === 'failed' && (

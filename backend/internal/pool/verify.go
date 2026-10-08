@@ -26,8 +26,11 @@ const (
 	verdictError = "error"
 )
 
-// stepConformity is the name of the conformity verification step.
-const stepConformity = "conformity"
+// Names of the verification steps.
+const (
+	stepConformity = "conformity"
+	stepUI         = "ui"
+)
 
 // verifyDirective is appended to the system prompt of the verifier agent.
 const verifyDirective = `You are verifying a change, not implementing it. NEVER create, modify, move or delete any file, and never run a command that does. Conclude your final answer with exactly one last line: "VERDICT: PASS" when you found no critical issue (warnings and suggestions alone are acceptable), or "VERDICT: FAIL" as soon as you found at least one critical issue.`
@@ -41,6 +44,10 @@ type stepResult struct {
 	Verdict string
 	Reason  string
 	Report  string
+	// Verified are the human-review tasks the step checked off; Ignored the
+	// TASK-VERIFIED lines that matched no unchecked human-review task.
+	Verified []string
+	Ignored  []string
 }
 
 // verifyStep is one ordered stage of the verification.
@@ -51,7 +58,7 @@ type verifyStep interface {
 }
 
 // verifySteps lists the steps, in execution order.
-var verifySteps = []verifyStep{conformityStep{}}
+var verifySteps = []verifyStep{conformityStep{}, uiStep{}}
 
 // verifyJob is one verification in flight, owned by the Manager.
 type verifyJob struct {
@@ -61,6 +68,7 @@ type verifyJob struct {
 	change        string
 	cancel        context.CancelFunc
 	step          string // current step name, guarded by Manager.mu
+	waiting       bool   // queued on uiLock, guarded by Manager.mu; not counted against the pool size
 }
 
 // verifyRun is what a step sees of its verification.
@@ -68,7 +76,9 @@ type verifyRun struct {
 	m             *Manager
 	v             *verifyJob
 	wt            *WorktreeController
-	ref           runRef
+	ref           runRef // the journal of the step being run
+	ts            string // its run identifier ("" without conversation store)
+	resolved      verification.Resolved
 	worktreesRoot string
 }
 
@@ -130,6 +140,39 @@ func (m *Manager) VerificationStep(change string) string {
 	return ""
 }
 
+// VerificationWaiting reports whether the verification of change waits for the
+// UI lock.
+func (m *Manager) VerificationWaiting(change string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.verifications[change]
+	return ok && v.waiting
+}
+
+// setVerifyWaiting flags v as waiting (or not) for the UI lock and publishes
+// the change.
+func (m *Manager) setVerifyWaiting(v *verifyJob, waiting bool) {
+	m.mu.Lock()
+	v.waiting = waiting
+	m.broadcastLocked()
+	m.mu.Unlock()
+	m.publishChangeUpdated(v.workspaceID, v.change)
+}
+
+// activeVerifications counts the verifications that occupy a pool slot. Those
+// waiting for the UI lock and those in their UI step do not: the lock already
+// bounds the UI step to one, and it must not delay the conformity steps of
+// other changes. Callers hold m.mu.
+func (m *Manager) activeVerifications() int {
+	n := 0
+	for _, v := range m.verifications {
+		if !v.waiting && v.step != stepUI {
+			n++
+		}
+	}
+	return n
+}
+
 // tickVerifications starts the queued verifications, up to the pool size and
 // regardless of the worker slots, then hands the verified changes to a
 // finalizing worker. Callers hold m.mu.
@@ -150,7 +193,7 @@ func (m *Manager) tickVerifications(changes []openspec.Change, held map[string]b
 	sort.Strings(passed)
 
 	for _, name := range queued {
-		if len(m.verifications) >= m.config.Size {
+		if m.activeVerifications() >= m.config.Size {
 			break
 		}
 		// A worker still holds the change while it winds down its agent.
@@ -242,32 +285,49 @@ func (m *Manager) runVerification(ctx context.Context, v *verifyJob, worktreesRo
 		return
 	}
 
-	ref := runRef{workspaceID: v.workspaceID, change: v.change}
-	runLog, runTS := m.openRunLogFor(ref, "verify")
-	ref.log = runLog
-	if runLog != nil {
-		defer func() {
-			m.finishRunRef(ref)
-			_ = runLog.sess.Close()
-		}()
-	}
-	_ = runTS // the run is identified by its timestamp in the store, not here
-	m.logRunMarkerRef(ref, map[string]any{"type": "verify_run_start", "change": v.change})
 	m.verifyActivity(v, "pool.verification_started", "Verification started", nil)
 
-	run := &verifyRun{m: m, v: v, wt: wt, ref: ref, worktreesRoot: worktreesRoot}
+	run := &verifyRun{m: m, v: v, wt: wt, resolved: resolved, worktreesRoot: worktreesRoot}
 	var last stepResult
 	lastStep := ""
+	var prev time.Time
 	for _, s := range steps {
 		m.mu.Lock()
 		v.step = s.Name()
 		m.mu.Unlock()
 		m.publishChangeUpdated(v.workspaceID, v.change)
 
+		// One run per step. Run identifiers are second-resolution timestamps:
+		// keep them distinct when two steps start within the same second.
+		at := time.Now().UTC().Truncate(time.Second)
+		if !prev.IsZero() && !at.After(prev) {
+			at = prev.Add(time.Second)
+		}
+		prev = at
+		run.ref = runRef{workspaceID: v.workspaceID, change: v.change}
+		runLog, ts := m.openRunLogAt(run.ref, "verify", at)
+		run.ref.log, run.ts = runLog, ts
+		m.logRunMarkerRef(run.ref, map[string]any{"type": "verify_run_start", "change": v.change, "step": s.Name()})
+
 		lastStep = s.Name()
 		last = s.Run(ctx, run)
-		if ctx.Err() != nil {
-			m.logRunMarkerRef(ref, map[string]any{"type": "verify_run_end", "step": lastStep, "verdict": verdictError, "reason": "annulée", "report": last.Report})
+		cancelled := ctx.Err() != nil
+		if cancelled {
+			last.Verdict, last.Reason = verdictError, "annulée"
+		}
+		end := map[string]any{"type": "verify_run_end", "step": lastStep, "verdict": last.Verdict, "reason": last.Reason, "report": last.Report}
+		if len(last.Verified) > 0 {
+			end["verified"] = last.Verified
+		}
+		if len(last.Ignored) > 0 {
+			end["ignored"] = last.Ignored
+		}
+		m.logRunMarkerRef(run.ref, end)
+		if runLog != nil {
+			m.finishRunRef(run.ref)
+			_ = runLog.sess.Close()
+		}
+		if cancelled {
 			return
 		}
 		if last.Verdict != verdictPass {
@@ -283,7 +343,6 @@ func (m *Manager) runVerification(ctx context.Context, v *verifyJob, worktreesRo
 	if err := wt.SetVerify(v.change, state); err != nil {
 		log.Printf("[verify %s] cannot record the verification state: %v\n", v.change, err)
 	}
-	m.logRunMarkerRef(ref, map[string]any{"type": "verify_run_end", "step": lastStep, "verdict": last.Verdict, "reason": last.Reason, "report": last.Report})
 	m.verifyActivity(v, typ, summary, map[string]any{"step": lastStep, "reason": last.Reason})
 }
 
@@ -309,6 +368,34 @@ func (conformityStep) Run(ctx context.Context, r *verifyRun) stepResult {
 		return fail(fmt.Sprintf("Impossible de lire l'état du worktree : %v", err), "")
 	}
 
+	text, reason := m.runVerifierTurn(ctx, r, worktreePath, verifyDirective, nil, "/opsx:verify "+change)
+	if reason != "" {
+		return fail(reason, "")
+	}
+
+	after, err := gitStatusPorcelain(worktreePath)
+	if err != nil {
+		return fail(fmt.Sprintf("Impossible de lire l'état du worktree : %v", err), text)
+	}
+	if after != before {
+		return fail("le vérificateur a modifié le worktree : "+changedFiles(before, after), text)
+	}
+
+	switch parseVerdict(text) {
+	case "PASS":
+		return stepResult{Verdict: verdictPass, Report: text}
+	case "FAIL":
+		return stepResult{Verdict: verdictFail, Reason: "la vérification a relevé au moins un point critique", Report: text}
+	default:
+		return fail("verdict absent", text)
+	}
+}
+
+// runVerifierTurn starts a verifier-role agent in dir with directive appended
+// to its system prompt (and extraEnv added to its environment), sends it one
+// turn and returns the text of its answer. A non-empty reason reports why no
+// answer was obtained. The agent is always torn down on return.
+func (m *Manager) runVerifierTurn(ctx context.Context, r *verifyRun, dir, directive string, extraEnv map[string]string, turn string) (text, reason string) {
 	procCtx, procCancel := context.WithCancel(ctx)
 	defer procCancel()
 
@@ -316,22 +403,30 @@ func (conformityStep) Run(ctx context.Context, r *verifyRun) stepResult {
 	if m.sessionMgr != nil {
 		agentCfg = m.sessionMgr.ResolveRoleConfig(r.v.workspaceID, preferences.RoleVerifier)
 	}
-	var customEnv map[string]string
+	customEnv := map[string]string{}
 	langDirective := language.Directive(language.Worker, language.Resolve(language.Levels{}, ""))
 	if m.prefs != nil {
 		if p, err := m.prefs.Load(); err == nil && p != nil {
-			customEnv = p.EnvForWorkspace(r.v.workspaceID, agentCfg.ID)
+			for k, v := range p.EnvForWorkspace(r.v.workspaceID, agentCfg.ID) {
+				customEnv[k] = v
+			}
 			langDirective = p.LanguageDirective(language.Worker)
 		}
+	}
+	for k, v := range extraEnv {
+		customEnv[k] = v
+	}
+	if len(customEnv) == 0 {
+		customEnv = nil
 	}
 
 	var stderrLog *conversation.SessionLog
 	if r.ref.log != nil {
 		stderrLog = r.ref.log.sess
 	}
-	proc, err := startSubprocessFn(procCtx, worktreePath, agentCfg, verifyDirective, "", false, stderrLog, customEnv, false, langDirective)
+	proc, err := startSubprocessFn(procCtx, dir, agentCfg, directive, "", false, stderrLog, customEnv, false, langDirective)
 	if err != nil {
-		return fail(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err), "")
+		return "", fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err)
 	}
 	defer func() {
 		_ = proc.CloseStdin()
@@ -355,27 +450,11 @@ func (conformityStep) Run(ctx context.Context, r *verifyRun) stepResult {
 		notify:      func() {},
 		procCancel:  procCancel,
 	}
-	text, err := m.runTurnText(target, proc, "/opsx:verify "+change)
+	text, err = m.runTurnText(target, proc, turn)
 	if err != nil {
-		return fail(agentTurnPauseReason(err, "Échec du tour de vérification"), "")
+		return "", agentTurnPauseReason(err, "Échec du tour de vérification")
 	}
-
-	after, err := gitStatusPorcelain(worktreePath)
-	if err != nil {
-		return fail(fmt.Sprintf("Impossible de lire l'état du worktree : %v", err), text)
-	}
-	if after != before {
-		return fail("le vérificateur a modifié le worktree : "+changedFiles(before, after), text)
-	}
-
-	switch parseVerdict(text) {
-	case "PASS":
-		return stepResult{Verdict: verdictPass, Report: text}
-	case "FAIL":
-		return stepResult{Verdict: verdictFail, Reason: "la vérification a relevé au moins un point critique", Report: text}
-	default:
-		return fail("verdict absent", text)
-	}
+	return text, ""
 }
 
 // parseVerdict returns "PASS" or "FAIL" from the last VERDICT line of text,
@@ -431,4 +510,14 @@ func SeedVerificationForTest(m *Manager, change, step string) (release func()) {
 		defer m.mu.Unlock()
 		delete(m.verifications, change)
 	}
+}
+
+// SeedWaitingVerificationForTest registers a verification of change as in
+// flight and waiting for the UI lock. The returned function drops it.
+func SeedWaitingVerificationForTest(m *Manager, change string) (release func()) {
+	release = SeedVerificationForTest(m, change, stepUI)
+	m.mu.Lock()
+	m.verifications[change].waiting = true
+	m.mu.Unlock()
+	return release
 }

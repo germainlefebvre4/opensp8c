@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,6 +54,7 @@ func TestVerificationState_ListAndDetail(t *testing.T) {
 	}{
 		{"pending", "queued", "", false},
 		{"pending", "running", "conformity", true},
+		{"pending", "waiting", "ui", true},
 		{"failed", "failed", "", false},
 		{"passed", "passed", "", false},
 	}
@@ -58,7 +62,11 @@ func TestVerificationState_ListAndDetail(t *testing.T) {
 		t.Run(tc.marker+"/"+tc.wantState, func(t *testing.T) {
 			f, _ := newVerifyFixture(t, tc.marker, branchTasks8of)
 			if tc.running {
-				release := pool.SeedVerificationForTest(f.reg.For(f.workspaceID), branchChange, "conformity")
+				seed := pool.SeedVerificationForTest
+				if tc.wantState == "waiting" {
+					seed = func(m *pool.Manager, change, _ string) func() { return pool.SeedWaitingVerificationForTest(m, change) }
+				}
+				release := seed(f.reg.For(f.workspaceID), branchChange, tc.wantStep)
 				defer release()
 			}
 			c := listedChange(t, f.kanban, f.workspaceID, branchChange)
@@ -334,5 +342,175 @@ func TestDeleteChange_VerifyingCleansBranchAndMarker(t *testing.T) {
 	}
 	if branchExistsIn(t, f.repo) || f.marker() != "" {
 		t.Error("branch and marker must be removed")
+	}
+}
+
+// ---- evidence and report per step ----
+
+func newArtifactFixture(t *testing.T) (*branchFixture, *VerificationHandler, *conversation.Store) {
+	t.Helper()
+	f := newBranchFixture(t, true, mainTasks0of10, branchTasks8of, false)
+	ws := NewWorkspaceHandler(&config.Config{Workspaces: []config.WorkspaceConfig{{Name: "test", Path: f.repo}}}, "", f.reg)
+	store := conversation.NewStore(t.TempDir())
+	return f, NewVerificationHandler(ws, f.reg, store), store
+}
+
+func writeVerifyRun(t *testing.T, store *conversation.Store, ws, change, ts string, markers ...map[string]any) {
+	t.Helper()
+	file, err := store.OpenRun(ws, change, "verify", ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := conversation.NewSessionLog(file)
+	for _, m := range markers {
+		b, _ := json.Marshal(m)
+		if err := log.WriteLine("meta", b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = log.Close()
+}
+
+func vcallParams(f *branchFixture, h http.HandlerFunc, target string, params map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET", target, nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", f.workspaceID)
+	rctx.URLParams.Add("name", branchChange)
+	for k, v := range params {
+		rctx.URLParams.Add(k, v)
+	}
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
+}
+
+const evidenceRun = "2026-03-01T10-00-00Z"
+
+func TestVerificationArtifacts_ListAndServe(t *testing.T) {
+	f, h, store := newArtifactFixture(t)
+	writeVerifyRun(t, store, f.workspaceID, branchChange, evidenceRun,
+		map[string]any{"type": "verify_run_start", "step": "ui"},
+		map[string]any{"type": "verify_run_end", "step": "ui", "verdict": "pass"})
+	dir := store.RunDir(f.workspaceID, branchChange, "verify", evidenceRun)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	png := []byte("\x89PNG fake")
+	for name, data := range map[string][]byte{"nav-2.png": png, "nav-1.png": png, "notes.txt": []byte("x"), "shot.WEBP": png} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	big, _ := os.Create(filepath.Join(dir, "big.png"))
+	_ = big.Truncate(6 << 20)
+	_ = big.Close()
+	outside := filepath.Join(t.TempDir(), "secret.png")
+	_ = os.WriteFile(outside, []byte("secret"), 0o644)
+	if err := os.Symlink(outside, filepath.Join(dir, "link.png")); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := vcallParams(f, h.Report, "/", nil)
+	var got verificationReport
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var names []string
+	for _, a := range got.Artifacts {
+		names = append(names, a.Name)
+		if a.Size != int64(len(png)) {
+			t.Errorf("size of %s = %d", a.Name, a.Size)
+		}
+	}
+	if strings.Join(names, ",") != "nav-1.png,nav-2.png,shot.WEBP" || got.Run != evidenceRun {
+		t.Errorf("artifacts = %v (run %s): txt, oversized and linked files must be left out", names, got.Run)
+	}
+
+	rec = vcallParams(f, h.Artifact, "/", map[string]string{"run": evidenceRun, "file": "nav-1.png"})
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), png) {
+		t.Fatalf("serve: %d %s %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body)
+	}
+	if rec = vcallParams(f, h.Artifact, "/", map[string]string{"run": evidenceRun, "file": "shot.WEBP"}); rec.Header().Get("Content-Type") != "image/webp" {
+		t.Errorf("type = %q", rec.Header().Get("Content-Type"))
+	}
+
+	for _, tc := range []struct {
+		name         string
+		run, file    string
+		wantStatus   int
+		bodyContains string
+	}{
+		{"dot-dot file", evidenceRun, "..", 400, ""},
+		{"separator in file", evidenceRun, "../nav-1.png", 400, ""},
+		{"backslash in file", evidenceRun, `..\nav-1.png`, 400, ""},
+		{"dot-dot run", "..", "nav-1.png", 400, ""},
+		{"separator in run", "../x", "nav-1.png", 400, ""},
+		{"run not a timestamp", "latest", "nav-1.png", 400, ""},
+		{"text file", evidenceRun, "notes.txt", 404, ""},
+		{"oversized", evidenceRun, "big.png", 404, ""},
+		{"symlink", evidenceRun, "link.png", 404, "secret"},
+		{"absent", evidenceRun, "nope.png", 404, ""},
+		{"unknown run", "2026-03-02T10-00-00Z", "nav-1.png", 404, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := vcallParams(f, h.Artifact, "/", map[string]string{"run": tc.run, "file": tc.file})
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (%s)", rec.Code, tc.wantStatus, rec.Body)
+			}
+			if tc.bodyContains != "" && strings.Contains(rec.Body.String(), tc.bodyContains) {
+				t.Fatal("a file outside the evidence was read")
+			}
+		})
+	}
+}
+
+func TestVerificationReport_PerStepAndTasks(t *testing.T) {
+	f, h, store := newArtifactFixture(t)
+	writeVerifyRun(t, store, f.workspaceID, branchChange, "2026-03-01T10-00-00Z",
+		map[string]any{"type": "verify_run_start", "step": "conformity"},
+		map[string]any{"type": "verify_run_end", "step": "conformity", "verdict": "pass", "report": "conf ok"})
+	writeVerifyRun(t, store, f.workspaceID, branchChange, "2026-03-01T10-00-05Z",
+		map[string]any{"type": "verify_run_start", "step": "ui"},
+		map[string]any{"type": "verify_run_end", "step": "ui", "verdict": "fail", "reason": "échec", "report": "ui ko",
+			"verified": []string{"4.1 A"}, "ignored": []string{"inventée"}})
+
+	get := func(url string) (*httptest.ResponseRecorder, verificationReport) {
+		req := httptest.NewRequest("GET", url, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", f.workspaceID)
+		rctx.URLParams.Add("name", branchChange)
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		rec := httptest.NewRecorder()
+		h.Report(rec, req)
+		var rep verificationReport
+		_ = json.Unmarshal(rec.Body.Bytes(), &rep)
+		return rec, rep
+	}
+
+	if _, rep := get("/report"); rep.Step != "ui" || rep.Verdict != "fail" || rep.Report != "ui ko" ||
+		len(rep.Verified) != 1 || rep.Verified[0] != "4.1 A" || len(rep.Ignored) != 1 || rep.Ignored[0] != "inventée" {
+		t.Errorf("default report = %+v", rep)
+	}
+	if _, rep := get("/report?step=conformity"); rep.Step != "conformity" || rep.Report != "conf ok" || len(rep.Verified) != 0 {
+		t.Errorf("conformity report = %+v", rep)
+	}
+	if rec, _ := get("/report?step=other"); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown step: %d", rec.Code)
+	}
+
+	// A change whose UI step never ran has no report for it.
+	f2, h2, store2 := newArtifactFixture(t)
+	writeVerifyRun(t, store2, f2.workspaceID, branchChange, "2026-03-01T10-00-00Z",
+		map[string]any{"type": "verify_run_start", "step": "conformity"},
+		map[string]any{"type": "verify_run_end", "step": "conformity", "verdict": "pass"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/report?step=ui", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", f2.workspaceID)
+	rctx.URLParams.Add("name", branchChange)
+	h2.Report(rec, req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx)))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("step=ui without run: %d", rec.Code)
 	}
 }

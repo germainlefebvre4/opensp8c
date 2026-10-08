@@ -52,7 +52,9 @@ const finalizeButton = () => screen.getByRole('button', { name: /Finalize/ }) as
 describe('ChangeCard verifying badge', () => {
   it.each([
     ['queued', undefined, 'queued'],
+    ['waiting', 'ui', 'waiting for the UI'],
     ['running', 'conformity', 'verifying · conformity'],
+    ['running', 'ui', 'UI verification running'],
     ['failed', undefined, 'failed'],
     ['passed', undefined, 'verified'],
   ] as const)('shows the %s state', (state, step, text) => {
@@ -67,7 +69,7 @@ describe('ChangeCard verifying badge', () => {
 })
 
 describe('ChangeCard verification quick actions', () => {
-  it.each(['queued', 'running', 'passed'] as const)('shows no button for %s', state => {
+  it.each(['queued', 'waiting', 'running', 'passed'] as const)('shows no button for %s', state => {
     renderCard({ verification_state: state })
     expect(screen.queryByRole('button', { name: /Rerun/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Finalize/ })).toBeNull()

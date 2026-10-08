@@ -67,10 +67,15 @@ func (m *Manager) openRunLog(w *Worker) (*poolRunLog, string) {
 
 // openRunLogFor creates a run of the given conversation type for ref's change.
 func (m *Manager) openRunLogFor(ref runRef, runType string) (*poolRunLog, string) {
+	return m.openRunLogAt(ref, runType, time.Now().UTC())
+}
+
+// openRunLogAt is openRunLogFor with an explicit start time.
+func (m *Manager) openRunLogAt(ref runRef, runType string, at time.Time) (*poolRunLog, string) {
 	if m.convStore == nil {
 		return nil, ""
 	}
-	ts := time.Now().UTC().Format(runTimestampLayout)
+	ts := at.Format(runTimestampLayout)
 	f, err := m.convStore.OpenRun(ref.workspaceID, ref.change, runType, ts)
 	if err != nil {
 		log.Printf("[%s] failed to open %s run journal: %v\n", ref.label(), runType, err)

@@ -3,6 +3,7 @@ import { CheckCheck, Loader2, MessageSquareWarning, RotateCw } from 'lucide-reac
 import { useTranslation } from 'react-i18next'
 import { Markdown } from './Markdown'
 import { CorrectionDialog } from './CorrectionDialog'
+import { VerificationArtifacts } from './VerificationArtifacts'
 import { useVerificationActions } from '../hooks/useVerificationActions'
 import { useVerificationReport } from '../hooks/useVerificationReport'
 import type { ChangeDetail } from '../hooks/useChangeDetail'
@@ -16,6 +17,7 @@ interface Props {
 
 const STATE_STYLES = {
   queued: 'border-slate-200 bg-slate-50/70 text-slate-700',
+  waiting: 'border-amber-100 bg-amber-50/60 text-amber-700',
   running: 'border-teal-100 bg-teal-50/60 text-teal-700',
   failed: 'border-red-100 bg-red-50/60 text-red-700',
   passed: 'border-emerald-100 bg-emerald-50/60 text-emerald-700',
@@ -39,9 +41,11 @@ export function VerificationBanner({ workspaceId, change, onCorrectionSent }: Pr
   const error = errors[change.name]
 
   const stateLabel = state === 'running'
-    ? t('verificationBanner.state.running', {
-        step: t(`verificationBanner.steps.${change.verification_step ?? ''}`, { defaultValue: change.verification_step ?? '' }),
-      })
+    ? change.verification_step === 'ui'
+      ? t('verificationBanner.state.runningUi')
+      : t('verificationBanner.state.running', {
+          step: t(`verificationBanner.steps.${change.verification_step ?? ''}`, { defaultValue: change.verification_step ?? '' }),
+        })
     : t(`verificationBanner.state.${state}`)
 
   const submitCorrection = async (feedback: string) => {
@@ -64,6 +68,25 @@ export function VerificationBanner({ workspaceId, change, onCorrectionSent }: Pr
           {report.report && (
             <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 text-slate-700">
               <Markdown size="xs" className="text-left">{report.report}</Markdown>
+            </div>
+          )}
+          {report.run && report.artifacts && (
+            <VerificationArtifacts workspaceId={workspaceId} changeName={change.name} run={report.run} artifacts={report.artifacts} />
+          )}
+          {report.verified && report.verified.length > 0 && (
+            <div data-testid="verification-verified" className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{t('verificationBanner.verifiedTasks')}</span>
+              <ul className="text-xs text-emerald-700 list-disc pl-4 break-words">
+                {report.verified.map(text => <li key={text}>{text}</li>)}
+              </ul>
+            </div>
+          )}
+          {report.ignored && report.ignored.length > 0 && (
+            <div data-testid="verification-ignored" className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{t('verificationBanner.ignoredLines')}</span>
+              <ul className="text-xs text-slate-500 list-disc pl-4 break-words">
+                {report.ignored.map(text => <li key={text}>{text}</li>)}
+              </ul>
             </div>
           )}
         </div>

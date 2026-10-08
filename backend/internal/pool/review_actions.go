@@ -284,6 +284,19 @@ func (m *Manager) ToggleBranchTask(ctx context.Context, workspaceID, workspacePa
 	if err != nil {
 		return "", false, fmt.Errorf("impossible de préparer le worktree : %w", err)
 	}
+	taskText, done, err = toggleTaskInWorktree(wt, dir, change, index)
+	if err != nil {
+		return "", false, err
+	}
+	m.publishChangeUpdated(workspaceID, change)
+	return taskText, done, nil
+}
+
+// toggleTaskInWorktree toggles the index-th task of the tasks.md of the
+// worktree at dir and commits that single file into feature/<change>. On a
+// write or commit failure the file is restored. The caller holds the change's
+// review lock and has checked that no worker holds the change.
+func toggleTaskInWorktree(wt *WorktreeController, dir, change string, index int) (taskText string, done bool, err error) {
 	rel := filepath.Join("openspec", "changes", change, "tasks.md")
 	tasksPath := filepath.Join(dir, rel)
 	original, err := os.ReadFile(tasksPath)
@@ -298,7 +311,6 @@ func (m *Manager) ToggleBranchTask(ctx context.Context, workspaceID, workspacePa
 		_ = os.WriteFile(tasksPath, original, 0o644)
 		return "", false, fmt.Errorf("commit de la coche : %w", err)
 	}
-	m.publishChangeUpdated(workspaceID, change)
 	return taskText, done, nil
 }
 

@@ -125,17 +125,28 @@
     "title": "Verification",
     "state": {
       "queued": "queued",
+      "waiting": "waiting for the UI",
       "running": "running ({{step}})",
+      "runningUi": "UI verification running",
       "failed": "failed",
       "passed": "passed, awaiting finalization"
     },
     "steps": {
-      "conformity": "conformity"
+      "conformity": "conformity",
+      "ui": "UI"
     },
     "rerun": "Rerun verification",
     "finalize": "Finalize without verification",
     "requestCorrection": "Request corrections",
     "remaining_one": "{{count}} task left to check",
-    "remaining_other": "{{count}} tasks left to check"
+    "remaining_other": "{{count}} tasks left to check",
+    "artifacts": {
+      "title": "Screenshots",
+      "open": "Open {{name}}",
+      "close": "Close",
+      "viewer": "Screenshot"
+    },
+    "verifiedTasks": "Tasks checked by the verification",
+    "ignoredLines": "Ignored TASK-VERIFIED lines"
   }
 }
