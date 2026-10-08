@@ -21,13 +21,14 @@ vi.mock('@dnd-kit/core', async importOriginal => ({
   useDndContext: () => ({ over: null }),
 }))
 
-interface ColumnProps { status: string; title: string; onOpen: (n: string) => void; onFold?: () => void }
+interface ColumnProps { status: string; title: string; onOpen: (n: string) => void; onFold?: () => void; collapsed?: boolean; onCollapsedChange?: (c: boolean) => void }
 vi.mock('../components/KanbanColumn', () => ({
   KanbanColumn: (p: ColumnProps) => (
-    <div data-testid={`col-${p.status}`}>
+    <div data-testid={`col-${p.status}`} data-collapsed={String(p.collapsed)}>
       {p.title}
       {p.status === 'todo' && <button onClick={() => p.onOpen('a')}>open-a</button>}
       {p.onFold && <button onClick={p.onFold}>fold</button>}
+      {p.onCollapsedChange && <button onClick={() => p.onCollapsedChange!(!p.collapsed)}>toggle-archived</button>}
     </div>
   ),
 }))
@@ -147,6 +148,19 @@ describe('KanbanPage fit-to-width ladder', () => {
     expect(screen.queryByTestId('col-archived')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: enKanban.columnActions.unfoldDone }))
     expect(screen.getByTestId('col-archived')).toBeTruthy()
+  })
+
+  it('keeps Archived collapsed across a fold / unfold of the slot', () => {
+    renderPage()
+    setWidth(1400)
+    openPanel() // folded automatically
+    fireEvent.click(screen.getByRole('button', { name: enKanban.columnActions.unfoldDone }))
+    fireEvent.click(screen.getByText('toggle-archived'))
+    expect(screen.getByTestId('col-archived').dataset.collapsed).toBe('true')
+    fireEvent.click(screen.getByText('fold'))
+    expect(rail()).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: enKanban.columnActions.unfoldDone }))
+    expect(screen.getByTestId('col-archived').dataset.collapsed).toBe('true')
   })
 
   it('hides the overlay panel during a drag and restores it afterwards', async () => {

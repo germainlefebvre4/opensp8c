@@ -23,6 +23,11 @@ interface Props {
   verificationPendingNames?: ReadonlySet<string>
   maxVisible?: number
   collapsible?: boolean
+  /** Controlled collapse / pagination, so a parent can keep them while the column is unmounted. */
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+  visibleCount?: number
+  onVisibleCountChange?: (count: number) => void
   /** Folds the slot this column belongs to into a rail. */
   onFold?: () => void
   className?: string
@@ -42,11 +47,15 @@ const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
 }
 
-export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, onFold, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, collapsed: collapsedProp, onCollapsedChange, visibleCount: visibleCountProp, onVisibleCountChange, onFold, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
   const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
-  const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
-  const [collapsed, setCollapsed] = useState(false)
+  const [visibleCountState, setVisibleCountState] = useState(maxVisible ?? Infinity)
+  const [collapsedState, setCollapsedState] = useState(false)
+  const visibleCount = visibleCountProp ?? visibleCountState
+  const setVisibleCount = onVisibleCountChange ?? setVisibleCountState
+  const collapsed = collapsedProp ?? collapsedState
+  const setCollapsed = onCollapsedChange ?? setCollapsedState
 
   const { setNodeRef, isOver } = useDroppable({ id: status })
   const { over } = useDndContext()
@@ -98,7 +107,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           )}
           {collapsible && (
             <button
-              onClick={() => setCollapsed(v => !v)}
+              onClick={() => setCollapsed(!collapsed)}
               title={collapsed ? t('columnActions.showColumn') : t('columnActions.hideColumn')}
               className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
@@ -147,7 +156,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           </SortableContext>
           {hasMore && (
             <button
-              onClick={() => setVisibleCount(v => v + (maxVisible ?? 3))}
+              onClick={() => setVisibleCount(visibleCount + (maxVisible ?? 3))}
               className="text-[11px] text-slate-400 hover:text-slate-600 py-1 text-center transition-colors cursor-pointer"
             >
               {t('columnActions.showMore', { count: changes.length - visibleCount })}

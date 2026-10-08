@@ -79,6 +79,9 @@ export function KanbanPage({ workspaceId }: Props) {
 
   const columnsContainerRef = useRef<HTMLDivElement>(null)
   // Session-only override of the Done/Archived fold (null = automatic).
+  // Archived's own collapse/pagination live here: folding the slot unmounts the column.
+  const [archivedCollapsed, setArchivedCollapsed] = useState(false)
+  const [archivedVisible, setArchivedVisible] = useState(3)
   const [manualFolded, setManualFolded] = useState<boolean | null>(null)
   const [rowRef, rowWidth] = useElementWidth()
   const dragContainerRectRef = useRef<ClientRect | null>(null)
@@ -544,6 +547,10 @@ export function KanbanPage({ workspaceId }: Props) {
                         onOpen={name => handleOpen(name, 'archived')}
                         maxVisible={3}
                         collapsible
+                        collapsed={archivedCollapsed}
+                        onCollapsedChange={setArchivedCollapsed}
+                        visibleCount={archivedVisible}
+                        onVisibleCountChange={setArchivedVisible}
                         className="max-h-[40%] overflow-y-auto"
                         getFfStatus={getFfStatus}
                         dragSourceStatus={dragSourceStatus}
