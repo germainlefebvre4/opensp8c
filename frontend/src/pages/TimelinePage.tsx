@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -35,6 +35,7 @@ export function TimelinePage({ workspaceId }: Props) {
   const [activeFilters, setActiveFilters] = useState<string[]>([])
   const [selectedSpec, setSelectedSpec] = useState<string | null>(specParam)
   const [selectedChange, setSelectedChange] = useState<string | null>(null)
+  const [lastViewedChange, setLastViewedChange] = useState<string | null>(null)
 
   // Invert overview: changeName → [specNames]
   const changeToSpecs = useMemo(() => {
@@ -95,7 +96,38 @@ export function TimelinePage({ workspaceId }: Props) {
   const handleSpecSelect = (name: string) => {
     setSelectedSpec(prev => prev === name ? null : name)
     setSelectedChange(null)
+    setLastViewedChange(null)
   }
+
+  const openChange = (name: string) => {
+    setSelectedChange(name)
+    setLastViewedChange(name)
+  }
+
+  const backToSpecList = () => setSelectedChange(null)
+
+  const closeRightPanel = () => {
+    setSelectedSpec(null)
+    setSelectedChange(null)
+    setLastViewedChange(null)
+  }
+
+  // Escape steps back one level: change -> spec list -> closed.
+  const escapeActive = mode === 'matrice' && selectedSpec !== null
+  const hasOpenChange = selectedChange !== null
+  useEffect(() => {
+    if (!escapeActive) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return
+      if (document.querySelector('[role="dialog"]')) return
+      if (hasOpenChange) backToSpecList()
+      else closeRightPanel()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [escapeActive, hasOpenChange])
 
   const singleSpecOverview = useMemo((): SpecOverview | null => {
     if (!selectedSpec || !overview) return null
@@ -122,7 +154,11 @@ export function TimelinePage({ workspaceId }: Props) {
           { id: 'matrice', label: t('tabs.matrix') },
         ]}
         active={mode}
-        onChange={id => { setMode(id); if (id === 'matrice') setSelectedChange(null) }}
+        onChange={id => {
+          setMode(id)
+          if (id === 'matrice') setSelectedChange(null)
+          else setLastViewedChange(null)
+        }}
       />
 
       {mode === 'changes' ? (
@@ -203,15 +239,13 @@ export function TimelinePage({ workspaceId }: Props) {
           </div>
 
           {selectedSpec && (
-            <div className="w-[400px] shrink-0 overflow-hidden flex flex-col">
-              {selectedChange ? (
-                <DetailPanel
-                  workspaceId={workspaceId}
-                  changeName={selectedChange}
-                  onClose={() => setSelectedChange(null)}
-                />
-              ) : singleSpecOverview ? (
-                <div className="flex flex-col h-full overflow-hidden">
+            <div className="w-[400px] shrink-0 overflow-hidden relative">
+              {singleSpecOverview && (
+                <div
+                  className="flex flex-col h-full overflow-hidden"
+                  inert={selectedChange !== null}
+                  aria-hidden={selectedChange !== null}
+                >
                   <div className="shrink-0 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-800 truncate">{selectedSpec}</span>
                     <div className="flex items-center gap-2 shrink-0">
@@ -222,7 +256,7 @@ export function TimelinePage({ workspaceId }: Props) {
                         {t('viewSpecLink')}
                       </Link>
                       <button
-                        onClick={() => setSelectedSpec(null)}
+                        onClick={closeRightPanel}
                         className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors"
                       >
                         <X size={14} />
@@ -231,11 +265,23 @@ export function TimelinePage({ workspaceId }: Props) {
                   </div>
                   <SpecHistoryView
                     overview={singleSpecOverview}
-                    onChangeClick={name => setSelectedChange(name)}
-                    selectedChangeName={selectedChange}
+                    onChangeClick={openChange}
+                    selectedChangeName={lastViewedChange}
                   />
                 </div>
-              ) : null}
+              )}
+              {selectedChange && (
+                <div className="absolute inset-0 bg-white">
+                  <DetailPanel
+                    workspaceId={workspaceId}
+                    changeName={selectedChange}
+                    onClose={closeRightPanel}
+                    onBack={backToSpecList}
+                    backLabel={selectedSpec}
+                    onActionDone={backToSpecList}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

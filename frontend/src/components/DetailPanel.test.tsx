@@ -12,8 +12,19 @@ import enDetailPanel from '../locales/en/detailPanel.json'
 import enConfiguration from '../locales/en/configuration.json'
 
 vi.mock('../hooks/useChangeDetail', () => ({ useChangeDetail: vi.fn() }))
-vi.mock('../hooks/useArchive', () => ({ useArchive: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
-vi.mock('../hooks/useDeleteChange', () => ({ useDeleteChange: () => ({ mutateAsync: vi.fn(), isPending: false }) }))
+const { archiveMutate, deleteMutate } = vi.hoisted(() => ({
+  archiveMutate: vi.fn().mockResolvedValue(undefined),
+  deleteMutate: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('../hooks/useArchive', () => ({ useArchive: () => ({ mutateAsync: archiveMutate, isPending: false }) }))
+vi.mock('../hooks/useDeleteChange', () => ({ useDeleteChange: () => ({ mutateAsync: deleteMutate, isPending: false }) }))
+vi.mock('./DeleteChangeDialog', () => ({
+  DeleteChangeDialog: ({ onConfirm }: { onConfirm: () => void }) => <button onClick={onConfirm}>mock-delete-confirm</button>,
+}))
+vi.mock('./ui/ConfirmDialog', () => ({
+  ConfirmDialog: ({ open, onConfirm }: { open: boolean; onConfirm: () => void }) =>
+    open ? <button onClick={onConfirm}>mock-archive-confirm</button> : null,
+}))
 vi.mock('../hooks/useToggleTask', () => ({ useToggleTask: () => ({ mutate: vi.fn() }) }))
 vi.mock('../hooks/useResumeWorker', () => ({ useResumeWorker: vi.fn() }))
 vi.mock('../hooks/useSetChangeVerification', () => ({ useSetChangeVerification: vi.fn() }))
@@ -31,7 +42,13 @@ vi.mock('./ApproveDialog', () => ({
     </div>
   ),
 }))
-vi.mock('./CorrectionDialog', () => ({ CorrectionDialog: () => <div data-testid="correction-dialog" /> }))
+vi.mock('./CorrectionDialog', () => ({
+  CorrectionDialog: ({ onSubmit }: { onSubmit: (feedback: string) => Promise<unknown> }) => (
+    <div data-testid="correction-dialog">
+      <button onClick={() => { onSubmit('fix it').catch(() => {}) }}>mock-correction-submit</button>
+    </div>
+  ),
+}))
 vi.mock('./ReviewTab', () => ({ ReviewTab: () => <div data-testid="review-tab" /> }))
 vi.mock('./Markdown', () => ({ Markdown: ({ children }: { children: string }) => <div>{children}</div> }))
 
@@ -167,6 +184,82 @@ describe('DetailPanel review actions', () => {
     render(panel())
     openActions()
     expect(screen.queryByRole('button', { name: enDetailPanel.reviewActions.approveAndMerge })).toBeNull()
+  })
+})
+
+describe('DetailPanel back navigation', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockReviewMutations() })
+
+  const backName = () => enDetailPanel.backTo.replace('{{label}}', 'auth-spec')
+  const openActions = () => fireEvent.click(screen.getByRole('button', { name: enDetailPanel.tabs.actions }))
+
+  it('shows no back button without onBack', () => {
+    mockStatus('todo')
+    render(panel())
+    expect(screen.queryByRole('button', { name: backName() })).toBeNull()
+  })
+
+  it('calls onBack from the back button and onClose from the X', () => {
+    mockStatus('todo')
+    const onBack = vi.fn()
+    const onClose = vi.fn()
+    const { container } = render(
+      <DetailPanel workspaceId="ws1" changeName="add-auth" onClose={onClose} onBack={onBack} backLabel="auth-spec" />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: backName() }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.click(container.querySelector('.lucide-x')!.closest('button')!)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  const renderWithActionDone = () => {
+    const onClose = vi.fn()
+    const onActionDone = vi.fn()
+    render(<DetailPanel workspaceId="ws1" changeName="add-auth" onClose={onClose} onActionDone={onActionDone} />)
+    return { onClose, onActionDone }
+  }
+
+  it('calls onActionDone instead of onClose after archiving', async () => {
+    mockStatus('done')
+    const { onClose, onActionDone } = renderWithActionDone()
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: 'card.syncAndArchive' }))
+    fireEvent.click(screen.getByText('mock-archive-confirm'))
+    await waitFor(() => expect(onActionDone).toHaveBeenCalledTimes(1))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('calls onActionDone instead of onClose after deleting', async () => {
+    mockStatus('todo')
+    const { onClose, onActionDone } = renderWithActionDone()
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.delete }))
+    fireEvent.click(screen.getByText('mock-delete-confirm'))
+    await waitFor(() => expect(onActionDone).toHaveBeenCalledTimes(1))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('calls onActionDone instead of onClose after a correction request', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useRequestCorrection).mockReturnValue({ mutateAsync, isPending: false } as unknown as ReturnType<typeof useRequestCorrection>)
+    mockStatus('to-review')
+    const { onClose, onActionDone } = renderWithActionDone()
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.reviewActions.requestCorrection }))
+    fireEvent.click(screen.getByText('mock-correction-submit'))
+    await waitFor(() => expect(onActionDone).toHaveBeenCalledTimes(1))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('falls back to onClose after an action without onActionDone', async () => {
+    mockStatus('todo')
+    const onClose = vi.fn()
+    render(<DetailPanel workspaceId="ws1" changeName="add-auth" onClose={onClose} />)
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: enDetailPanel.delete }))
+    fireEvent.click(screen.getByText('mock-delete-confirm'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 })
 

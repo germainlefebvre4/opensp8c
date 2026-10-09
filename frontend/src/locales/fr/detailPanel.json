@@ -1,4 +1,5 @@
 {
+  "backTo": "Retour à {{label}}",
   "tabs": {
     "tasks": "Tâches",
     "proposal": "Proposal",
