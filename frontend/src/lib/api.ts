@@ -13,13 +13,16 @@ export class ApiError extends Error {
   code?: string
   target?: string
   output?: string
-  constructor(message: string, status?: number, code?: string, target?: string, output?: string) {
+  /** Files in conflict of an `integration_conflict` refusal (may be absent). */
+  files?: string[]
+  constructor(message: string, status?: number, code?: string, target?: string, output?: string, files?: string[]) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.target = target
     this.output = output
+    this.files = files
   }
 }
 
@@ -45,6 +48,7 @@ api.interceptors.response.use(
         typeof body.code === 'string' ? body.code : undefined,
         typeof body.target === 'string' ? body.target : undefined,
         typeof body.output === 'string' ? body.output : undefined,
+        Array.isArray(body.files) ? body.files.filter((f): f is string => typeof f === 'string') : undefined,
       ))
     }
     return Promise.reject(err)
@@ -476,8 +480,16 @@ export interface ApproveResult {
 export const approveReview = (workspaceId: string, changeName: string) =>
   api.post<ApproveResult>(`${reviewURL(workspaceId, changeName)}/approve`).then(r => r.data)
 
-export const requestCorrection = (workspaceId: string, changeName: string, feedback: string) =>
-  api.post(`${reviewURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+export interface RequestCorrectionOptions {
+  /** Reopens the checked human-validation tasks in the commit of the correction. */
+  reopenHumanTasks?: boolean
+}
+
+export const requestCorrection = (workspaceId: string, changeName: string, feedback: string, options?: RequestCorrectionOptions) =>
+  api.post(
+    `${reviewURL(workspaceId, changeName)}/request-correction`,
+    options?.reopenHumanTasks ? { feedback, reopen_human_tasks: true } : { feedback },
+  ).then(() => undefined)
 
 // 'waiting': the UI step waits for the machine-wide UI lock.
 export type VerificationState = 'queued' | 'waiting' | 'running' | 'failed' | 'passed'

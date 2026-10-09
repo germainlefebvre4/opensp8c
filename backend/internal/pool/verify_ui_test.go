@@ -415,6 +415,20 @@ func TestUIStep_TicksVerifiedTasks(t *testing.T) {
 			t.Errorf("end = %v", end)
 		}
 	})
+	t.Run("task reopened by a correction", func(t *testing.T) {
+		// A human task ticked by the user, then reopened by a correction with
+		// reopen_human_tasks, is verified and ticked like any marked task.
+		reopened, n := openspec.ReopenHumanTasks("- [x] 1 impl\n- [x] 4.2 Parcours" + humanMarker + "\n")
+		if n != 1 {
+			t.Fatalf("reopened = %d", n)
+		}
+		v := &verifierStub{answer: "TASK-VERIFIED: 4.2 Parcours\nVERDICT: PASS"}
+		m, repo, _ := awaitingUIVerification(t, "ui-tick-reo", uiVerifyConfig{command: appCmd(""), baseURL: uiTestURL, tasks: reopened}, v)
+		runVerifyNow(m, "ui-tick-reo")
+		if got := branchTasksOf(t, m, repo, "ui-tick-reo"); !strings.Contains(got, "- [x] 4.2 Parcours"+humanMarker) {
+			t.Errorf("the reopened task must be ticked with its marker kept:\n%s", got)
+		}
+	})
 	t.Run("two of three", func(t *testing.T) {
 		v := &verifierStub{answer: "TASK-VERIFIED: 4.1 Premier\nTASK-VERIFIED: 4.3 Troisième\nVERDICT: PASS"}
 		m, repo, _ := awaitingUIVerification(t, "ui-tick2", uiVerifyConfig{command: appCmd(""), baseURL: uiTestURL, tasks: threeHumanTasks}, v)

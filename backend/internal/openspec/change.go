@@ -306,6 +306,32 @@ func ParseTaskListContent(content string) []Task {
 	return tasks
 }
 
+// ReopenHumanTasks turns the checked tasks carrying the human review marker of
+// a tasks.md content back into unchecked ones and returns the new content and
+// the number of tasks reopened. Tasks are recognized as ParseTaskListContent
+// does; the rest of each line, marker included, is kept byte for byte, and so
+// is every other line.
+func ReopenHumanTasks(content string) (string, int) {
+	lines := strings.Split(content, "\n")
+	reopened := 0
+	for i, raw := range lines {
+		trimmed := strings.TrimSpace(raw)
+		if !strings.HasPrefix(trimmed, "- [x]") && !strings.HasPrefix(trimmed, "- [X]") {
+			continue
+		}
+		if !humanReviewRe.MatchString(trimmed[5:]) {
+			continue
+		}
+		at := strings.Index(raw, "- [")
+		lines[i] = raw[:at+3] + " " + raw[at+4:]
+		reopened++
+	}
+	if reopened == 0 {
+		return content, 0
+	}
+	return strings.Join(lines, "\n"), reopened
+}
+
 func parseTaskProgressContent(content string) (done, total int) {
 	for _, t := range ParseTaskListContent(content) {
 		total++

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 )
 
 // Typed failures of integrateAndMerge. The full-autonomy worker turns them into
@@ -14,11 +15,17 @@ import (
 // the change branch failed (the integration was aborted).
 type IntegrationConflictError struct {
 	Target string
-	Err    error
+	// Files are the files in conflict, read before the abort (may be empty).
+	Files []string
+	Err   error
 }
 
 func (e *IntegrationConflictError) Error() string {
-	return fmt.Sprintf("Intégration de %s impossible (annulée, branche et worktree conservés) : %s", e.Target, truncateReason(e.Err))
+	msg := fmt.Sprintf("Intégration de %s impossible (annulée, branche et worktree conservés)", e.Target)
+	if len(e.Files) > 0 {
+		msg += " : conflits dans " + strings.Join(e.Files, ", ")
+	}
+	return msg + " : " + truncateReason(e.Err)
 }
 func (e *IntegrationConflictError) Unwrap() error { return e.Err }
 
@@ -101,8 +108,8 @@ func (m *Manager) integrateAndMerge(ctx context.Context, wt *WorktreeController,
 			}
 			integrationTarget := wt.CurrentBranch()
 			log.Printf("[merge] %s advanced: integrating it into %s before merging\n", integrationTarget, change)
-			if err := wt.IntegrateTarget(change, integrationTarget); err != nil {
-				return "", false, &IntegrationConflictError{Target: integrationTarget, Err: err}
+			if files, err := wt.IntegrateTarget(change, integrationTarget); err != nil {
+				return "", false, &IntegrationConflictError{Target: integrationTarget, Files: files, Err: err}
 			}
 			if err := validate(); err != nil {
 				return "", false, err

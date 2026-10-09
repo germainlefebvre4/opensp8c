@@ -19,8 +19,9 @@ import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { ReviewTab } from './ReviewTab'
 import { ChangeVerificationSection } from './ChangeVerificationSection'
-import { ApproveDialog } from './ApproveDialog'
+import { ApproveDialog, ConflictFiles } from './ApproveDialog'
 import { CorrectionDialog } from './CorrectionDialog'
+import { buildConflictFeedback } from '../lib/conflictFeedback'
 import { VerificationBanner } from './VerificationBanner'
 
 interface Props {
@@ -60,7 +61,9 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const requestCorrection = useRequestCorrection(workspaceId)
   const [approveOpen, setApproveOpen] = useState(false)
   const [correctionOpen, setCorrectionOpen] = useState(false)
-  const [approveError, setApproveError] = useState<{ message: string; output?: string } | null>(null)
+  // Text the correction dialog opens with (guided resolution of a conflict); null for an ordinary correction.
+  const [correctionPrefill, setCorrectionPrefill] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<{ message: string; output?: string; code?: string; target?: string; files?: string[] } | null>(null)
   const [archiveError, setArchiveError] = useState<string | null>(null)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -140,15 +143,30 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
       setApproveOpen(false)
     } catch (err) {
       // The dialog stays open with the error; it is also kept in the Actions tab.
-      setApproveError({ message: tDialogs(reviewErrorKey(err)), output: err instanceof ApiError ? err.output : undefined })
+      const apiErr = err instanceof ApiError ? err : undefined
+      setApproveError({ message: tDialogs(reviewErrorKey(err)), output: apiErr?.output, code: apiErr?.code, target: apiErr?.target, files: apiErr?.files })
       throw err
     }
   }
 
-  const handleCorrection = async (feedback: string) => {
-    await requestCorrection.mutateAsync({ changeName, feedback })
+  const handleCorrection = async (feedback: string, reopenHumanTasks: boolean) => {
+    await requestCorrection.mutateAsync({ changeName, feedback, reopenHumanTasks })
     setCorrectionOpen(false)
+    setCorrectionPrefill(null)
     onClose()
+  }
+
+  // Hands an integration conflict to the worker: nothing is sent until the user
+  // confirms the prefilled correction.
+  const handleResolveConflict = (target: string | undefined, files: string[]) => {
+    setApproveOpen(false)
+    setCorrectionPrefill(buildConflictFeedback(tDialogs, target, files))
+    setCorrectionOpen(true)
+  }
+
+  const cancelCorrection = () => {
+    setCorrectionOpen(false)
+    setCorrectionPrefill(null)
   }
 
   const inReview = data?.kanban_status === 'to-review'
@@ -572,7 +590,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                         {approveReview.isPending ? t('reviewActions.approving') : t('reviewActions.approveAndMerge')}
                       </button>
                       <button
-                        onClick={() => setCorrectionOpen(true)}
+                        onClick={() => { setCorrectionPrefill(null); setCorrectionOpen(true) }}
                         disabled={reviewBusy}
                         className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
@@ -586,6 +604,13 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
                       <p className="text-[11px] text-red-600 whitespace-pre-wrap">{approveError.message}</p>
                       {approveError.output && (
                         <pre className="max-h-40 overflow-auto rounded bg-slate-50 border border-slate-200 p-2 text-[11px] text-slate-600 whitespace-pre-wrap">{approveError.output}</pre>
+                      )}
+                      {approveError.code === 'integration_conflict' && (
+                        <ConflictFiles
+                          target={approveError.target}
+                          files={approveError.files}
+                          onResolve={() => handleResolveConflict(approveError.target, approveError.files ?? [])}
+                        />
                       )}
                     </div>
                   )}
@@ -637,6 +662,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
           changeName={changeName}
           onConfirm={handleApprove}
           onCancel={() => setApproveOpen(false)}
+          onResolveConflict={handleResolveConflict}
         />
       )}
 
@@ -644,7 +670,10 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
         <CorrectionDialog
           changeName={changeName}
           onSubmit={handleCorrection}
-          onCancel={() => setCorrectionOpen(false)}
+          onCancel={cancelCorrection}
+          initialFeedback={correctionPrefill ?? undefined}
+          reopenDefault={correctionPrefill !== null}
+          humanTasksChecked={data ? data.tasks.filter(task => task.human_review && task.done).length : 0}
         />
       )}
 

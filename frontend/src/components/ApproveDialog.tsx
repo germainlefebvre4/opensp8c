@@ -10,13 +10,15 @@ interface Props {
   /** Merges the change; a rejection is shown in the dialog, which stays open. */
   onConfirm: () => Promise<unknown>
   onCancel: () => void
+  /** Opens the guided resolution of an integration conflict; the action is offered for that error only. */
+  onResolveConflict?: (target: string | undefined, files: string[]) => void
 }
 
-export function ApproveDialog({ workspaceId, changeName, onConfirm, onCancel }: Props) {
+export function ApproveDialog({ workspaceId, changeName, onConfirm, onCancel, onResolveConflict }: Props) {
   const { t } = useTranslation('dialogs')
   const { data: review } = useChangeReview(workspaceId, changeName)
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<{ message: string; output?: string } | null>(null)
+  const [error, setError] = useState<{ message: string; output?: string; code?: string; target?: string; files?: string[] } | null>(null)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -32,7 +34,8 @@ export function ApproveDialog({ workspaceId, changeName, onConfirm, onCancel }: 
     try {
       await onConfirm()
     } catch (err) {
-      setError({ message: t(reviewErrorKey(err)), output: err instanceof ApiError ? err.output : undefined })
+      const api = err instanceof ApiError ? err : undefined
+      setError({ message: t(reviewErrorKey(err)), output: api?.output, code: api?.code, target: api?.target, files: api?.files })
       setPending(false)
     }
   }
@@ -51,6 +54,9 @@ export function ApproveDialog({ workspaceId, changeName, onConfirm, onCancel }: 
         {error && (
           <div role="alert" className="flex flex-col gap-1">
             <p className="text-[11px] text-red-600 whitespace-pre-wrap">{error.message}</p>
+            {error.code === 'integration_conflict' && (
+              <ConflictFiles target={error.target} files={error.files} onResolve={onResolveConflict ? () => onResolveConflict(error.target, error.files ?? []) : undefined} />
+            )}
             {error.output && (
               <details className="text-[11px] text-slate-600">
                 <summary className="cursor-pointer">{t('reviewApprove.output')}</summary>
@@ -77,6 +83,32 @@ export function ApproveDialog({ workspaceId, changeName, onConfirm, onCancel }: 
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Files in conflict of an integration_conflict refusal and the action that hands them to the worker. */
+export function ConflictFiles({ target, files, onResolve }: { target?: string; files?: string[]; onResolve?: () => void }) {
+  const { t } = useTranslation('dialogs')
+  return (
+    <div className="flex flex-col gap-1.5 text-[11px] text-slate-600">
+      {files && files.length > 0 && (
+        <>
+          <p>{target ? t('reviewApprove.conflictFiles', { target }) : t('reviewApprove.conflictFilesNoTarget')}</p>
+          <ul className="max-h-32 overflow-auto rounded bg-slate-50 border border-slate-200 p-2 font-mono">
+            {files.map(f => <li key={f}>{f}</li>)}
+          </ul>
+        </>
+      )}
+      {onResolve && (
+        <button
+          type="button"
+          onClick={onResolve}
+          className="self-start text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+        >
+          {t('reviewApprove.resolveConflict')}
+        </button>
+      )}
     </div>
   )
 }

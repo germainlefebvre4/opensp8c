@@ -97,6 +97,6 @@ func (m *Manager) RequestVerificationCorrection(ctx context.Context, workspaceID
 		return ErrEmptyFeedback
 	}
 	return m.verificationGuard(workspaceID, workspacePath, change, func(wt *WorktreeController) error {
-		return m.applyCorrection(workspaceID, wt, change, feedback, wt.ClearVerify, "levée du marqueur de vérification")
+		return m.applyCorrection(workspaceID, wt, change, feedback, CorrectionOptions{}, wt.ClearVerify, "levée du marqueur de vérification")
 	})
 }

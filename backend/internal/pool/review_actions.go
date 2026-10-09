@@ -197,12 +197,20 @@ func (m *Manager) finishMerged(wt *WorktreeController, workspaceID, change, targ
 	return res
 }
 
+// CorrectionOptions tunes a correction request.
+type CorrectionOptions struct {
+	// ReopenHumanTasks turns the checked human-review tasks of tasks.md back
+	// into unchecked ones, in the commit that records the correction.
+	ReopenHumanTasks bool
+}
+
 // RequestCorrection records a user correction for a change in review: one
 // unchecked task appended to the "## Corrections" section of the worktree's
 // tasks.md and committed into feature/<change>, then the review marker is
-// lifted so the change becomes eligible again. The marker is kept when
-// writing or committing fails.
-func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspacePath, change, feedback string) error {
+// lifted so the change becomes eligible again. With opts.ReopenHumanTasks the
+// checked human-review tasks are reopened in the same commit. The marker is
+// kept when writing or committing fails.
+func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspacePath, change, feedback string, opts CorrectionOptions) error {
 	if strings.TrimSpace(feedback) == "" {
 		return ErrEmptyFeedback
 	}
@@ -214,15 +222,17 @@ func (m *Manager) RequestCorrection(ctx context.Context, workspaceID, workspaceP
 	if err := m.checkReviewable(wt, change); err != nil {
 		return err
 	}
-	return m.applyCorrection(workspaceID, wt, change, feedback, wt.ClearReview, "levée du marqueur de revue")
+	return m.applyCorrection(workspaceID, wt, change, feedback, opts, wt.ClearReview, "levée du marqueur de revue")
 }
 
 // applyCorrection appends feedback as an unchecked task of the "## Corrections"
 // section of the worktree's tasks.md, commits it into feature/<change>, then
 // lifts the marker through clear and publishes the update. The marker is kept
-// when writing or committing fails. The caller holds the change's lock and has
+// when writing or committing fails. With opts.ReopenHumanTasks the reopening
+// is applied before the correction is appended, so a single write and a single
+// commit carry both. The caller holds the change's lock and has
 // checked that the change is eligible.
-func (m *Manager) applyCorrection(workspaceID string, wt *WorktreeController, change, feedback string, clear func(string) error, clearLabel string) error {
+func (m *Manager) applyCorrection(workspaceID string, wt *WorktreeController, change, feedback string, opts CorrectionOptions, clear func(string) error, clearLabel string) error {
 	dir, err := wt.Provision(change)
 	if err != nil {
 		return fmt.Errorf("impossible de préparer le worktree : %w", err)
@@ -234,7 +244,11 @@ func (m *Manager) applyCorrection(workspaceID string, wt *WorktreeController, ch
 	if err != nil {
 		return fmt.Errorf("lecture de tasks.md : %w", err)
 	}
-	updated := AppendCorrection(string(original), feedback)
+	base := string(original)
+	if opts.ReopenHumanTasks {
+		base, _ = openspec.ReopenHumanTasks(base)
+	}
+	updated := AppendCorrection(base, feedback)
 	if err := os.WriteFile(tasksPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("écriture de tasks.md : %w", err)
 	}

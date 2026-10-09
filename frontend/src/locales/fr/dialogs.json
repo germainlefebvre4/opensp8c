@@ -86,7 +86,9 @@
     "placeholder": "Ce qui doit être corrigé…",
     "confirm": "Envoyer",
     "sending": "Envoi…",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "reopenHumanTasks_one": "Rouvrir la tâche de validation humaine",
+    "reopenHumanTasks_other": "Rouvrir les {{count}} tâches de validation humaine"
   },
   "reviewApprove": {
     "title": "Approuver & fusionner ?",
@@ -101,7 +103,10 @@
       "worktree": "le worktree",
       "branch": "la branche",
       "marker": "le marqueur de revue"
-    }
+    },
+    "conflictFiles": "Fichiers en conflit avec « {{target}} » :",
+    "conflictFilesNoTarget": "Fichiers en conflit :",
+    "resolveConflict": "Demander la résolution au worker"
   },
   "reviewErrors": {
     "not_in_review": "Ce change n'est plus en revue.",
@@ -114,5 +119,13 @@
     "tasks_pending": "Des tâches restent à valider : cochez-les toutes avant d'approuver. Rien n'a été fusionné.",
     "empty_feedback": "Le retour de correction est vide.",
     "generic": "L'action a échoué."
+  },
+  "reviewConflict": {
+    "intro": "Intégrer `{{target}}` dans la branche du change, résoudre les conflits, puis relancer la validation.",
+    "introNoTarget": "Intégrer la branche cible dans la branche du change, résoudre les conflits, puis relancer la validation.",
+    "files": "Fichiers en conflit :",
+    "more_one": "… et {{count}} autre fichier",
+    "more_other": "… et {{count}} autres fichiers",
+    "keepBoth": "Conserver les évolutions des deux côtés."
   }
 }

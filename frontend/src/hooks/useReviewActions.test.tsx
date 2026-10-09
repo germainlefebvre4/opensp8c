@@ -109,6 +109,16 @@ describe('useRequestCorrection', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['changes', 'ws1'] })
   })
 
+  it('forwards the reopen option only when set', async () => {
+    vi.mocked(requestCorrection).mockResolvedValue(undefined)
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useRequestCorrection('ws1'), { wrapper })
+    await act(async () => { await result.current.mutateAsync({ changeName: 'c', feedback: 'fix', reopenHumanTasks: true }) })
+    expect(requestCorrection).toHaveBeenLastCalledWith('ws1', 'c', 'fix', { reopenHumanTasks: true })
+    await act(async () => { await result.current.mutateAsync({ changeName: 'c', feedback: 'fix', reopenHumanTasks: false }) })
+    expect(requestCorrection).toHaveBeenLastCalledWith('ws1', 'c', 'fix')
+  })
+
   it.each([[400, 'empty_feedback'], [409, 'not_in_review'], [409, 'worker_active']])(
     'exposes the code of a %i %s error', async (status, code) => {
       vi.mocked(requestCorrection).mockRejectedValue(new ApiError('refused', status, code))

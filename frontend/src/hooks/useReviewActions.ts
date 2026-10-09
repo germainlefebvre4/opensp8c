@@ -46,8 +46,10 @@ export function useApproveReview(workspaceId: string | null) {
 export function useRequestCorrection(workspaceId: string | null) {
   const invalidate = useInvalidateChange(workspaceId)
   return useMutation({
-    mutationFn: ({ changeName, feedback }: { changeName: string; feedback: string }) =>
-      requestCorrection(workspaceId!, changeName, feedback),
+    mutationFn: ({ changeName, feedback, reopenHumanTasks }: { changeName: string; feedback: string; reopenHumanTasks?: boolean }) =>
+      reopenHumanTasks
+        ? requestCorrection(workspaceId!, changeName, feedback, { reopenHumanTasks })
+        : requestCorrection(workspaceId!, changeName, feedback),
     onSuccess: (_data, { changeName }) => invalidate(changeName),
   })
 }

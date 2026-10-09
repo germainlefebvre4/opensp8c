@@ -275,7 +275,7 @@ func TestRequestCorrection_Succeeds(t *testing.T) {
 	m, repo, _ := reviewFixture(t, "corr", "- [x] done\n", "true")
 	bc := &mockBroadcaster{}
 	m.broadcaster = bc
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "corr", "Le bouton Annuler ne ferme pas\nle dialogue"); err != nil {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "corr", "Le bouton Annuler ne ferme pas\nle dialogue", CorrectionOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if inReview(t, m, repo, "corr") {
@@ -311,7 +311,7 @@ func TestRequestCorrection_RecreatesMissingWorktree(t *testing.T) {
 	m, repo, _ := reviewFixture(t, "gone", "- [x] done\n", "true")
 	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
 	gitIn(t, repo, "worktree", "remove", "--force", wt.resolvePath("gone"))
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "gone", "à refaire"); err != nil {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "gone", "à refaire", CorrectionOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gitIn(t, repo, "show", "feature/gone:openspec/changes/gone/tasks.md"), "Correction : à refaire") {
@@ -321,14 +321,14 @@ func TestRequestCorrection_RecreatesMissingWorktree(t *testing.T) {
 
 func TestRequestCorrection_Refusals(t *testing.T) {
 	m, repo, _ := reviewFixture(t, "refc", "- [x] done\n", "true")
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "refc", "  \n "); !errors.Is(err, ErrEmptyFeedback) {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "refc", "  \n ", CorrectionOptions{}); !errors.Is(err, ErrEmptyFeedback) {
 		t.Fatalf("err = %v, want empty feedback", err)
 	}
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "other", "x"); !errors.Is(err, ErrNotInReview) {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "other", "x", CorrectionOptions{}); !errors.Is(err, ErrNotInReview) {
 		t.Fatalf("err = %v, want not in review", err)
 	}
 	m.pausedWorkers[3] = &Worker{ID: 3, ActiveChange: "refc"}
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "refc", "x"); !errors.Is(err, ErrWorkerActive) {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "refc", "x", CorrectionOptions{}); !errors.Is(err, ErrWorkerActive) {
 		t.Fatalf("err = %v, want worker active", err)
 	}
 	if !inReview(t, m, repo, "refc") {
@@ -346,7 +346,7 @@ func TestRequestCorrection_CommitFailureKeepsMarker(t *testing.T) {
 	if err := os.Chmod(hook, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, "cf", "x"); err == nil {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "cf", "x", CorrectionOptions{}); err == nil {
 		t.Fatal("expected a commit error")
 	}
 	if !inReview(t, m, repo, "cf") {
@@ -364,7 +364,14 @@ func TestRequestCorrection_CommitFailureKeepsMarker(t *testing.T) {
 // validation never fails) and the worktree.
 func correctionFlow(t *testing.T, change string, agent func(run int, ws string)) (*Manager, string) {
 	t.Helper()
-	repo := newGoFixtureRepo(t, change, "- [ ] do the thing\n")
+	return correctionFlowWith(t, change, "- [ ] do the thing\n", CorrectionOptions{}, agent)
+}
+
+// correctionFlowWith is correctionFlow with the initial tasks.md and the
+// options of the correction request.
+func correctionFlowWith(t *testing.T, change, tasks string, opts CorrectionOptions, agent func(run int, ws string)) (*Manager, string) {
+	t.Helper()
+	repo := newGoFixtureRepo(t, change, tasks)
 	writeFile(t, filepath.Join(repo, "openspec", "changes", change, ".openspec.yaml"), "schema: spec-driven\nlaunched: true\n")
 	gitIn(t, repo, "add", "-A")
 	gitIn(t, repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "launch")
@@ -388,7 +395,7 @@ func correctionFlow(t *testing.T, change string, agent func(run int, ws string))
 	if !inReview(t, m, repo, change) {
 		t.Fatal("first run should end in review")
 	}
-	if err := m.RequestCorrection(context.Background(), "ws1", repo, change, "à corriger"); err != nil {
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, change, "à corriger", opts); err != nil {
 		t.Fatal(err)
 	}
 	dispatch()
@@ -794,5 +801,113 @@ func TestApprove_RefusedWhenUserUnchecksATask(t *testing.T) {
 	var pending *TasksPendingError
 	if !errors.As(err, &pending) || pending.Remaining != 1 {
 		t.Fatalf("got %v, want TasksPendingError{1}", err)
+	}
+}
+
+const humanTasks = "# T\n\n- [x] 1.1 Implémentation\n- [x] 4.2 Parcours manuel <!-- human review required -->\n"
+
+func TestRequestCorrection_ReopensHumanTasksInOneCommit(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "reo", humanTasks, "true")
+	before := gitIn(t, repo, "rev-list", "--count", "feature/reo")
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "reo", "résoudre le conflit", CorrectionOptions{ReopenHumanTasks: true}); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIn(t, repo, "show", "feature/reo:openspec/changes/reo/tasks.md")
+	for _, want := range []string{
+		"- [x] 1.1 Implémentation",
+		"- [ ] 4.2 Parcours manuel <!-- human review required -->",
+		"- [ ] Correction : résoudre le conflit",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("tasks.md lacks %q:\n%s", want, got)
+		}
+	}
+	after := gitIn(t, repo, "rev-list", "--count", "feature/reo")
+	if before == after || gitIn(t, repo, "rev-list", "--count", "feature/reo~1") != before {
+		t.Fatalf("expected exactly one commit: before=%s after=%s", before, after)
+	}
+	if inReview(t, m, repo, "reo") {
+		t.Fatal("marker must be lifted")
+	}
+}
+
+func TestRequestCorrection_WithoutReopenKeepsTasks(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "keep", humanTasks, "true")
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "keep", "x", CorrectionOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIn(t, repo, "show", "feature/keep:openspec/changes/keep/tasks.md")
+	if !strings.Contains(got, "- [x] 4.2 Parcours manuel <!-- human review required -->") {
+		t.Fatalf("human task must stay checked:\n%s", got)
+	}
+}
+
+func TestRequestCorrection_ReopenWithoutCheckedHumanTask(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "none", "- [x] done\n", "true")
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "none", "x", CorrectionOptions{ReopenHumanTasks: true}); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIn(t, repo, "show", "feature/none:openspec/changes/none/tasks.md")
+	if !strings.Contains(got, "- [x] done") || !strings.Contains(got, "- [ ] Correction : x") {
+		t.Fatalf("unexpected tasks.md:\n%s", got)
+	}
+}
+
+func TestRequestCorrection_ReopenCommitFailureRestoresTasks(t *testing.T) {
+	m, repo, _ := reviewFixture(t, "rcf", humanTasks, "true")
+	hook := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	writeFile(t, hook, "#!/bin/sh\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RequestCorrection(context.Background(), "ws1", repo, "rcf", "x", CorrectionOptions{ReopenHumanTasks: true}); err == nil {
+		t.Fatal("expected a commit error")
+	}
+	if !inReview(t, m, repo, "rcf") {
+		t.Fatal("marker must be kept")
+	}
+	wt := NewWorktreeController(repo, "ws1", m.worktreesRoot)
+	b, err := os.ReadFile(filepath.Join(wt.resolvePath("rcf"), "openspec", "changes", "rcf", "tasks.md"))
+	if err != nil || string(b) != humanTasks {
+		t.Fatalf("tasks.md must be restored with the human task checked: %v\n%s", err, b)
+	}
+}
+
+func TestCorrectionFlow_ReopenedHumanTaskBlocksApproval(t *testing.T) {
+	// Run 1 ends with every task checked (the user ticked the human one); on
+	// the correction run the agent checks every task except the human one, as a
+	// real worker does.
+	m, repo := correctionFlowWith(t, "flow-reo", "- [ ] 1.1 Implémentation\n- [ ] 4.2 Parcours manuel <!-- human review required -->\n", CorrectionOptions{ReopenHumanTasks: true}, func(run int, ws string) {
+		writeInWorktree(fmt.Sprintf("run%d.txt", run))(ws)
+		p := filepath.Join(ws, "openspec", "changes", "flow-reo", "tasks.md")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return
+		}
+		lines := strings.Split(string(b), "\n")
+		for i, l := range lines {
+			if run == 1 || !strings.Contains(l, "human review required") {
+				lines[i] = strings.Replace(l, "- [ ]", "- [x]", 1)
+			}
+		}
+		_ = os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
+	})
+	if !inReview(t, m, repo, "flow-reo") {
+		t.Fatal("change should be back in review after the correction was applied")
+	}
+	_, err := m.ApproveReview(context.Background(), "ws1", repo, "flow-reo")
+	var pending *TasksPendingError
+	if !errors.As(err, &pending) || pending.Remaining != 1 {
+		t.Fatalf("err = %v, want tasks_pending with 1 remaining", err)
+	}
+}
+
+func TestAppendCorrection_ConflictResolutionTextIsOneTask(t *testing.T) {
+	// Shape of the text prefilled by the guided conflict resolution: a first
+	// line, then a list of files that must not become tasks.
+	feedback := "Intégrer `main` dans la branche du change, résoudre les conflits, puis relancer la validation.\n\nFichiers en conflit :\n- a.go\n- [ ] b.go\n\nConserver les évolutions des deux côtés."
+	got := AppendCorrection("- [x] 1.1 Impl\n", feedback)
+	if total := openspec.ParseTaskStatsContent(got).Total; total != 2 {
+		t.Fatalf("total tasks = %d, want 2:\n%s", total, got)
 	}
 }

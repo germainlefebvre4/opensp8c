@@ -33,7 +33,7 @@ describe('CorrectionDialog', () => {
     fireEvent.change(field(), { target: { value: 'Cancel does not close' } })
     expect(confirmBtn().disabled).toBe(false)
     fireEvent.click(confirmBtn())
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Cancel does not close'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Cancel does not close', false))
   })
 
   it('cancels by button and by Escape without sending anything', () => {
@@ -54,5 +54,45 @@ describe('CorrectionDialog', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(enDialogs.reviewErrors.not_in_review)
     expect(field().value).toBe('keep me')
     expect(confirmBtn().disabled).toBe(false)
+  })
+
+  it('opens prefilled with an editable text and a disabled confirmation while empty', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<CorrectionDialog changeName="add-auth" initialFeedback="Merge main" onSubmit={onSubmit} onCancel={vi.fn()} />)
+    expect(field().value).toBe('Merge main')
+    expect(confirmBtn().disabled).toBe(false)
+    fireEvent.change(field(), { target: { value: '' } })
+    expect(confirmBtn().disabled).toBe(true)
+    fireEvent.change(field(), { target: { value: 'Merge main, keep both' } })
+    fireEvent.click(confirmBtn())
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Merge main, keep both', false))
+  })
+
+  it('hides the reopen box without a checked human task', () => {
+    render(<CorrectionDialog changeName="add-auth" humanTasksChecked={0} reopenDefault onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('shows the reopen box unchecked by default and checked on demand', () => {
+    const { unmount } = render(<CorrectionDialog changeName="add-auth" humanTasksChecked={2} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    expect((screen.getByRole('checkbox', { name: 'Reopen the 2 human validation tasks' }) as HTMLInputElement).checked).toBe(false)
+    unmount()
+    render(<CorrectionDialog changeName="add-auth" humanTasksChecked={1} reopenDefault onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    expect((screen.getByRole('checkbox', { name: 'Reopen the human validation task' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('sends the state of the reopen box', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<CorrectionDialog changeName="add-auth" initialFeedback="x" humanTasksChecked={1} reopenDefault onSubmit={onSubmit} onCancel={vi.fn()} />)
+    fireEvent.click(confirmBtn())
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith('x', true))
+  })
+
+  it('sends false once the user unchecks the box', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<CorrectionDialog changeName="add-auth" initialFeedback="x" humanTasksChecked={1} reopenDefault onSubmit={onSubmit} onCancel={vi.fn()} />)
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(confirmBtn())
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith('x', false))
   })
 })

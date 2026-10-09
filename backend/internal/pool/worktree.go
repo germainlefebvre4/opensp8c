@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,6 +55,10 @@ type WorktreeController struct {
 	repoRoot    string
 	workspaceID string
 	root        string
+
+	// unmergedFiles reads the files in conflict of the worktree at dir; nil
+	// selects the git implementation (a seam for tests).
+	unmergedFiles func(dir string) ([]string, error)
 }
 
 // NewWorktreeController builds a controller for repoRoot whose worktrees live
@@ -576,16 +581,45 @@ func (wc *WorktreeController) IsMerged(changeName string) (bool, error) {
 
 // IntegrateTarget merges the target branch into the change branch, inside the
 // worktree (which must be clean). A failed merge is aborted so the branch and
-// the worktree are left as they were.
-func (wc *WorktreeController) IntegrateTarget(changeName, target string) error {
+// the worktree are left as they were. The files in conflict are read before
+// the abort and returned (sorted, relative to the repository root); the list is
+// empty when git reports none or when reading it failed.
+func (wc *WorktreeController) IntegrateTarget(changeName, target string) ([]string, error) {
 	path := wc.resolvePath(changeName)
 	if _, err := wc.runGitIn(path, "merge", "--no-edit", target); err != nil {
+		var files []string
 		if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+			read := wc.unmergedFiles
+			if read == nil {
+				read = wc.gitUnmergedFiles
+			}
+			if f, ferr := read(path); ferr == nil {
+				files = f
+			}
 			_, _ = wc.runGitIn(path, "merge", "--abort")
 		}
-		return fmt.Errorf("conflit lors de l'intégration de %s : %w", target, err)
+		return files, fmt.Errorf("conflit lors de l'intégration de %s : %w", target, err)
 	}
-	return nil
+	return nil, nil
+}
+
+// gitUnmergedFiles lists the paths with unmerged index entries in dir, sorted.
+// -z keeps special characters unescaped; the output is split on NUL.
+func (wc *WorktreeController) gitUnmergedFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U", "-z")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(string(out), "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // runGitInCode reports whether a git command in dir succeeded.

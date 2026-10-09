@@ -86,7 +86,9 @@
     "placeholder": "What needs to be fixed…",
     "confirm": "Send",
     "sending": "Sending…",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "reopenHumanTasks_one": "Reopen the human validation task",
+    "reopenHumanTasks_other": "Reopen the {{count}} human validation tasks"
   },
   "reviewApprove": {
     "title": "Approve & merge?",
@@ -101,7 +103,10 @@
       "worktree": "the worktree",
       "branch": "the branch",
       "marker": "the review marker"
-    }
+    },
+    "conflictFiles": "Files in conflict with \"{{target}}\":",
+    "conflictFilesNoTarget": "Files in conflict:",
+    "resolveConflict": "Ask the worker to resolve it"
   },
   "reviewErrors": {
     "not_in_review": "This change is no longer in review.",
@@ -114,5 +119,13 @@
     "tasks_pending": "Some tasks are still to be validated: check them all before approving. Nothing was merged.",
     "empty_feedback": "The correction feedback is empty.",
     "generic": "The action failed."
+  },
+  "reviewConflict": {
+    "intro": "Integrate `{{target}}` into the change branch, resolve the conflicts, then rerun the validation.",
+    "introNoTarget": "Integrate the target branch into the change branch, resolve the conflicts, then rerun the validation.",
+    "files": "Files in conflict:",
+    "more_one": "… and {{count}} more file",
+    "more_other": "… and {{count}} more files",
+    "keepBoth": "Keep the changes from both sides."
   }
 }

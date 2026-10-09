@@ -17,6 +17,8 @@ import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
 import { ApproveDialog } from '../components/ApproveDialog'
 import { CorrectionDialog } from '../components/CorrectionDialog'
+import { useChangeDetail } from '../hooks/useChangeDetail'
+import { buildConflictFeedback } from '../lib/conflictFeedback'
 import { AgentPoolModal } from '../components/AgentPoolModal'
 import { PoolCapacity } from '../components/PoolCapacity'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
@@ -46,6 +48,7 @@ interface Props {
 export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHandled }: Props) {
   const { t } = useTranslation('kanban')
   const { t: tCommon } = useTranslation('common')
+  const { t: tDialogs } = useTranslation('dialogs')
   const { toast } = useToast()
 
   const { data: changes = [], isLoading } = useChanges(workspaceId)
@@ -75,6 +78,9 @@ export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHand
   // until the action is confirmed and succeeds.
   const [approveDialog, setApproveDialog] = useState<Change | null>(null)
   const [correctionDialog, setCorrectionDialog] = useState<Change | null>(null)
+  // Text the correction dialog opens with when it comes from an integration conflict.
+  const [correctionPrefill, setCorrectionPrefill] = useState<string | null>(null)
+  const { data: correctionDetail } = useChangeDetail(workspaceId, correctionDialog?.name ?? null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
 
@@ -387,11 +393,26 @@ export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHand
     setApproveDialog(null)
   }
 
-  const handleCorrectionSubmit = async (feedback: string) => {
+  // Hands an integration conflict to the worker: nothing is sent until the user
+  // confirms the prefilled correction.
+  const handleResolveConflict = (target: string | undefined, files: string[]) => {
+    if (!approveDialog) return
+    setCorrectionPrefill(buildConflictFeedback(tDialogs, target, files))
+    setCorrectionDialog(approveDialog)
+    setApproveDialog(null)
+  }
+
+  const cancelCorrection = () => {
+    setCorrectionDialog(null)
+    setCorrectionPrefill(null)
+  }
+
+  const handleCorrectionSubmit = async (feedback: string, reopenHumanTasks: boolean) => {
     if (!correctionDialog) return
     const name = correctionDialog.name
-    await requestCorrection.mutateAsync({ changeName: name, feedback })
+    await requestCorrection.mutateAsync({ changeName: name, feedback, reopenHumanTasks })
     setCorrectionDialog(null)
+    setCorrectionPrefill(null)
     if (detailOpen?.name === name) closeDetail()
   }
 
@@ -741,6 +762,7 @@ export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHand
             changeName={approveDialog.name}
             onConfirm={handleApproveConfirm}
             onCancel={() => setApproveDialog(null)}
+            onResolveConflict={handleResolveConflict}
           />
         )}
 
@@ -748,7 +770,10 @@ export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHand
           <CorrectionDialog
             changeName={correctionDialog.name}
             onSubmit={handleCorrectionSubmit}
-            onCancel={() => setCorrectionDialog(null)}
+            onCancel={cancelCorrection}
+            initialFeedback={correctionPrefill ?? undefined}
+            reopenDefault={correctionPrefill !== null}
+            humanTasksChecked={correctionDetail?.tasks.filter(task => task.human_review && task.done).length ?? 0}
           />
         )}
 

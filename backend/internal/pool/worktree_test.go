@@ -501,7 +501,7 @@ func TestTargetAheadAndIntegrate(t *testing.T) {
 	if ahead, err := wc.TargetAhead("integ"); err != nil || !ahead {
 		t.Fatalf("advanced target: ahead=%v err=%v", ahead, err)
 	}
-	if err := wc.IntegrateTarget("integ", "main"); err != nil {
+	if _, err := wc.IntegrateTarget("integ", "main"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(path, "user.txt")); err != nil {
@@ -568,7 +568,7 @@ func TestIntegrateTargetConflictIsAborted(t *testing.T) {
 	commitFile(t, repo, "README.md", "from main")
 	head := gitIn(t, path, "rev-parse", "HEAD")
 
-	if err := wc.IntegrateTarget("clash", "main"); err == nil {
+	if _, err := wc.IntegrateTarget("clash", "main"); err == nil {
 		t.Fatal("expected a conflict")
 	}
 	if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {

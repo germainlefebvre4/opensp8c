@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -360,5 +361,49 @@ func TestIntegrate_SecondWorkerIntegratesFirstResult(t *testing.T) {
 	}
 	if n := countRuns(t, counter); n != 3 {
 		t.Fatalf("validation runs = %d, want 3 (first worker once, second worker twice)", n)
+	}
+}
+
+func TestIntegrateTargetReportsConflictFiles(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("two")
+	commitFile(t, path, "b.txt", "branch b")
+	commitFile(t, path, "a.txt", "branch a")
+	commitFile(t, repo, "b.txt", "main b")
+	commitFile(t, repo, "a.txt", "main a")
+
+	files, err := wc.IntegrateTarget("two", "main")
+	if err == nil {
+		t.Fatal("expected a conflict")
+	}
+	if len(files) != 2 || files[0] != "a.txt" || files[1] != "b.txt" {
+		t.Fatalf("files = %v, want [a.txt b.txt]", files)
+	}
+	if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+		t.Fatal("MERGE_HEAD left behind")
+	}
+	if st := gitIn(t, path, "status", "--porcelain"); st != "" {
+		t.Fatalf("worktree not clean: %q", st)
+	}
+}
+
+func TestIntegrateTargetConflictWithFailingFileRead(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	wc.unmergedFiles = func(string) ([]string, error) { return nil, errors.New("boom") }
+	path, _ := wc.Provision("blind")
+	commitFile(t, path, "a.txt", "branch a")
+	commitFile(t, repo, "a.txt", "main a")
+
+	files, err := wc.IntegrateTarget("blind", "main")
+	if err == nil {
+		t.Fatal("expected a conflict")
+	}
+	if len(files) != 0 {
+		t.Fatalf("files = %v, want none", files)
+	}
+	if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+		t.Fatal("the merge must still be aborted")
 	}
 }

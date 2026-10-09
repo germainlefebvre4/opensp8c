@@ -4,16 +4,23 @@ import { reviewErrorKey } from '../lib/api'
 
 interface Props {
   changeName: string
-  /** Sends the feedback; a rejection is shown in the dialog and the text kept. */
-  onSubmit: (feedback: string) => Promise<unknown>
+  /** Sends the feedback (and the state of the reopen box); a rejection is shown in the dialog and the text kept. */
+  onSubmit: (feedback: string, reopenHumanTasks: boolean) => Promise<unknown>
   onCancel: () => void
   /** Text shown for a rejected submit; defaults to the review error of its code. */
   errorMessage?: (err: unknown) => string
+  /** Text the field opens with; the user can edit it before confirming. */
+  initialFeedback?: string
+  /** Number of checked human-validation tasks; the reopen box is shown when it is at least 1. */
+  humanTasksChecked?: number
+  /** Initial state of the reopen box. */
+  reopenDefault?: boolean
 }
 
-export function CorrectionDialog({ changeName, onSubmit, onCancel, errorMessage }: Props) {
+export function CorrectionDialog({ changeName, onSubmit, onCancel, errorMessage, initialFeedback = '', humanTasksChecked = 0, reopenDefault = false }: Props) {
   const { t } = useTranslation('dialogs')
-  const [feedback, setFeedback] = useState('')
+  const [feedback, setFeedback] = useState(initialFeedback)
+  const [reopen, setReopen] = useState(reopenDefault)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,7 +39,7 @@ export function CorrectionDialog({ changeName, onSubmit, onCancel, errorMessage 
     setPending(true)
     setError(null)
     try {
-      await onSubmit(feedback)
+      await onSubmit(feedback, humanTasksChecked > 0 && reopen)
     } catch (err) {
       setError(errorMessage ? errorMessage(err) : t(reviewErrorKey(err)))
       setPending(false)
@@ -57,6 +64,12 @@ export function CorrectionDialog({ changeName, onSubmit, onCancel, errorMessage 
           rows={5}
           className="w-full text-xs rounded-lg border border-slate-200 p-2 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200 resize-y"
         />
+        {humanTasksChecked > 0 && (
+          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+            <input type="checkbox" checked={reopen} disabled={pending} onChange={e => setReopen(e.target.checked)} />
+            {t('reviewCorrection.reopenHumanTasks', { count: humanTasksChecked })}
+          </label>
+        )}
         {error && <p role="alert" className="text-[11px] text-red-600 whitespace-pre-wrap">{error}</p>}
         <div className="flex gap-2 justify-end">
           <button

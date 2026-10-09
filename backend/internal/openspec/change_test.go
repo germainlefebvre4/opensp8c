@@ -1,6 +1,7 @@
 package openspec
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -567,5 +568,45 @@ func TestChangeScenarios(t *testing.T) {
 	}
 	if got := ChangeScenarios(root, "absent"); len(got) != 0 {
 		t.Fatalf("change without delta spec: %+v", got)
+	}
+}
+
+func TestReopenHumanTasks(t *testing.T) {
+	content := "# T\n\n- [x] 1.1 Implémentation\n- [ ] 2.1 Pending <!-- human review required -->\n- [X] 4.2 Parcours <!--Human Review Required-->  \n  - [x] 4.3 Nested <!-- human review required -->\nNote <!-- human review required --> - [x] hors tâche\n"
+	got, n := ReopenHumanTasks(content)
+	want := "# T\n\n- [x] 1.1 Implémentation\n- [ ] 2.1 Pending <!-- human review required -->\n- [ ] 4.2 Parcours <!--Human Review Required-->  \n  - [ ] 4.3 Nested <!-- human review required -->\nNote <!-- human review required --> - [x] hors tâche\n"
+	if n != 2 || got != want {
+		t.Fatalf("n=%d got:\n%q\nwant:\n%q", n, got, want)
+	}
+	if again, n := ReopenHumanTasks(got); n != 0 || again != got {
+		t.Fatalf("second pass must be a no-op: n=%d", n)
+	}
+}
+
+func TestReopenHumanTasksCounters(t *testing.T) {
+	var b strings.Builder
+	for i := 1; i <= 10; i++ {
+		if i == 7 {
+			b.WriteString("- [x] 7 manuel <!-- human review required -->\n")
+		} else {
+			fmt.Fprintf(&b, "- [x] %d tâche\n", i)
+		}
+	}
+	got, n := ReopenHumanTasks(b.String())
+	if n != 1 {
+		t.Fatalf("reopened = %d", n)
+	}
+	done, total := parseTaskProgressContent(got)
+	if done != 9 || total != 10 {
+		t.Fatalf("done/total = %d/%d, want 9/10", done, total)
+	}
+	var marked Task
+	for _, tk := range ParseTaskListContent(got) {
+		if tk.HumanReview {
+			marked = tk
+		}
+	}
+	if marked.Done || !marked.HumanReview {
+		t.Fatalf("marked task = %+v", marked)
 	}
 }
