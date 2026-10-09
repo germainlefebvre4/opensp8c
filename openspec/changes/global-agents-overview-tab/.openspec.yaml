@@ -1,4 +1,20 @@
 schema: spec-driven
 created: "2026-10-09"
-tags: null
+tags:
+    type:
+        - frontend
+    complexity: 3
+    components:
+        - agents-overview-page
+        - app-navigation-layout
+        - agent-pool-visibility
+        - platform-configuration-menu
+        - agent-run-detail
+        - workspace-agent-pool-tab
+    agent_specialization:
+        - frontend
+        - ux-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-09"
 launched: false

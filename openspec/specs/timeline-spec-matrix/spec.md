@@ -3,7 +3,9 @@
 ## Purpose
 
 Mode Matrice de la TimelinePage : grille spec × bucket temporel représentant l'intensité d'activité de chaque spec dans le temps, avec panel droit de détail spec, drill-down vers le DetailPanel et navigation vers la SpecsPage.
+
 ## Requirements
+
 ### Requirement: Mode Matrice dans la Timeline
 La TimelinePage SHALL proposer deux sous-onglets « Changes » et « Matrice » en haut de page, à la place d'un en-tête de page avec titre. Le sous-onglet « Matrice » affiche une grille spec × bucket temporel représentant l'intensité d'activité de chaque spec dans le temps, ainsi qu'un panel droit de détail spec ouvert au clic. Le sous-onglet actif SHALL être conservé uniquement dans l'état local de la page (non reflété dans l'URL).
 
@@ -62,15 +64,43 @@ L'utilisateur SHALL pouvoir cliquer sur le nom d'une spec dans la grille (colonn
 - **THEN** la grille reprend toute la largeur disponible et aucune spec n'est sélectionnée
 
 ### Requirement: Drill-down vers le DetailPanel depuis le panel de spec
-L'utilisateur SHALL pouvoir cliquer sur un change dans le panel de spec pour ouvrir le DetailPanel de ce change, remplaçant le panel de spec dans le slot droit.
+L'utilisateur SHALL pouvoir cliquer sur un change dans le panel de spec pour ouvrir le DetailPanel de ce change, remplaçant le panel de spec dans le slot droit. Le DetailPanel ouvert de cette manière SHALL afficher, au-dessus du titre du change, un bouton de retour libellé avec le nom de la spec d'origine (« ← nom-de-la-spec ») ramenant à la liste des changes de cette spec. Dans ce contexte, le bouton de fermeture (X) SHALL fermer le panel droit entier. Le DetailPanel affiché depuis le Kanban SHALL rester inchangé et ne pas afficher de bouton de retour.
 
 #### Scenario: Clic sur un change dans le panel de spec
 - **WHEN** l'utilisateur clique sur un change dans la liste du panel de spec
-- **THEN** le panel droit bascule vers le DetailPanel de ce change (proposal, design, tasks)
+- **THEN** le panel droit bascule vers le DetailPanel de ce change (proposal, design, tasks) et son header affiche le bouton de retour « ← nom-de-la-spec »
 
 #### Scenario: Retour au panel de spec
-- **WHEN** l'utilisateur ferme le DetailPanel depuis le mode Matrice
-- **THEN** le panel droit revient à la liste des changes de la spec précédemment sélectionnée
+- **WHEN** l'utilisateur clique sur le bouton « ← nom-de-la-spec » du DetailPanel ouvert depuis le mode Matrice
+- **THEN** le panel droit revient à la liste des changes de la spec précédemment sélectionnée, la spec reste sélectionnée dans la grille, et le DetailPanel n'est plus affiché
+
+#### Scenario: Fermeture complète depuis le DetailPanel
+- **WHEN** l'utilisateur clique sur le bouton de fermeture (X) du DetailPanel ouvert depuis le mode Matrice
+- **THEN** le panel droit se ferme entièrement, aucune spec n'est sélectionnée et la grille reprend toute la largeur disponible
+
+#### Scenario: Retour à la liste après une action sur le change
+- **WHEN** l'utilisateur archive, supprime ou demande une correction pour le change affiché dans le DetailPanel ouvert depuis le mode Matrice, et que l'action aboutit
+- **THEN** le panel droit revient à la liste des changes de la spec sélectionnée (et non à la fermeture complète du panel)
+
+#### Scenario: Échap dans le DetailPanel
+- **WHEN** le DetailPanel est ouvert depuis le mode Matrice, qu'aucune boîte de dialogue n'est ouverte et qu'aucun champ de saisie n'a le focus, et que l'utilisateur appuie sur Échap
+- **THEN** le panel droit revient à la liste des changes de la spec sélectionnée
+
+#### Scenario: Échap dans la liste des changes de la spec
+- **WHEN** la liste des changes d'une spec est affichée dans le panel droit, qu'aucune boîte de dialogue n'est ouverte et qu'aucun champ de saisie n'a le focus, et que l'utilisateur appuie sur Échap
+- **THEN** le panel droit se ferme et aucune spec n'est sélectionnée
+
+#### Scenario: Échap ignoré pendant une saisie ou un dialogue
+- **WHEN** une boîte de dialogue est ouverte ou un champ de saisie a le focus et que l'utilisateur appuie sur Échap
+- **THEN** seul l'élément ayant le focus (dialogue ou champ) réagit ; la navigation du panel droit ne change pas
+
+#### Scenario: Position de défilement conservée au retour
+- **WHEN** l'utilisateur fait défiler la liste des changes d'une spec, ouvre le DetailPanel d'un change, puis revient à la liste
+- **THEN** la liste est affichée à la même position de défilement qu'avant l'ouverture du DetailPanel
+
+#### Scenario: Dernier change consulté mis en évidence
+- **WHEN** l'utilisateur revient à la liste des changes d'une spec après avoir consulté un change
+- **THEN** ce change est visuellement mis en évidence dans la liste, jusqu'à la sélection d'un autre change ou d'une autre spec, ou la fermeture du panel
 
 ### Requirement: Navigation depuis le panel de spec vers la SpecsPage
 Le panel de spec du mode Matrice SHALL proposer un lien "Voir la spec →" permettant de naviguer vers le contenu de la spec dans la SpecsPage.
@@ -126,4 +156,3 @@ Au premier affichage du mode Matrice, la grille SHALL sélectionner automatiquem
 #### Scenario: Redimensionnement sans changement de granularité
 - **WHEN** la largeur disponible du conteneur change après l'affichage initial (redimensionnement de la fenêtre, ouverture ou fermeture du panel droit de détail)
 - **THEN** la granularité sélectionnée ne change pas ; seule la largeur des colonnes se réajuste dans les bornes lisibles, avec défilement horizontal si nécessaire
-
