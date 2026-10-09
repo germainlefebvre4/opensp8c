@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Markdown } from './Markdown'
-import { X, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
+import { X, ArrowLeft, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
@@ -24,6 +24,9 @@ interface Props {
   workspaceId: string
   changeName: string
   onClose: () => void
+  onBack?: () => void
+  backLabel?: string
+  onActionDone?: () => void
   associatedGhostId?: string
 }
 
@@ -39,7 +42,8 @@ const STATUS_KEY_MAP: Record<string, string> = {
   'archived': 'archived',
 }
 
-export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostId }: Props) {
+export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabel, onActionDone, associatedGhostId }: Props) {
+  const actionDone = onActionDone ?? onClose
   const { t } = useTranslation('detailPanel')
   const { t: tCommon } = useTranslation('common')
   const { t: tKanban } = useTranslation('kanban')
@@ -101,7 +105,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
       await archive.mutateAsync(changeName)
       setArchiveConfirmOpen(false)
       toast({ title: tDialogs('archiveChange.successToast', { name: changeName }), variant: 'success' })
-      onClose()
+      actionDone()
     } catch (err: unknown) {
       const axiosData = (err as { response?: { data?: string } })?.response?.data
       setArchiveError(axiosData || (err instanceof Error ? err.message : String(err)))
@@ -119,7 +123,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
     try {
       await deleteChange.mutateAsync(changeName)
       setShowDeleteDialog(false)
-      onClose()
+      actionDone()
     } catch (err: unknown) {
       const axiosData = (err as { response?: { data?: string } })?.response?.data
       setDeleteError(axiosData || (err instanceof Error ? err.message : String(err)))
@@ -143,7 +147,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
   const handleCorrection = async (feedback: string) => {
     await requestCorrection.mutateAsync({ changeName, feedback })
     setCorrectionOpen(false)
-    onClose()
+    actionDone()
   }
 
   const inReview = data?.kanban_status === 'to-review'
@@ -175,6 +179,16 @@ export function DetailPanel({ workspaceId, changeName, onClose, associatedGhostI
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-200 flex items-start justify-between shrink-0">
         <div className="min-w-0 pr-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label={t('backTo', { label: backLabel })}
+              className="flex items-center gap-1 mb-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <ArrowLeft size={12} />
+              <span>{backLabel}</span>
+            </button>
+          )}
           <p className="text-sm font-semibold text-slate-800 break-words leading-snug">{changeName}</p>
           {data && (
             <p className="text-[11px] text-slate-400 mt-0.5">
