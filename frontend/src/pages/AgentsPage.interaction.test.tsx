@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { AgentsPage } from './AgentsPage'
@@ -64,12 +64,20 @@ function mockApi() {
   })
 }
 
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="loc">{loc.search}</div>
+}
+
+const search = () => new URLSearchParams(screen.getByTestId('loc').textContent ?? '')
+
 function renderPage(initial = '/agents?workspace=ws1') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[initial]}>
         <AgentsPage workspaceId="ws1" />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -139,6 +147,7 @@ describe('AgentsPage interactions', () => {
     renderPage()
 
     await screen.findByText("Aucun agent n'est actuellement actif.")
+    fireEvent.click(screen.getByTestId('tab-runs'))
     const rows = await screen.findAllByTestId('run-row')
     expect(rows).toHaveLength(2)
     expect(rows[0].textContent).toContain('tests rouges')
@@ -153,7 +162,7 @@ describe('AgentsPage interactions', () => {
   })
 
   it('shows an empty state for recent runs', async () => {
-    renderPage()
+    renderPage('/agents?workspace=ws1&tab=runs')
     await screen.findByText('Aucun run sur ce workspace pour le moment.')
   })
 
@@ -196,5 +205,85 @@ describe('AgentsPage interactions', () => {
     fireEvent.click((await screen.findByText('go test')).closest('button')!)
     expect(screen.getByTestId('tool-input').textContent).toContain('go test')
     expect(screen.getByTestId('tool-result').textContent).toContain('ok  fixture')
+  })
+
+  it('has no page title, shows Workers by default and hides recent runs', async () => {
+    backend.runs = [run({})]
+    renderPage()
+    await screen.findByTestId('worker-row')
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    expect(screen.getByTestId('tab-workers').getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByTestId('recent-runs')).toBeNull()
+  })
+
+  it('switches to Runs and back, writing tab in the URL', async () => {
+    renderPage()
+    await screen.findByTestId('worker-row')
+    fireEvent.click(screen.getByTestId('tab-runs'))
+    await screen.findByTestId('recent-runs')
+    expect(search().get('tab')).toBe('runs')
+    expect(screen.queryByTestId('worker-row')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('tab-workers'))
+    await screen.findByTestId('worker-row')
+    expect(search().has('tab')).toBe(false)
+  })
+
+  it('opens Runs for a run= link without tab', async () => {
+    const a = run({ ts: 'ts-a' })
+    backend.runs = [a]
+    backend.details['add-auth/ts-a'] = detail(a)
+    renderPage('/agents?workspace=ws1&run=add-auth%2Fts-a')
+    await screen.findByTestId('recent-runs')
+    expect(screen.getByTestId('tab-runs').getAttribute('aria-selected')).toBe('true')
+    await screen.findByTestId('agent-run-panel')
+  })
+
+  it('stays on Workers when clicking a worker, and on Runs when clicking a run', async () => {
+    const live = run({ ts: 'live-ts', outcome: 'running', ended_at: undefined })
+    backend.runs = [live]
+    backend.details['add-auth/live-ts'] = detail(live)
+    renderPage()
+    fireEvent.click(await screen.findByTestId('worker-row'))
+    await screen.findByTestId('agent-run-panel')
+    expect(search().get('tab')).toBe('workers')
+    expect(screen.getByTestId('tab-workers').getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('worker-row')).toBeTruthy()
+
+    // the panel survives a sub-tab change
+    fireEvent.click(screen.getByTestId('tab-runs'))
+    await screen.findByTestId('recent-runs')
+    expect(screen.getByTestId('agent-run-panel')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('run-row'))
+    expect(search().get('tab')).toBe('runs')
+
+    // going back to Workers with a run open keeps tab explicit
+    fireEvent.click(screen.getByTestId('tab-workers'))
+    await screen.findByTestId('worker-row')
+    expect(search().get('tab')).toBe('workers')
+
+    // closing the panel keeps the tab
+    fireEvent.click(screen.getByLabelText('Fermer'))
+    await waitFor(() => expect(screen.queryByTestId('agent-run-panel')).toBeNull())
+    expect(search().has('run')).toBe(false)
+    expect(search().get('tab')).toBe('workers')
+  })
+
+  it('leaves tab unchanged when the panel selector switches runs', async () => {
+    const newest = run({ ts: 'ts-2', started_at: '2026-09-24T12:00:00Z' })
+    const oldest = run({ ts: 'ts-1', started_at: '2026-09-24T10:00:00Z' })
+    backend.runs = [newest, oldest]
+    for (const r of backend.runs) backend.details[`add-auth/${r.ts}`] = detail(r)
+    renderPage('/agents?workspace=ws1&tab=runs&run=add-auth%2Fts-2')
+    const selector = (await screen.findByTestId('run-selector')) as HTMLSelectElement
+    fireEvent.change(selector, { target: { value: 'ts-1' } })
+    await waitFor(() => expect(search().get('run')).toBe('add-auth/ts-1'))
+    expect(search().get('tab')).toBe('runs')
+  })
+
+  it('ignores an unknown tab value', async () => {
+    renderPage('/agents?workspace=ws1&tab=columns')
+    await screen.findByTestId('worker-row')
+    expect(screen.getByTestId('tab-workers').getAttribute('aria-selected')).toBe('true')
   })
 })

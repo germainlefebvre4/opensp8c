@@ -31,7 +31,7 @@ export function Layout({ children }: Props) {
   }, [effectiveId, isConfigurationRoute, searchParams, setSearchParams])
 
   const handleSelect = (id: string) => {
-    setSearchParams(prev => { prev.set('workspace', id); return prev })
+    setSearchParams(prev => { prev.set('workspace', id); prev.delete('change'); return prev })
   }
 
   const currentRoute = location.pathname + location.search

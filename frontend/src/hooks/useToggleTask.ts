@@ -7,6 +7,8 @@ export function useToggleTask(workspaceId: string, changeName: string) {
     mutationFn: (taskIndex: number) => patchTask(workspaceId, changeName, taskIndex),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['change-detail', workspaceId, changeName] })
+      // The card's counters (and the resume actions they gate) follow the toggle.
+      queryClient.invalidateQueries({ queryKey: ['changes', workspaceId] })
     },
   })
 }

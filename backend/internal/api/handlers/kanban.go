@@ -32,8 +32,10 @@ type KanbanHandler struct {
 
 // heldWorker describes the pool worker holding a change.
 type heldWorker struct {
-	WorktreePath string // empty until the worktree is provisioned
-	Paused       bool
+	ID            int
+	WorktreePath  string // empty until the worktree is provisioned
+	Paused        bool
+	BlockedReason string
 }
 
 func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg *pool.Registry, sessions *session.Manager, convStore *conversation.Store, watcherSvc *watcher.WatcherService, draftsDir string) *KanbanHandler {
@@ -55,21 +57,86 @@ func NewKanbanHandler(ws *WorkspaceHandler, prefs *preferences.Service, poolReg 
 	return h
 }
 
+// activeWorkerChanges returns the changes held by a pool worker for workspaceID.
+func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]heldWorker {
+	return activeWorkerChanges(h.poolReg, workspaceID)
+}
+
 // activeWorkerChanges returns the changes currently claimed by an Agent Pool
 // worker (active or paused) for workspaceID, per that workspace's own pool
 // manager in-memory state, mapped to the holding worker's state. Presence in
 // the map means a worker holds it; Paused tells a blocked worker from one that
 // is executing.
-func (h *KanbanHandler) activeWorkerChanges(workspaceID string) map[string]heldWorker {
+func activeWorkerChanges(reg *pool.Registry, workspaceID string) map[string]heldWorker {
 	active := make(map[string]heldWorker)
-	if h.poolReg == nil {
+	if reg == nil {
 		return active
 	}
-	_, _, workers := h.poolReg.For(workspaceID).Status(workspaceID)
+	_, _, workers := reg.For(workspaceID).Status(workspaceID)
 	for _, w := range workers {
-		active[w.ActiveChange] = heldWorker{WorktreePath: w.WorktreePath, Paused: w.Status == pool.StatusPaused}
+		active[w.ActiveChange] = heldWorker{
+			ID:            w.ID,
+			WorktreePath:  w.WorktreePath,
+			Paused:        w.Status == pool.StatusPaused,
+			BlockedReason: w.BlockedReason,
+		}
 	}
 	return active
+}
+
+// applyVerificationState turns the queued state of a verifying change into
+// running (with its step) when the pool executes its verification.
+func (h *KanbanHandler) applyVerificationState(workspaceID string, ch *openspec.Change) {
+	applyVerificationState(h.poolReg, workspaceID, ch)
+}
+
+func applyVerificationState(reg *pool.Registry, workspaceID string, ch *openspec.Change) {
+	if ch.KanbanStatus != "verifying" || ch.VerificationState != "queued" || reg == nil {
+		return
+	}
+	mgr := reg.For(workspaceID)
+	if mgr.VerificationRunning(ch.Name) {
+		ch.VerificationState = "running"
+		ch.VerificationStep = mgr.VerificationStep(ch.Name)
+		if mgr.VerificationWaiting(ch.Name) {
+			ch.VerificationState = "waiting"
+		}
+	}
+}
+
+// branchTasks returns the tasks.md carried by feature/<change>, without
+// provisioning a worktree.
+func (h *KanbanHandler) branchTasks(workspaceID, workspacePath, change string) (string, bool) {
+	return branchTasks(workspaceID, workspacePath, change)
+}
+
+func branchTasks(workspaceID, workspacePath, change string) (string, bool) {
+	return pool.NewWorktreeController(workspacePath, workspaceID, "").BranchTasks(change)
+}
+
+// applyLiveState overlays on the repository's changes the live state shared by
+// the Kanban and the workspace list: pool workers, worktree or branch task
+// progress and verification state. It returns the workers holding changes.
+func applyLiveState(reg *pool.Registry, workspaceID, path string, changes []openspec.Change) map[string]heldWorker {
+	activeWorkers := activeWorkerChanges(reg, workspaceID)
+	for i := range changes {
+		applyVerificationState(reg, workspaceID, &changes[i])
+		if hw, held := activeWorkers[changes[i].Name]; held {
+			changes[i].WorkerActive = !hw.Paused
+			changes[i].WorkerPaused = hw.Paused
+			workerID := hw.ID
+			changes[i].WorkerID = &workerID
+			if openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath) {
+				continue
+			}
+		}
+		if changes[i].HasBranch {
+			if content, ok := branchTasks(workspaceID, path, changes[i].Name); ok {
+				openspec.ApplyBranchProgress(&changes[i], content)
+			}
+		}
+	}
+	return activeWorkers
 }
 
 func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
@@ -89,14 +156,7 @@ func (h *KanbanHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		changes = []openspec.Change{}
 	}
 
-	activeWorkers := h.activeWorkerChanges(id)
-	for i := range changes {
-		if hw, held := activeWorkers[changes[i].Name]; held {
-			changes[i].WorkerActive = !hw.Paused
-			changes[i].WorkerPaused = hw.Paused
-			openspec.ApplyWorktreeProgress(&changes[i], path, hw.WorktreePath)
-		}
-	}
+	applyLiveState(h.poolReg, id, path, changes)
 
 	// Merge ghost records (app-level explorations) into the changes list.
 	if h.prefs != nil {
@@ -176,8 +236,29 @@ func (h *KanbanHandler) GetChange(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if detail.HasBranch && !detail.IsGhost && detail.KanbanStatus != "archived" {
+		workerOwnsTasks := held && openspec.WorktreeHasTasks(hw.WorktreePath, name)
+		if !workerOwnsTasks {
+			if content, ok := h.branchTasks(id, path, name); ok && openspec.ApplyBranchProgress(&detail.Change, content) {
+				detail.Tasks = openspec.ParseTaskListContent(content)
+			}
+		}
+	}
+	h.applyVerificationState(id, &detail.Change)
 	detail.WorkerActive = held && !hw.Paused
 	detail.WorkerPaused = held && hw.Paused
+	if held {
+		workerID := hw.ID
+		detail.WorkerID = &workerID
+		if hw.Paused {
+			detail.WorkerBlockedReason = hw.BlockedReason
+		}
+	}
+	if detail.KanbanStatus != "archived" {
+		if v, err := h.changeVerification(id, path, name); err == nil {
+			detail.Verification = v
+		}
+	}
 	json.NewEncoder(w).Encode(detail)
 }
 
@@ -212,7 +293,11 @@ func (h *KanbanHandler) DeleteChange(w http.ResponseWriter, r *http.Request) {
 	// A change in review owns a branch, a worktree and a marker that the folder
 	// removal would leave orphaned: clean them first, and keep the change when
 	// that fails.
-	if openspec.InReview(path, name) {
+	if openspec.InReview(path, name) || openspec.InVerification(path, name) {
+		if h.poolReg != nil && h.poolReg.For(id).VerificationRunning(name) {
+			http.Error(w, "a verification is running on this change", http.StatusConflict)
+			return
+		}
 		if err := pool.NewWorktreeController(path, id, "").Cleanup(name); err != nil {
 			http.Error(w, "cleanup of the change's branch and worktree failed: "+err.Error(), http.StatusInternalServerError)
 			return

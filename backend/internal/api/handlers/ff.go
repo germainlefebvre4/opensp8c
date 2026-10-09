@@ -16,6 +16,7 @@ import (
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/language"
 	"github.com/glefebvre/opensp8c/internal/openspec"
+	"github.com/glefebvre/opensp8c/internal/pool"
 	"github.com/glefebvre/opensp8c/internal/preferences"
 	"github.com/glefebvre/opensp8c/internal/session"
 	"github.com/glefebvre/opensp8c/internal/watcher"
@@ -28,18 +29,20 @@ type FFHandler struct {
 	convStore *conversation.Store
 	actStore  *activity.Store
 	watcher   *watcher.WatcherService
+	poolReg   *pool.Registry
 
 	mu      sync.Mutex
 	running map[string]struct{} // key: wsID+"/"+changeName
 }
 
-func NewFFHandler(ws *WorkspaceHandler, mgr *session.Manager, convStore *conversation.Store, actStore *activity.Store, watcherSvc *watcher.WatcherService) *FFHandler {
+func NewFFHandler(ws *WorkspaceHandler, mgr *session.Manager, convStore *conversation.Store, actStore *activity.Store, watcherSvc *watcher.WatcherService, poolReg *pool.Registry) *FFHandler {
 	return &FFHandler{
 		ws:        ws,
 		mgr:       mgr,
 		convStore: convStore,
 		actStore:  actStore,
 		watcher:   watcherSvc,
+		poolReg:   poolReg,
 		running:   make(map[string]struct{}),
 	}
 }
@@ -191,6 +194,17 @@ func (h *FFHandler) ResetTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A branch holds committed work no reset may leave orphaned: release the
+	// change from the pool, then remove worktree, branch and review marker
+	// before touching any file, so that a failure leaves the change intact.
+	if openspec.FeatureBranches(workspacePath)[changeName] {
+		release, ok := h.releaseForReset(w, wsID, workspacePath, changeName)
+		if !ok {
+			return
+		}
+		defer release()
+	}
+
 	changeDir := filepath.Join(workspacePath, "openspec", "changes", changeName)
 	tasksPath := filepath.Join(changeDir, "tasks.md")
 	if err := os.WriteFile(tasksPath, []byte{}, 0644); err != nil && !os.IsNotExist(err) {
@@ -203,6 +217,10 @@ func (h *FFHandler) ResetTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.watcher != nil {
+		h.watcher.Broadcast(wsID, watcher.Event{Type: "change_updated", Name: changeName})
+	}
+
 	if h.actStore != nil {
 		_ = h.actStore.Append(wsID, changeName, activity.Entry{
 			Type:     "kanban.tasks_reset",
@@ -212,6 +230,42 @@ func (h *FFHandler) ResetTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// releaseForReset takes the review lock of the change, refuses while a worker
+// is active on it, releases a paused worker and removes the worktree, the
+// branch and the review marker. It writes the refusal itself and returns the
+// lock release function on success.
+func (h *FFHandler) releaseForReset(w http.ResponseWriter, wsID, workspacePath, changeName string) (func(), bool) {
+	release := func() {}
+	if h.poolReg != nil {
+		mgr := h.poolReg.For(wsID)
+		unlock, err := mgr.TryLockReview(changeName)
+		if err != nil {
+			writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "review_busy", Message: err.Error()})
+			return nil, false
+		}
+		release = unlock
+		if mgr.VerificationRunning(changeName) {
+			release()
+			writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "verification_busy", Message: "une vérification est en cours sur ce changement"})
+			return nil, false
+		}
+		if hw, held := activeWorkerChanges(h.poolReg, wsID)[changeName]; held {
+			if !hw.Paused {
+				release()
+				writeReviewAction(w, http.StatusConflict, reviewActionError{Code: "worker_active", Message: pool.ErrWorkerActive.Error()})
+				return nil, false
+			}
+			mgr.ReleasePausedForChange(changeName)
+		}
+	}
+	if err := pool.NewWorktreeController(workspacePath, wsID, "").Cleanup(changeName); err != nil {
+		release()
+		http.Error(w, "cleanup of the change's branch and worktree failed: "+err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	return release, true
 }
 
 func (h *FFHandler) ListConversationRuns(w http.ResponseWriter, r *http.Request) {

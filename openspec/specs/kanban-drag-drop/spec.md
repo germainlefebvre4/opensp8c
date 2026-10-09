@@ -112,7 +112,7 @@ Si un subprocess ff est actif pour un changement (spinner visible sur la carte),
 - **THEN** le drag est désactivé sur cette carte et aucune action n'est déclenchée
 
 ### Requirement: Confirmation avant reset de tasks
-Un dialog de confirmation SHALL être affiché avant tout drop sur **To Explore**. Le message SHALL être adapté à l'état des tâches du changement.
+Un dialog de confirmation SHALL être affiché avant tout drop sur **To Explore**. Le message SHALL être adapté à l'état des tâches du changement et à la présence d'une branche : lorsque le changement porte une branche `feature/<change>` (`has_branch`), quelle que soit sa colonne d'origine et même si aucune tâche n'est cochée, le dialog SHALL avertir que le travail réalisé dans la branche, son worktree et son état de revue seront supprimés et ne pourront pas être récupérés.
 
 #### Scenario: Reset depuis ready (aucune tâche faite, non lancé)
 - **WHEN** l'utilisateur confirme le drop d'une carte **Ready** vers **To Explore**
@@ -125,6 +125,14 @@ Un dialog de confirmation SHALL être affiché avant tout drop sur **To Explore*
 #### Scenario: Reset depuis in-progress (tâches partiellement faites)
 - **WHEN** l'utilisateur confirme le drop d'une carte **In Progress** vers **To Explore**
 - **THEN** le dialog indique "X tâches complétées seront perdues. Continuer ?" avec un message d'avertissement
+
+#### Scenario: Reset d'une carte qui porte une branche
+- **WHEN** l'utilisateur dépose vers **To Explore** une carte **Ready** ou **To Do** dont `has_branch` vaut `true`
+- **THEN** le dialog affiche le message d'avertissement indiquant que la branche et le travail qu'elle contient seront supprimés, avec le bouton de confirmation en style d'avertissement
+
+#### Scenario: Refus du backend
+- **WHEN** le backend répond `409` à la demande de reset (worker actif ou action de revue en cours)
+- **THEN** une notification affiche le message d'erreur, la carte retourne à sa colonne d'origine et rien n'est modifié
 
 #### Scenario: Annulation de la confirmation
 - **WHEN** l'utilisateur clique "Annuler" dans le dialog de confirmation
@@ -159,3 +167,52 @@ Pendant un drag actif, une représentation visuelle de la carte SHALL rester vis
 #### Scenario: Fin du drag
 - **WHEN** l'utilisateur relâche la carte, que le drop soit accepté ou refusé
 - **THEN** la représentation visuelle de la carte disparaît et seule la carte dans sa colonne finale (source ou cible) reste affichée
+
+### Requirement: Drop vers Done refusé tant que des tâches restent à valider
+Le drop d'une carte de **To Review** sur **Done** SHALL être refusé lorsque la carte indique des tâches non cochées (`tasks_done` inférieur à `tasks_total`) : aucune confirmation d'approbation ne s'affiche, aucun appel n'est fait au backend, la carte retourne dans To Review et une notification indique le nombre de tâches à valider. Si les compteurs étaient périmés et que le backend refuse l'approbation avec le code `tasks_pending`, la carte SHALL retourner dans To Review et le message du refus SHALL être affiché. Cette exigence précise la transition `to-review → done` de « Transitions de drag autorisées » : l'approbation par drag n'est possible que lorsque toutes les tâches sont cochées.
+
+#### Scenario: Drop avec des tâches restantes
+- **WHEN** l'utilisateur dépose sur Done une carte To Review affichant « 8 / 10 »
+- **THEN** aucune confirmation n'est demandée, la carte reste dans To Review et une notification indique « 2 tâches à valider »
+
+#### Scenario: Drop avec toutes les tâches cochées
+- **WHEN** l'utilisateur dépose sur Done une carte To Review affichant « 10 / 10 »
+- **THEN** la confirmation d'approbation s'affiche comme avant
+
+#### Scenario: Compteurs périmés
+- **WHEN** la confirmation est acceptée mais que le backend répond `409` avec le code `tasks_pending`
+- **THEN** la carte reste dans To Review et le message du refus est affiché
+
+### Requirement: La colonne Verifying est pilotée par le système
+Les cartes de la colonne **Verifying** SHALL NE PAS être draggables, et la colonne SHALL NE PAS être une cible de drop valide : aucune transition par drag-and-drop ne SHALL partir de `verifying` ni y arriver. Les actions sur un change en vérification (relancer, finaliser, demander des corrections) SHALL passer par les boutons de la carte et du DetailPanel. Pendant le drag d'une autre carte, la colonne Verifying SHALL être présentée comme une cible invalide.
+
+#### Scenario: Drag d'une carte Verifying
+- **WHEN** l'utilisateur tente de saisir une carte de la colonne Verifying
+- **THEN** le drag ne démarre pas
+
+#### Scenario: Drop sur Verifying
+- **WHEN** l'utilisateur dépose une carte de To Do ou d'In Progress sur la colonne Verifying
+- **THEN** le drop est refusé et la carte retourne à sa colonne d'origine
+
+#### Scenario: Cible invalide pendant un drag
+- **WHEN** l'utilisateur fait glisser une carte au-dessus de la colonne Verifying
+- **THEN** la colonne n'est pas surlignée comme cible valide
+
+### Requirement: Rail Done/Archived cible de drop valide
+Lorsque le slot Done/Archived est replié en rail, la colonne **Done** SHALL rester une cible de drop valide pour les transitions autorisées vers Done. Pendant un drag dont la source est autorisée à rejoindre Done, le rail SHALL se signaler comme cible valide avec le même traitement visuel que les autres colonnes valides (surbrillance, plus accentuée au survol) et afficher le libellé de la colonne Done, sans modifier la largeur du slot ni déplacer les autres colonnes. Pendant un drag dont la source n'est pas autorisée à rejoindre Done, le rail SHALL ne présenter aucune surbrillance. Lorsque le DetailPanel est en overlay, il SHALL s'effacer pendant la durée d'un drag afin que toutes les colonnes soient des cibles de drop accessibles. Les règles existantes de transitions autorisées et de drop refusé vers Done (tâches restantes à valider) s'appliquent inchangées.
+
+#### Scenario: Drop sur le rail replié
+- **WHEN** le slot Done/Archived est replié en rail et l'utilisateur dépose depuis To Review une carte autorisée à rejoindre Done sur le rail
+- **THEN** la transition vers Done s'applique comme sur une colonne Done dépliée
+
+#### Scenario: Rail signalé comme cible valide pendant un drag
+- **WHEN** l'utilisateur fait glisser une carte dont la transition vers Done est autorisée alors que le rail est replié
+- **THEN** le rail est mis en surbrillance comme cible valide et affiche le libellé Done, sans que la largeur du slot ni la position des autres colonnes ne change
+
+#### Scenario: Aucune surbrillance pour une transition interdite
+- **WHEN** l'utilisateur fait glisser une carte dont la transition vers Done n'est pas autorisée alors que le rail est replié
+- **THEN** le rail n'est pas mis en surbrillance et le drop est refusé comme sur une colonne Done dépliée
+
+#### Scenario: Overlay du DetailPanel pendant un drag
+- **WHEN** le DetailPanel est en overlay et l'utilisateur démarre un drag
+- **THEN** le panel s'efface pendant le drag et réapparaît à sa fin

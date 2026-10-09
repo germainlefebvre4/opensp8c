@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -7,6 +7,9 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { createKanbanCollisionDetection } from '../lib/kanbanCollision'
 import { VALID_DROPS } from '../lib/kanbanDrops'
 import { KanbanColumn } from '../components/KanbanColumn'
+import { DoneRail } from '../components/DoneRail'
+import { computeKanbanLayout, toggleManualFolded } from '../lib/kanbanLayout'
+import { useElementWidth } from '../hooks/useElementWidth'
 import { ChangeCard } from '../components/ChangeCard'
 import { ExploreBottomPanel } from '../components/ExploreBottomPanel'
 import { ExploreAnonymousBottomPanel } from '../components/ExploreAnonymousBottomPanel'
@@ -14,16 +17,21 @@ import { DetailPanel } from '../components/DetailPanel'
 import { ResetTasksDialog } from '../components/ResetTasksDialog'
 import { ApproveDialog } from '../components/ApproveDialog'
 import { CorrectionDialog } from '../components/CorrectionDialog'
+import { useChangeDetail } from '../hooks/useChangeDetail'
+import { buildConflictFeedback } from '../lib/conflictFeedback'
 import { AgentPoolModal } from '../components/AgentPoolModal'
 import { PoolCapacity } from '../components/PoolCapacity'
 import type { AgentPoolConfig } from '../components/AgentPoolModal'
 import { createClampToRectModifier } from '../lib/clampToRect'
 import { useChanges } from '../hooks/useChanges'
+import { useResumeWorker } from '../hooks/useResumeWorker'
+import { useVerificationActions } from '../hooks/useVerificationActions'
+import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
 import { useArchivedChanges } from '../hooks/useArchivedChanges'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { usePoolStatus } from '../hooks/usePoolStatus'
 import { useQueryClient } from '@tanstack/react-query'
-import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, ApiError } from '../lib/api'
+import { triggerFF, resetTasks, stopExploreSession, promoteGhost, deleteGhost, startPool, stopPool, launchChange, unlaunchChange, reorderReady, unlaunchErrorKey, resetErrorKey, ApiError } from '../lib/api'
 import { getStoredContext, clearStoredMessages } from '../hooks/useAnonymousExploreSession'
 import { useToast } from '../hooks/useToast'
 import { useApproveReview, useRequestCorrection } from '../hooks/useReviewActions'
@@ -31,17 +39,25 @@ import type { Change } from '../hooks/useChanges'
 
 interface Props {
   workspaceId: string
+  /** Change whose DetailPanel the URL asks to open (`?change=`). */
+  requestedChange?: string | null
+  /** Called when the URL parameter is consumed (change opened, absent or panel closed). */
+  onRequestedChangeHandled?: () => void
 }
 
-export function KanbanPage({ workspaceId }: Props) {
+export function KanbanPage({ workspaceId, requestedChange, onRequestedChangeHandled }: Props) {
   const { t } = useTranslation('kanban')
   const { t: tCommon } = useTranslation('common')
+  const { t: tDialogs } = useTranslation('dialogs')
   const { toast } = useToast()
 
   const { data: changes = [], isLoading } = useChanges(workspaceId)
   const { data: archivedChanges = [] } = useArchivedChanges(workspaceId)
   const { getFfStatus, setFfRunning } = useWorkspaceLiveState(workspaceId)
   const { data: poolStatus } = usePoolStatus(workspaceId)
+  const { resume: resumeWorkerRequest, pending: resumingWorkerIds } = useResumeWorker(workspaceId)
+  const { rerun: rerunVerification, finalize: finalizeVerification, pending: verificationPending } = useVerificationActions(workspaceId)
+  const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
   const qc = useQueryClient()
   const approveReview = useApproveReview(workspaceId)
   const requestCorrection = useRequestCorrection(workspaceId)
@@ -62,13 +78,42 @@ export function KanbanPage({ workspaceId }: Props) {
   // until the action is confirmed and succeeds.
   const [approveDialog, setApproveDialog] = useState<Change | null>(null)
   const [correctionDialog, setCorrectionDialog] = useState<Change | null>(null)
+  // Text the correction dialog opens with when it comes from an integration conflict.
+  const [correctionPrefill, setCorrectionPrefill] = useState<string | null>(null)
+  const { data: correctionDetail } = useChangeDetail(workspaceId, correctionDialog?.name ?? null)
   const [dragSourceStatus, setDragSourceStatus] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
+
+  const openedFromUrlRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!requestedChange) {
+      openedFromUrlRef.current = null
+      return
+    }
+    if (isLoading || openedFromUrlRef.current === requestedChange) return
+    if (changes.some(c => !c.is_ghost && c.name === requestedChange)) {
+      openedFromUrlRef.current = requestedChange
+      setDetailOpen({ name: requestedChange })
+    } else {
+      onRequestedChangeHandled?.()
+    }
+  }, [requestedChange, isLoading, changes, onRequestedChangeHandled])
+
+  const closeDetail = () => {
+    setDetailOpen(null)
+    if (requestedChange) onRequestedChangeHandled?.()
+  }
 
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false)
   const isPoolRunning = poolStatus?.is_running ?? false
 
   const columnsContainerRef = useRef<HTMLDivElement>(null)
+  // Session-only override of the Done/Archived fold (null = automatic).
+  // Archived's own collapse/pagination live here: folding the slot unmounts the column.
+  const [archivedCollapsed, setArchivedCollapsed] = useState(false)
+  const [archivedVisible, setArchivedVisible] = useState(3)
+  const [manualFolded, setManualFolded] = useState<boolean | null>(null)
+  const [rowRef, rowWidth] = useElementWidth()
   const dragContainerRectRef = useRef<ClientRect | null>(null)
   const clampModifier = useMemo(
     () => createClampToRectModifier(() => dragContainerRectRef.current),
@@ -85,6 +130,12 @@ export function KanbanPage({ workspaceId }: Props) {
       }),
     [changes]
   )
+  // Verifying shares the In Progress slot; it is shown when the verification is
+  // enabled for the workspace or while it still holds a card.
+  const workspaceVerification = workspaceSettings?.resolved.verification
+  const showVerifying =
+    changes.some(c => c.kanban_status === 'verifying') ||
+    Boolean(workspaceVerification?.conformity || workspaceVerification?.ui)
   const leadingColumns = [
     { title: t('columns.toExplore'), status: 'to-explore' },
     { title: t('columns.ready'), status: 'ready' },
@@ -211,7 +262,11 @@ export function KanbanPage({ workspaceId }: Props) {
     if (getFfStatus(changeName) === 'running') return
 
     if (sourceStatus === 'to-review') {
-      if (targetStatus === 'done') setApproveDialog(change)
+      if (targetStatus === 'done') {
+        const remaining = change.tasks_total - change.tasks_done
+        if (remaining > 0) toast({ title: t('errors.tasksToValidate', { count: remaining }), variant: 'error' })
+        else setApproveDialog(change)
+      }
       else if (targetStatus === 'in-progress') setCorrectionDialog(change)
       return
     }
@@ -309,7 +364,11 @@ export function KanbanPage({ workspaceId }: Props) {
     try {
       await resetTasks(workspaceId, name)
       qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
-    } catch { /* ignore */ }
+    } catch (err) {
+      // Refused (worker active, review action running): the card stays in its column.
+      qc.invalidateQueries({ queryKey: ['changes', workspaceId] })
+      toast({ title: t(resetErrorKey(err)), variant: 'error' })
+    }
   }
 
   const handleConfirmUnlaunchWorker = async () => {
@@ -334,17 +393,59 @@ export function KanbanPage({ workspaceId }: Props) {
     setApproveDialog(null)
   }
 
-  const handleCorrectionSubmit = async (feedback: string) => {
+  // Hands an integration conflict to the worker: nothing is sent until the user
+  // confirms the prefilled correction.
+  const handleResolveConflict = (target: string | undefined, files: string[]) => {
+    if (!approveDialog) return
+    setCorrectionPrefill(buildConflictFeedback(tDialogs, target, files))
+    setCorrectionDialog(approveDialog)
+    setApproveDialog(null)
+  }
+
+  const cancelCorrection = () => {
+    setCorrectionDialog(null)
+    setCorrectionPrefill(null)
+  }
+
+  const handleCorrectionSubmit = async (feedback: string, reopenHumanTasks: boolean) => {
     if (!correctionDialog) return
     const name = correctionDialog.name
-    await requestCorrection.mutateAsync({ changeName: name, feedback })
+    await requestCorrection.mutateAsync({ changeName: name, feedback, reopenHumanTasks })
     setCorrectionDialog(null)
-    if (detailOpen?.name === name) setDetailOpen(null)
+    setCorrectionPrefill(null)
+    if (detailOpen?.name === name) closeDetail()
   }
 
   const handleStopWorker = (change: Change) => {
     setUnlaunchWorkerDialog(change)
   }
+
+  // A refusal (e.g. tasks left for "resume and finalize") shows the backend's
+  // message; the card stays as it is.
+  const handleResumeWorker = async (change: Change, finalizeOnly: boolean) => {
+    if (change.worker_id == null) return
+    const error = await resumeWorkerRequest(change.worker_id, finalizeOnly)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
+  // A refusal shows the backend's message; the card stays as it is.
+  const handleRerunVerification = async (change: Change) => {
+    const error = await rerunVerification(change.name)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
+  const handleFinalizeVerification = async (change: Change) => {
+    const error = await finalizeVerification(change.name)
+    if (error) toast({ title: error, variant: 'error' })
+  }
+
+  // Unmeasured width (first render, no layout) behaves like an unconstrained row.
+  const layoutInput = { width: rowWidth ?? Number.MAX_SAFE_INTEGER, panelOpen: detailOpen !== null, manualFolded }
+  const layout = computeKanbanLayout(layoutInput)
+  const toggleDoneFolded = () => setManualFolded(toggleManualFolded(layoutInput))
+  const doneValidSources = Object.entries(VALID_DROPS)
+    .filter(([, targets]) => targets.includes('done'))
+    .map(([src]) => src)
 
   const activeChange = activeDragId ? changes.find(c => c.name === activeDragId) : undefined
 
@@ -405,74 +506,123 @@ export function KanbanPage({ workspaceId }: Props) {
             </div>
 
             {/* Top: Kanban columns + DetailPanel */}
-            <div className="flex-1 flex flex-row overflow-hidden min-h-0">
-              <div ref={columnsContainerRef} className="flex-1 overflow-x-auto min-h-0 p-4">
-                <div className="flex gap-3 h-full min-w-max">
-                  {leadingColumns.map(col => (
-                    <KanbanColumn
-                      key={col.status}
-                      title={col.title}
-                      status={col.status}
-                      changes={
-                        col.status === 'ready'
-                          ? filteredChanges
-                            .filter(c => c.kanban_status === 'ready')
-                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                          : filteredChanges.filter(c => c.kanban_status === col.status)
-                      }
-                      allChanges={changes}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, col.status)}
-                      onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
-                      onDeleteGhost={handleDeleteGhostRequest}
-                      onStopWorker={handleStopWorker}
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={Object.entries(VALID_DROPS)
-                        .filter(([, targets]) => targets.includes(col.status))
-                        .map(([src]) => src)}
-                    />
-                  ))}
+            <div ref={rowRef} className="relative flex-1 flex flex-row overflow-hidden min-h-0">
+              <div ref={columnsContainerRef} data-scroll={layout.scroll} className="flex-1 min-w-0 overflow-x-auto min-h-0 p-2">
+                <div className="flex gap-2 h-full">
+                  {leadingColumns.map(col => {
+                    const column = (
+                      <KanbanColumn
+                        key={col.status}
+                        title={col.title}
+                        status={col.status}
+                        className={col.status === 'in-progress' && showVerifying ? 'flex-1 min-h-0' : undefined}
+                        changes={
+                          col.status === 'ready'
+                            ? filteredChanges
+                              .filter(c => c.kanban_status === 'ready')
+                              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                            : filteredChanges.filter(c => c.kanban_status === col.status)
+                        }
+                        allChanges={changes}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, col.status)}
+                        onNew={col.status === 'to-explore' ? handleNewExplore : undefined}
+                        onDeleteGhost={handleDeleteGhostRequest}
+                        onStopWorker={handleStopWorker}
+                        onResumeWorker={handleResumeWorker}
+                        resumingWorkerIds={resumingWorkerIds}
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={Object.entries(VALID_DROPS)
+                          .filter(([, targets]) => targets.includes(col.status))
+                          .map(([src]) => src)}
+                      />
+                    )
+                    if (col.status !== 'in-progress' || !showVerifying) return column
+                    // In Progress + Verifying stacked in one slot, like Done / Archived.
+                    return (
+                      <div key={col.status} className="flex-1 min-w-[190px] flex flex-col min-h-0 gap-2">
+                        {column}
+                        <div className="h-px bg-slate-200 shrink-0" />
+                        <KanbanColumn
+                          title={t('columns.verifying')}
+                          status="verifying"
+                          changes={filteredChanges.filter(c => c.kanban_status === 'verifying')}
+                          workspaceId={workspaceId}
+                          onOpen={name => handleOpen(name, 'verifying')}
+                          onRerunVerification={handleRerunVerification}
+                          onFinalizeVerification={handleFinalizeVerification}
+                          verificationPendingNames={verificationPending}
+                          className="max-h-[40%] overflow-y-auto"
+                          getFfStatus={getFfStatus}
+                          dragSourceStatus={dragSourceStatus}
+                          validDropSources={[]}
+                        />
+                      </div>
+                    )
+                  })}
 
-                  {/* Done + Archived stacked in shared slot */}
-                  <div className="flex-1 min-w-[220px] flex flex-col min-h-0 gap-2">
-                    <KanbanColumn
-                      title={t('columns.done')}
-                      status="done"
-                      changes={filteredChanges.filter(c => c.kanban_status === 'done')}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, 'done')}
-                      className="flex-1 min-h-0"
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={Object.entries(VALID_DROPS)
-                        .filter(([, targets]) => targets.includes('done'))
-                        .map(([src]) => src)}
+                  {/* Done + Archived stacked in shared slot, folded into a rail when space is short */}
+                  {layout.doneFolded ? (
+                    <DoneRail
+                      count={filteredChanges.filter(c => c.kanban_status === 'done').length}
+                      isValidForDrag={dragSourceStatus ? doneValidSources.includes(dragSourceStatus) : false}
+                      onToggle={toggleDoneFolded}
                     />
-                    <div className="h-px bg-slate-200 shrink-0" />
-                    <KanbanColumn
-                      title={t('columns.archived')}
-                      status="archived"
-                      changes={filteredArchived}
-                      workspaceId={workspaceId}
-                      onOpen={name => handleOpen(name, 'archived')}
-                      maxVisible={3}
-                      collapsible
-                      className="max-h-[40%] overflow-y-auto"
-                      getFfStatus={getFfStatus}
-                      dragSourceStatus={dragSourceStatus}
-                      validDropSources={[]}
-                    />
-                  </div>
+                  ) : (
+                    <div className="flex-1 min-w-[190px] flex flex-col min-h-0 gap-2">
+                      <KanbanColumn
+                        title={t('columns.done')}
+                        status="done"
+                        changes={filteredChanges.filter(c => c.kanban_status === 'done')}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, 'done')}
+                        onFold={toggleDoneFolded}
+                        className="flex-1 min-h-0"
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={doneValidSources}
+                      />
+                      <div className="h-px bg-slate-200 shrink-0" />
+                      <KanbanColumn
+                        title={t('columns.archived')}
+                        status="archived"
+                        changes={filteredArchived}
+                        workspaceId={workspaceId}
+                        onOpen={name => handleOpen(name, 'archived')}
+                        maxVisible={3}
+                        collapsible
+                        collapsed={archivedCollapsed}
+                        onCollapsedChange={setArchivedCollapsed}
+                        visibleCount={archivedVisible}
+                        onVisibleCountChange={setArchivedVisible}
+                        className="max-h-[40%] overflow-y-auto"
+                        getFfStatus={getFfStatus}
+                        dragSourceStatus={dragSourceStatus}
+                        validDropSources={[]}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
               {detailOpen && (
-                <div className="w-[420px] shrink-0 border-l border-slate-200 flex flex-col overflow-hidden">
+                <div
+                  data-testid="detail-panel-slot"
+                  data-mode={layout.panelMode}
+                  style={{ width: layout.panelWidth }}
+                  className={
+                    layout.panelMode === 'overlay'
+                      ? `absolute right-0 inset-y-0 z-30 bg-white shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden transition-opacity duration-150 ${
+                          activeDragId ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                        }`
+                      : 'shrink-0 border-l border-slate-200 flex flex-col overflow-hidden'
+                  }
+                >
                   <DetailPanel
                     workspaceId={workspaceId}
                     changeName={detailOpen.name}
-                    onClose={() => setDetailOpen(null)}
+                    onClose={closeDetail}
                     associatedGhostId={changes.find(c => c.is_ghost && c.name === detailOpen.name)?.ghost_id}
                   />
                 </div>
@@ -612,6 +762,7 @@ export function KanbanPage({ workspaceId }: Props) {
             changeName={approveDialog.name}
             onConfirm={handleApproveConfirm}
             onCancel={() => setApproveDialog(null)}
+            onResolveConflict={handleResolveConflict}
           />
         )}
 
@@ -619,7 +770,10 @@ export function KanbanPage({ workspaceId }: Props) {
           <CorrectionDialog
             changeName={correctionDialog.name}
             onSubmit={handleCorrectionSubmit}
-            onCancel={() => setCorrectionDialog(null)}
+            onCancel={cancelCorrection}
+            initialFeedback={correctionPrefill ?? undefined}
+            reopenDefault={correctionPrefill !== null}
+            humanTasksChecked={correctionDetail?.tasks.filter(task => task.human_review && task.done).length ?? 0}
           />
         )}
 

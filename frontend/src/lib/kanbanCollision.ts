@@ -13,6 +13,7 @@ export const DEFAULT_KANBAN_COLUMN_IDS: ReadonlySet<string> = new Set([
   'ready',
   'todo',
   'in-progress',
+  'verifying',
   'to-review',
   'done',
   'archived',

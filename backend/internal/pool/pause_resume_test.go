@@ -99,7 +99,7 @@ func TestResumeWorker(t *testing.T) {
 			return nil, context.Canceled
 		})
 
-	if err := m.ResumeWorker(1); !errors.Is(err, ErrPoolNotRunning) {
+	if err := m.ResumeWorker(1, false); !errors.Is(err, ErrPoolNotRunning) {
 		t.Fatalf("stopped pool: got %v", err)
 	}
 
@@ -111,14 +111,14 @@ func TestResumeWorker(t *testing.T) {
 	m.pausedWorkers[1] = &Worker{ID: 1, ActiveChange: "change-a", Status: StatusPaused, BlockedReason: "r"}
 	m.mu.Unlock()
 
-	if err := m.ResumeWorker(2); !errors.Is(err, ErrWorkerNotPaused) {
+	if err := m.ResumeWorker(2, false); !errors.Is(err, ErrWorkerNotPaused) {
 		t.Fatalf("active worker: got %v", err)
 	}
-	if err := m.ResumeWorker(99); !errors.Is(err, ErrWorkerNotPaused) {
+	if err := m.ResumeWorker(99, false); !errors.Is(err, ErrWorkerNotPaused) {
 		t.Fatalf("unknown worker: got %v", err)
 	}
 
-	if err := m.ResumeWorker(1); err != nil {
+	if err := m.ResumeWorker(1, false); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Lock()

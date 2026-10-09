@@ -5,6 +5,7 @@
     "ready": "Ready",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "En vérification",
     "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
@@ -31,17 +32,25 @@
     "confirm": "Interrompre et rétrograder"
   },
   "errors": {
+    "tasksToValidate_one": "Approbation impossible : {{count}} tâche à valider.",
+    "tasksToValidate_other": "Approbation impossible : {{count}} tâches à valider.",
     "unlaunchWorkerActive": "Impossible de rétrograder : un worker du Pool d'Agents est actif sur ce change.",
     "unlaunchFailed": "Échec de la rétrogradation du change.",
     "unlaunchAlreadyMerged": "Le change a été fusionné dans {{target}} avant l'interruption : il n'a pas été rétrogradé.",
-    "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants."
+    "unlaunchWorkerStillRunning": "Le worker est toujours en cours d'exécution : réessayez dans quelques instants.",
+    "resetWorkerActive": "Réinitialisation impossible : un worker est actif sur ce change.",
+    "resetReviewBusy": "Réinitialisation impossible : une action de revue est en cours sur ce change.",
+    "resetFailed": "Échec de la réinitialisation du change.",
+    "resetVerificationBusy": "Réinitialisation impossible : une vérification est en cours sur ce change."
   },
   "columnActions": {
     "newExploration": "Nouvelle exploration",
     "newExplorationCard": "+ Nouvelle exploration",
     "showColumn": "Afficher la colonne",
     "hideColumn": "Réduire la colonne",
-    "showMore": "Afficher plus ({{count}})"
+    "showMore": "Afficher plus ({{count}})",
+    "foldDone": "Replier Done et Archived",
+    "unfoldDone": "Déplier Done et Archived"
   },
   "card": {
     "figerLabel": "Figer",
@@ -57,6 +66,28 @@
     "workerPausedBadge": "en pause",
     "workerPausedTooltip": "Le worker est bloqué en pause sur ce change : le rétrograder vers Ready le libère",
     "workerActiveTooltip": "Un worker du Pool d'Agents est actuellement assigné à ce change",
-    "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready"
+    "stopWorkerTooltip": "Interrompre le worker et rétrograder vers Ready",
+    "resumeTooltip": "Reprendre le worker (l'agent retravaille les tâches restantes)",
+    "resumeFinalizeTooltip": "Reprendre en finalisant, sans relancer l'agent",
+    "resumeFinalizeRemaining_one": "Il reste {{count}} tâche à cocher",
+    "resumeFinalizeRemaining_other": "Il reste {{count}} tâches à cocher",
+    "verification": {
+      "queued": "en attente",
+      "waiting": "en attente de l'interface",
+      "running": "vérification · {{step}}",
+      "runningUi": "vérification UI en cours",
+      "failed": "échec",
+      "passed": "vérifié",
+      "rerun": "Relancer",
+      "finalize": "Finaliser",
+      "rerunTooltip": "Relancer la vérification",
+      "finalizeTooltip": "Finaliser sans vérification",
+      "finalizeRemaining_one": "Il reste {{count}} tâche à cocher",
+      "finalizeRemaining_other": "Il reste {{count}} tâches à cocher",
+      "steps": {
+        "conformity": "conformité",
+        "ui": "UI"
+      }
+    }
   }
 }

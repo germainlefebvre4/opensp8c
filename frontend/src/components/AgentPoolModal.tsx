@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { X, Play, ShieldAlert, Cpu, Square, Loader2, RotateCw } from 'lucide-react'
+import { X, Play, ShieldAlert, Cpu, Square, Loader2, RotateCw, CheckCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PoolStatus, WorkerStatus } from '../hooks/usePoolStatus'
 import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
-import { resumeWorker } from '../lib/api'
+import { useChanges } from '../hooks/useChanges'
+import { useResumeWorker } from '../hooks/useResumeWorker'
 
 export interface AgentPoolConfig {
   size: number
@@ -44,29 +45,14 @@ export function AgentPoolModal({ workspaceId, isOpen, onClose, onStart, onStop, 
   const setSize = (update: (s: number) => number) => setSizeAdjust(update(size))
   const setMode = setModeAdjust
 
-  // Resume requests in flight (button disabled) and their backend errors.
-  const [resuming, setResuming] = useState<Set<number>>(new Set())
-  const [resumeErrors, setResumeErrors] = useState<Record<number, string>>({})
-
-  const handleResume = async (id: number) => {
-    if (!workspaceId) return
-    setResuming(s => new Set(s).add(id))
-    setResumeErrors(e => {
-      const { [id]: _removed, ...rest } = e
-      return rest
-    })
-    try {
-      // The pool_updated broadcast refreshes the row; no manual refetch.
-      await resumeWorker(workspaceId, id)
-    } catch (err) {
-      setResumeErrors(e => ({ ...e, [id]: err instanceof Error ? err.message : String(err) }))
-    } finally {
-      setResuming(s => {
-        const next = new Set(s)
-        next.delete(id)
-        return next
-      })
-    }
+  // Resume requests in flight (buttons disabled) and their backend errors.
+  const { resume, pending: resuming, errors: resumeErrors } = useResumeWorker(workspaceId)
+  // Progress of the changes held by the workers, to gate "Resume and finalize"
+  // (the backend already reports the worktree's counters).
+  const { data: changes } = useChanges(workspaceId ?? null)
+  const remainingTasks = (change: string) => {
+    const c = changes?.find(ch => ch.name === change)
+    return c ? c.tasks_total - c.tasks_done : null
   }
 
   useEffect(() => {
@@ -129,15 +115,38 @@ export function AgentPoolModal({ workspaceId, isOpen, onClose, onStart, onStop, 
                           {resumeErrors[w.id]}
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => void handleResume(w.id)}
-                        disabled={resuming.has(w.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                      >
-                        <RotateCw size={12} />
-                        {t('agentPool.statusPanel.resume')}
-                      </button>
+                      {(() => {
+                        const remaining = remainingTasks(w.active_change)
+                        const finalizeBlocked = remaining === null || remaining > 0
+                        const busy = resuming.has(w.id)
+                        return (
+                          <>
+                            {remaining !== null && remaining > 0 && (
+                              <span className="text-xs text-slate-500">
+                                {t('agentPool.statusPanel.resumeFinalizeRemaining', { count: remaining })}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void resume(w.id, true)}
+                              disabled={busy || finalizeBlocked}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                            >
+                              <CheckCheck size={12} />
+                              {t('agentPool.statusPanel.resumeFinalize')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void resume(w.id)}
+                              disabled={busy}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                            >
+                              <RotateCw size={12} />
+                              {t('agentPool.statusPanel.resume')}
+                            </button>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}

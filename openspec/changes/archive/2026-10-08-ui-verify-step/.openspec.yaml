@@ -1,0 +1,22 @@
+schema: spec-driven
+created: "2026-10-07"
+tags:
+    type: []
+    complexity: 4
+    components:
+        - verification-stage
+        - ui-verification-step
+        - verification-settings
+        - human-review-tasks
+        - kanban-change-detail
+        - agent-pool-orchestrator
+        - api-router
+        - change-card
+        - session-log-retention
+    agent_specialization:
+        - backend
+        - frontend
+        - api-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-08"

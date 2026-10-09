@@ -8,6 +8,7 @@ import type { SpecOverview } from '../hooks/useSpecsOverview'
 import { TimelineChangeCard } from '../components/TimelineChangeCard'
 import { TimelineSpecMatrix } from '../components/TimelineSpecMatrix'
 import { SpecHistoryView } from '../components/SpecHistoryView'
+import { SubTabs } from '../components/SubTabs'
 import { DetailPanel } from '../components/DetailPanel'
 
 interface Props {
@@ -141,30 +142,24 @@ export function TimelinePage({ workspaceId }: Props) {
     return `/specs?${p.toString()}`
   }
 
-  const subTabClass = (active: boolean) =>
-    `px-3 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
-      active
-        ? 'border-blue-600 text-blue-700'
-        : 'border-transparent text-slate-500 hover:text-slate-800'
-    }`
-
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center text-sm text-slate-400">{tCommon('loading')}</div>
   }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center gap-1 px-4 border-b border-slate-200 bg-white">
-        <button onClick={() => { setMode('changes'); setLastViewedChange(null) }} className={subTabClass(mode === 'changes')}>
-          {t('tabs.changes')}
-        </button>
-        <button
-          onClick={() => { setMode('matrice'); setSelectedChange(null) }}
-          className={subTabClass(mode === 'matrice')}
-        >
-          {t('tabs.matrix')}
-        </button>
-      </div>
+      <SubTabs
+        tabs={[
+          { id: 'changes', label: t('tabs.changes') },
+          { id: 'matrice', label: t('tabs.matrix') },
+        ]}
+        active={mode}
+        onChange={id => {
+          setMode(id)
+          if (id === 'matrice') setSelectedChange(null)
+          else setLastViewedChange(null)
+        }}
+      />
 
       {mode === 'changes' ? (
         <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full">

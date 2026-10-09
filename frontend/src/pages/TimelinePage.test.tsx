@@ -63,7 +63,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   render(<MemoryRouter><TimelinePage workspaceId="ws1" /></MemoryRouter>)
-  fireEvent.click(screen.getByRole('button', { name: enTimeline.tabs.matrix }))
+  fireEvent.click(screen.getByRole('tab', { name: enTimeline.tabs.matrix }))
 })
 afterEach(cleanup)
 

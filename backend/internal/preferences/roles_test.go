@@ -57,6 +57,10 @@ func TestResolveRole(t *testing.T) {
 		{"nil receiver uses claude preset", nil, "", RoleExplorer, "", Resolved{"claude", "opus", "high"}},
 		{"documenter preset", &Preferences{DefaultAgent: "claude"}, "", RoleDocumenter, "", Resolved{"claude", "haiku", "low"}},
 		{"fixer preset", &Preferences{}, "", RoleFixer, "", Resolved{"claude", "sonnet", "medium"}},
+		{"verifier preset", &Preferences{}, "", RoleVerifier, "", Resolved{"claude", "sonnet", "medium"}},
+		{"verifier follows global", &Preferences{AgentSettings: &AgentSettings{Global: rs("claude", "opus", "high")}}, "", RoleVerifier, "", Resolved{"claude", "opus", "high"}},
+		{"verifier role overrides global", &Preferences{AgentSettings: &AgentSettings{Global: rs("claude", "opus", "high"), Roles: map[Role]RoleSetting{RoleVerifier: rs("", "haiku", "")}}}, "", RoleVerifier, "", Resolved{"claude", "haiku", "high"}},
+		{"verifier no preset for gemini", &Preferences{DefaultAgent: "gemini"}, "", RoleVerifier, "", Resolved{"gemini", "", ""}},
 		{"no preset for gemini", &Preferences{DefaultAgent: "gemini"}, "", RoleImplementer, "", Resolved{"gemini", "", ""}},
 		{"role before global", &Preferences{AgentSettings: &AgentSettings{
 			Global: rs("claude", "sonnet", "medium"),
@@ -383,5 +387,32 @@ func TestValidationCommand(t *testing.T) {
 	p, _ = svc.Load()
 	if p.PoolDefaults != nil || p.ResolvePool("A").ValidationCommand != "" {
 		t.Fatalf("global not cleared: %+v", p.PoolDefaults)
+	}
+}
+
+func TestVerifierRole(t *testing.T) {
+	if !RoleVerifier.Valid() || Role("bogus").Valid() {
+		t.Fatal("verifier must be valid and unknown roles rejected")
+	}
+	if got := Roles[len(Roles)-2]; got != RoleVerifier {
+		t.Errorf("verifier must come right before documenter, got %s", got)
+	}
+	svc := newTestService(t)
+	var patch AgentSettingsPatch
+	_ = json.Unmarshal([]byte(`{"roles":{"verifier":{"model":"haiku"}}}`), &patch)
+	if err := svc.SetAgentSettings(patch); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := svc.Load()
+	if p.ResolveRole("", RoleVerifier, "").Model != "haiku" {
+		t.Errorf("verifier model not stored: %+v", p.AgentSettings)
+	}
+	// A preferences.json without the role loads fine.
+	if err := os.WriteFile(svc.Path(), []byte(`{"defaultAgent":"claude","agentSettings":{"global":{},"roles":{"fixer":{"model":"opus"}}}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := svc.Load()
+	if err != nil || p.ResolveRole("", RoleVerifier, "").Model != "sonnet" {
+		t.Errorf("legacy file: %v %+v", err, p)
 	}
 }

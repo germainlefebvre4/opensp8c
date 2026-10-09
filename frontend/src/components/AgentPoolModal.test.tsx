@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AgentPoolModal } from './AgentPoolModal'
+import { useChanges } from '../hooks/useChanges'
 import { useWorkspaceSettings } from '../hooks/useWorkspaceSettings'
 import { patchWorkspaceSettings, patchPreferences, resumeWorker } from '../lib/api'
 import type { PoolSettings } from '../lib/api'
@@ -12,6 +14,7 @@ import enDialogs from '../locales/en/dialogs.json'
 import enCommon from '../locales/en/common.json'
 
 vi.mock('../hooks/useWorkspaceSettings', () => ({ useWorkspaceSettings: vi.fn() }))
+vi.mock('../hooks/useChanges', () => ({ useChanges: vi.fn() }))
 vi.mock('../lib/api', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   patchWorkspaceSettings: vi.fn(),
@@ -28,6 +31,15 @@ void i18n.use(initReactI18next).init({
 })
 
 afterEach(cleanup)
+beforeEach(() => mockChanges(0, 0))
+
+const withClient = (ui: React.ReactElement) => <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+
+function mockChanges(tasksDone: number, tasksTotal: number) {
+  vi.mocked(useChanges).mockReturnValue({
+    data: [{ name: 'add-user-auth', tasks_done: tasksDone, tasks_total: tasksTotal }],
+  } as unknown as ReturnType<typeof useChanges>)
+}
 
 function mockPool(pool: PoolSettings | undefined) {
   vi.mocked(useWorkspaceSettings).mockReturnValue({
@@ -36,7 +48,7 @@ function mockPool(pool: PoolSettings | undefined) {
 }
 
 function renderModal(onStart = vi.fn()) {
-  render(<AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={onStart} onStop={vi.fn()} />)
+  render(withClient(<AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={onStart} onStop={vi.fn()} />))
   return onStart
 }
 
@@ -75,6 +87,7 @@ describe('AgentPoolModal pre-fill', () => {
 })
 
 describe('AgentPoolModal resume', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockChanges(1, 2) })
   const worker = (over: Partial<PoolWorker>): PoolWorker => ({
     id: 1,
     active_change: 'add-user-auth',
@@ -89,7 +102,7 @@ describe('AgentPoolModal resume', () => {
     workers,
   })
   const renderRunning = (workers: PoolWorker[]) =>
-    render(<AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} poolStatus={status(workers)} />)
+    render(withClient(<AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} poolStatus={status(workers)} />))
 
   it('shows the blocked reason and a Resume button on a paused worker', () => {
     mockPool(undefined)
@@ -115,7 +128,7 @@ describe('AgentPoolModal resume', () => {
     renderRunning([worker({ id: 2 }), worker({ id: 1, status: 'working' })])
     const button = screen.getByText('Resume').closest('button') as HTMLButtonElement
     fireEvent.click(button)
-    expect(resumeWorker).toHaveBeenCalledWith('ws', 2)
+    expect(resumeWorker).toHaveBeenCalledWith('ws', 2, { finalizeOnly: false })
     await waitFor(() => expect(button.disabled).toBe(true))
     await act(async () => finish())
     await waitFor(() => expect(button.disabled).toBe(false))
@@ -128,7 +141,7 @@ describe('AgentPoolModal resume', () => {
     fireEvent.click(screen.getByText('Resume'))
     await waitFor(() => expect(resumeWorker).toHaveBeenCalled())
     rerender(
-      <AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} poolStatus={status([worker({ status: 'working', blocked_reason: undefined })])} />,
+      withClient(<AgentPoolModal workspaceId="ws" isOpen onClose={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} poolStatus={status([worker({ status: 'working', blocked_reason: undefined })])} />),
     )
     expect(screen.getByText('Working')).toBeTruthy()
     expect(screen.queryByText('Resume')).toBeNull()
@@ -143,5 +156,44 @@ describe('AgentPoolModal resume', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('worker is not paused')
     expect(button.disabled).toBe(false)
     expect(screen.getByText('Paused')).toBeTruthy()
+  })
+
+  it('disables "Resume and finalize" with the remaining count while the list is incomplete, "Resume" stays active', () => {
+    mockPool(undefined)
+    mockChanges(9, 10)
+    renderRunning([worker({})])
+    const finalize = screen.getByText('Resume and finalize').closest('button') as HTMLButtonElement
+    expect(finalize.disabled).toBe(true)
+    expect(screen.getByText('1 task left to check')).toBeTruthy()
+    expect((screen.getByText('Resume').closest('button') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('requests the resume with finalize_only once the change is complete', async () => {
+    mockPool(undefined)
+    mockChanges(10, 10)
+    vi.mocked(resumeWorker).mockResolvedValue({} as never)
+    renderRunning([worker({ id: 4 })])
+    const finalize = screen.getByText('Resume and finalize').closest('button') as HTMLButtonElement
+    expect(finalize.disabled).toBe(false)
+    fireEvent.click(finalize)
+    await waitFor(() => expect(resumeWorker).toHaveBeenCalledWith('ws', 4, { finalizeOnly: true }))
+  })
+
+  it('blocks a double request on both buttons while one is pending', async () => {
+    mockPool(undefined)
+    mockChanges(10, 10)
+    vi.mocked(resumeWorker).mockReturnValue(new Promise(() => {}))
+    renderRunning([worker({})])
+    fireEvent.click(screen.getByText('Resume and finalize'))
+    await waitFor(() => {
+      expect((screen.getByText('Resume').closest('button') as HTMLButtonElement).disabled).toBe(true)
+      expect((screen.getByText('Resume and finalize').closest('button') as HTMLButtonElement).disabled).toBe(true)
+    })
+  })
+
+  it('shows neither button outside the paused status', () => {
+    mockPool(undefined)
+    renderRunning([worker({ status: 'working' })])
+    expect(screen.queryByText('Resume and finalize')).toBeNull()
   })
 })

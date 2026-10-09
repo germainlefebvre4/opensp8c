@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/activity"
 	"github.com/glefebvre/opensp8c/internal/agents"
 	"github.com/glefebvre/opensp8c/internal/conversation"
 	"github.com/glefebvre/opensp8c/internal/language"
@@ -43,6 +45,19 @@ func HoldAgentStartsForTest() (restore func()) {
 		return nil, ctx.Err()
 	}
 	return func() { startSubprocessFn = orig }
+}
+
+// SeedWorkerForTest registers w as a worker of m, paused or active according
+// to w.Status, without running anything, so cross-package tests can observe a
+// worker holding a change (with its worktree and pause reason) deterministically.
+func SeedWorkerForTest(m *Manager, w Worker) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if w.Status == StatusPaused {
+		m.pausedWorkers[w.ID] = &w
+	} else {
+		m.activeWorkers[w.ID] = &w
+	}
 }
 
 // beforeCommitHook is a test seam called once validation and the completion
@@ -232,6 +247,10 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 		}()
 	}
 
+	if w.finalizeOnly {
+		m.logRunMarker(w, map[string]any{"type": "pool_resume_finalize", "change": w.ActiveChange})
+	}
+
 	// The worktree starts from the last commit: an uncommitted change is not
 	// in it, and no agent could apply it. A branch created before the change
 	// was committed is recreated when it carries no work, else left intact.
@@ -272,35 +291,55 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	if runLog != nil {
 		stderrLog = runLog.sess
 	}
-	proc, err := startSubprocessFn(procCtx, w.WorktreePath, agentCfg, "", "", false, stderrLog, customEnv, false, langDirective)
-	if err != nil {
-		log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
-		pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
-		return
-	}
-	// Ordered teardown: close stdin, give the agent a bounded time to exit,
-	// then kill its whole process group and reap it.
-	defer func() {
-		_ = proc.CloseStdin()
-		exited := make(chan struct{})
-		go func() {
-			_ = proc.Wait()
-			close(exited)
-		}()
-		select {
-		case <-exited:
-		case <-time.After(teardownGrace):
-			procCancel()
-			<-exited
+	// A "resume and finalize" worker starts no agent and sends no turn: proc
+	// stays nil and the rest of the flow (validation, completion check, commit,
+	// finalization) runs unchanged.
+	var proc *session.Subprocess
+	if !w.finalizeOnly {
+		var err error
+		extraPrompt := ""
+		if cfg.DelegationMode == ModeHITLReview {
+			extraPrompt = humanReviewDirective
 		}
-		procCancel()
-	}()
+		proc, err = startSubprocessFn(procCtx, w.WorktreePath, agentCfg, extraPrompt, "", false, stderrLog, customEnv, false, langDirective)
+		if err != nil {
+			log.Printf("[worker %d] failed to start agent subprocess: %v\n", w.ID, err)
+			pause(fmt.Sprintf("Échec du démarrage du subprocess de l'agent : %v", err))
+			return
+		}
+		// Ordered teardown: close stdin, give the agent a bounded time to exit,
+		// then kill its whole process group and reap it.
+		defer func() {
+			_ = proc.CloseStdin()
+			exited := make(chan struct{})
+			go func() {
+				_ = proc.Wait()
+				close(exited)
+			}()
+			select {
+			case <-exited:
+			case <-time.After(teardownGrace):
+				procCancel()
+				<-exited
+			}
+			procCancel()
+		}()
 
-	// 3. Invoke the agent CLI to implement the remaining tasks.
-	if err := m.invokeAgentApply(w, proc); err != nil {
-		log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
-		pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour appliquer les tâches restantes"))
-		return
+		// 3. Invoke the agent CLI to implement the remaining tasks.
+		if err := m.invokeAgentApply(w, proc); err != nil {
+			log.Printf("[worker %d] agent apply error: %v\n", w.ID, err)
+			pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour appliquer les tâches restantes"))
+			return
+		}
+
+		// 3b. Triage (hitl-review only): the remaining unflagged tasks are
+		// either finished or flagged for the user, before validation so that
+		// any work done here is validated too.
+		if cfg.DelegationMode == ModeHITLReview {
+			if !m.triageRemainingTasks(w, proc, tasksPath, pause) {
+				return
+			}
+		}
 	}
 
 	// 4-5. Local validation (compilation + tests) and self-healing loop:
@@ -319,7 +358,7 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			return false
 		}
 
-		for validationErr != nil && attempts < cfg.MaxAttempts {
+		for validationErr != nil && proc != nil && attempts < cfg.MaxAttempts {
 			attempts++
 			m.setStatus(w, StatusHealing)
 			m.notify()
@@ -343,6 +382,11 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 			}
 		}
 
+		if validationErr != nil && proc == nil {
+			log.Printf("[worker %d] validation failed while finalizing without agent. Pausing.\n", w.ID)
+			pause(fmt.Sprintf("Reprise en finalisant : la validation a échoué et aucun agent n'est lancé pour la corriger : %v", validationErr))
+			return false
+		}
 		if validationErr != nil {
 			log.Printf("[worker %d] Failed to heal after %d attempts. Pausing.\n", w.ID, cfg.MaxAttempts)
 			pause(fmt.Sprintf("Tentatives de réparation épuisées après %d essai(s) : %v", cfg.MaxAttempts, validationErr))
@@ -358,13 +402,14 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	// worktree's tasks.md lists at least one task and none is left unchecked,
 	// even though validation passed - the agent may have declared victory
 	// without actually doing the work. A missing or empty list is not "done".
-	done, total := openspec.ParseTaskProgress(tasksPath)
+	stats := openspec.ParseTaskStats(tasksPath)
+	done, total := stats.Done, stats.Total
 	if total == 0 {
 		log.Printf("[worker %d] validation passed but tasks.md is absent or empty; pausing without finalizing\n", w.ID)
 		pause("Validation réussie mais la liste des tâches (tasks.md) est absente ou vide")
 		return
 	}
-	if done < total {
+	if tasksBlockCompletion(cfg.DelegationMode, stats) {
 		log.Printf("[worker %d] validation passed but tasks.md incomplete (%d/%d done); pausing without finalizing\n", w.ID, done, total)
 		pause(fmt.Sprintf("Validation réussie mais tâches restantes incomplètes (%d/%d) dans tasks.md", done, total))
 		return
@@ -395,6 +440,24 @@ func (m *Manager) runWorker(ctx context.Context, w *Worker) {
 	}
 	if !hasWork {
 		pause("Aucun travail produit : la branche ne contient ni modification ni commit par rapport à la branche courante")
+		return
+	}
+
+	// 7b. Verification stage: with at least one verification step enabled, the
+	// change is not finalized here. The persistent marker queues it for the
+	// verification executor and the worker leaves with its slot freed; the
+	// worktree and branch stay. A worker that only finalizes (resume, or after
+	// a successful verification) never comes back through here.
+	if !w.finalizeOnly && m.verificationRequired(w.WorkspaceID, repoPath, w.ActiveChange) {
+		log.Printf("[worker %d] change %s awaits verification\n", w.ID, w.ActiveChange)
+		if err := wt.SetVerify(w.ActiveChange, openspec.VerifyPending); err != nil {
+			log.Printf("[worker %d] failed to record verification state: %v\n", w.ID, err)
+			pause(fmt.Sprintf("L'état de vérification n'a pas pu être enregistré : %s", truncateReason(err)))
+			return
+		}
+		// The marker touches no OpenSpec file: publish the update explicitly.
+		m.publishChangeUpdated(w.WorkspaceID, w.ActiveChange)
+		outcome = OutcomeAwaitingVerification
 		return
 	}
 
@@ -487,11 +550,97 @@ type agentTurnError struct{ reason string }
 
 func (e *agentTurnError) Error() string { return "agent turn failed: " + e.reason }
 
+// driverCheckError is a turn stopped because the UI verification driver is
+// not usable; its reason is shown as is.
+type driverCheckError struct{ reason string }
+
+func (e *driverCheckError) Error() string { return "driver check failed: " + e.reason }
+
 // agentIdleError is an agent turn cut after agentIdleTimeout without output.
 type agentIdleError struct{ after time.Duration }
 
 func (e *agentIdleError) Error() string {
 	return fmt.Sprintf("agent inactif depuis %s", e.after)
+}
+
+// humanReviewDirective is appended to the system prompt of hitl-review workers.
+const humanReviewDirective = `Some tasks in tasks.md can only be validated by the user (manual walkthrough in the application, visual check, command to run outside your environment). Such a task carries the HTML comment ` + openspec.HumanReviewMarker + ` at the end of its line. NEVER check (- [x]) a task carrying that marker. When a task requires the user's intervention, do not check it as if you had done it: leave it unchecked and add ` + openspec.HumanReviewMarker + ` at the end of its line instead.`
+
+// tasksBlockCompletion reports whether unchecked tasks must stop the worker
+// from finalizing: in full-autonomy any unchecked task does, in hitl-review
+// only those the user is not expected to validate.
+func tasksBlockCompletion(mode DelegationMode, st openspec.TaskStats) bool {
+	if mode == ModeHITLReview {
+		return st.PendingOther > 0
+	}
+	return st.Done < st.Total
+}
+
+// flaggedTasks returns the texts of the human review tasks of a tasks.md.
+func flaggedTasks(tasksPath string) map[string]bool {
+	out := map[string]bool{}
+	data, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return out
+	}
+	for _, t := range openspec.ParseTaskListContent(string(data)) {
+		if t.HumanReview {
+			out[t.Text] = true
+		}
+	}
+	return out
+}
+
+// triageRemainingTasks sends the single triage turn when unchecked tasks
+// without the human review marker remain, then records the tasks the agent
+// flagged. It returns false when the worker was paused.
+func (m *Manager) triageRemainingTasks(w *Worker, proc *session.Subprocess, tasksPath string, pause func(string)) bool {
+	var remaining []string
+	for _, t := range openspec.ParseTaskListContent(readFileContent(tasksPath)) {
+		if !t.Done && !t.HumanReview {
+			remaining = append(remaining, t.Text)
+		}
+	}
+	if len(remaining) == 0 {
+		return true
+	}
+	before := flaggedTasks(tasksPath)
+	if err := m.runTurn(w, proc, triagePrompt(remaining)); err != nil {
+		log.Printf("[worker %d] agent triage error: %v\n", w.ID, err)
+		pause(agentTurnPauseReason(err, "Échec de l'invocation de l'agent pour trier les tâches restantes"))
+		return false
+	}
+	if m.activityStore != nil {
+		for _, t := range openspec.ParseTaskListContent(readFileContent(tasksPath)) {
+			if t.HumanReview && !before[t.Text] {
+				_ = m.activityStore.Append(w.WorkspaceID, w.ActiveChange, activity.Entry{
+					Type:     "pool.task_flagged",
+					Category: "pool",
+					Summary:  "Task flagged for human review: " + t.Text,
+					Meta: map[string]any{
+						"worker_id": w.ID,
+						"change":    w.ActiveChange,
+					},
+				})
+			}
+		}
+	}
+	return true
+}
+
+func triagePrompt(tasks []string) string {
+	var b strings.Builder
+	b.WriteString("The following tasks of tasks.md are still unchecked:\n")
+	for _, t := range tasks {
+		b.WriteString("- " + t + "\n")
+	}
+	b.WriteString("For each of them, either complete it and check it (- [x]), or, if it requires the user's intervention (manual walkthrough, visual check, action outside your environment), leave it unchecked and add " + openspec.HumanReviewMarker + " at the end of its line. Do not modify any other file just to flag a task.")
+	return b.String()
+}
+
+func readFileContent(path string) string {
+	data, _ := os.ReadFile(path)
+	return string(data)
 }
 
 func isAgentStop(err error) bool {
@@ -504,7 +653,10 @@ func isAgentStop(err error) bool {
 func agentTurnPauseReason(err error, fallback string) string {
 	var te *agentTurnError
 	var ie *agentIdleError
+	var de *driverCheckError
 	switch {
+	case errors.As(err, &de):
+		return de.reason
 	case errors.As(err, &te):
 		return fmt.Sprintf("L'agent a terminé son tour en erreur : %s", te.reason)
 	case errors.As(err, &ie):
@@ -534,6 +686,39 @@ func (m *Manager) invokeAgentHeal(w *Worker, proc *session.Subprocess, validatio
 // (never once per line). It returns an error if the subprocess ends before
 // signaling completion.
 func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) error {
+	_, err := m.runTurnText(m.workerTurnTarget(w), proc, content)
+	return err
+}
+
+// turnTarget is what a turn needs of its owner: the run journal, the activity
+// display and the cancellation of the agent's process group. A worker and a
+// verification both provide one.
+type turnTarget struct {
+	ref         runRef
+	setActivity func(string)
+	notify      func()
+	procCancel  func() // nil when there is nothing to cancel
+	// observe, when set, sees every line read from the agent; an error ends the
+	// turn and cancels the agent (see driverObserver).
+	observe func(line []byte) error
+}
+
+func (m *Manager) workerTurnTarget(w *Worker) turnTarget {
+	return turnTarget{
+		ref:         w.ref(),
+		setActivity: func(a string) { m.setActivity(w, a) },
+		notify:      m.notify,
+		procCancel: func() {
+			if w.procCancel != nil {
+				w.procCancel()
+			}
+		},
+	}
+}
+
+// runTurnText is runTurn returning the text of the turn: the "result" field of
+// the final event or, failing that, the text deltas accumulated during the turn.
+func (m *Manager) runTurnText(t turnTarget, proc *session.Subprocess, content string) (string, error) {
 	turn := map[string]interface{}{
 		"type": "user",
 		"message": map[string]string{
@@ -543,11 +728,11 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	}
 	data, err := json.Marshal(turn)
 	if err != nil {
-		return fmt.Errorf("failed to encode turn: %w", err)
+		return "", fmt.Errorf("failed to encode turn: %w", err)
 	}
-	m.logRun(w, "in", data)
+	m.logRunRef(t.ref, "in", data)
 	if _, err := proc.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("failed to write turn to agent subprocess: %w", err)
+		return "", fmt.Errorf("failed to write turn to agent subprocess: %w", err)
 	}
 
 	scanner := bufio.NewScanner(proc.Stdout())
@@ -558,41 +743,100 @@ func (m *Manager) runTurn(w *Worker, proc *session.Subprocess, content string) e
 	var idled atomic.Bool
 	idle := time.AfterFunc(agentIdleTimeout, func() {
 		idled.Store(true)
-		if w.procCancel != nil {
-			w.procCancel()
+		if t.procCancel != nil {
+			t.procCancel()
 		}
 		_ = proc.Stdout().Close()
 	})
 	defer idle.Stop()
 
+	var deltas strings.Builder
 	var lastNotify time.Time
 	for scanner.Scan() {
 		idle.Reset(agentIdleTimeout)
 		line := scanner.Bytes()
-		m.logRun(w, "out", line)
+		m.logRunRef(t.ref, "out", line)
+
+		if t.observe != nil {
+			if err := t.observe(line); err != nil {
+				if t.procCancel != nil {
+					t.procCancel()
+				}
+				return "", &driverCheckError{reason: err.Error()}
+			}
+		}
 
 		switch kind, reason := classifyTurnLine(line); kind {
 		case turnOK:
-			return nil
+			if text := turnResultText(line); text != "" {
+				return text, nil
+			}
+			return deltas.String(), nil
 		case turnError:
-			return &agentTurnError{reason: reason}
+			return "", &agentTurnError{reason: reason}
 		}
 
+		deltas.WriteString(extractTextDelta(line))
 		if activity := extractActivity(line); activity != "" {
-			m.setActivity(w, activity)
+			t.setActivity(activity)
 			if now := time.Now(); lastNotify.IsZero() || now.Sub(lastNotify) >= activityBroadcastInterval {
-				m.notify()
+				t.notify()
 				lastNotify = now
 			}
 		}
 	}
 	if idled.Load() {
-		return &agentIdleError{after: agentIdleTimeout}
+		return "", &agentIdleError{after: agentIdleTimeout}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("agent subprocess stdout error before completion: %w", err)
+		return "", fmt.Errorf("agent subprocess stdout error before completion: %w", err)
 	}
-	return fmt.Errorf("agent subprocess ended before returning a result")
+	return "", fmt.Errorf("agent subprocess ended before returning a result")
+}
+
+// turnResultText returns the "result" text of an end-of-turn line, or "".
+func turnResultText(line []byte) string {
+	var data struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(line, &data) != nil {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(data.Result, &text) != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+// extractTextDelta returns the assistant text carried by a streaming delta
+// line (thinking and tool events excluded), or "".
+func extractTextDelta(line []byte) string {
+	var data struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Text string `json:"text"`
+		} `json:"delta"`
+		Event json.RawMessage `json:"event"`
+	}
+	if json.Unmarshal(line, &data) != nil {
+		return ""
+	}
+	if data.Type == "content_block_delta" {
+		return data.Delta.Text
+	}
+	if data.Type == "stream_event" && len(data.Event) > 0 {
+		var evt struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal(data.Event, &evt) == nil && evt.Type == "content_block_delta" {
+			return evt.Delta.Text
+		}
+	}
+	return ""
 }
 
 // turnKind classifies a stdout line with respect to the end of a turn.

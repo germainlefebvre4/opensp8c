@@ -26,7 +26,7 @@ func NewScheduler(changes []openspec.Change) *Scheduler {
 
 // GetRunnableChanges returns a list of change names from the "todo" column
 // that have no pending dependencies. A dependency is considered pending if
-// it is currently in "todo", "in-progress", or "to-review".
+// it is currently in "todo", "in-progress", "verifying" or "to-review".
 func (s *Scheduler) GetRunnableChanges() []string {
 	var runnable []string
 
@@ -40,7 +40,7 @@ func (s *Scheduler) GetRunnableChanges() []string {
 			dep, exists := s.changeMap[depName]
 			// If it exists and is not completely done/archived, we can't run this change.
 			// If it doesn't exist in the active changes, we assume it's merged/archived/fulfilled.
-			if exists && (dep.KanbanStatus == "todo" || dep.KanbanStatus == "in-progress" || dep.KanbanStatus == "to-review") {
+			if exists && (dep.KanbanStatus == "todo" || dep.KanbanStatus == "in-progress" || dep.KanbanStatus == "verifying" || dep.KanbanStatus == "to-review") {
 				canRun = false
 				break
 			}

@@ -8,6 +8,7 @@ import { TableOfContents, type Heading } from '../components/TableOfContents'
 import { SpecEditor } from '../components/SpecEditor'
 import { Markdown } from '../components/Markdown'
 import { DocumentationPanel } from '../components/DocumentationPanel'
+import { SubTabs } from '../components/SubTabs'
 
 interface Props {
   workspaceId: string
@@ -118,29 +119,16 @@ export function SpecsPage({ workspaceId }: Props) {
     setIsEditing(false)
   }
 
-  const subTabClass = (active: boolean) =>
-    `px-3 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
-      active
-        ? 'border-blue-600 text-blue-700'
-        : 'border-transparent text-slate-500 hover:text-slate-800'
-    }`
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center gap-1 px-4 border-b border-slate-200 bg-white">
-        <button
-          onClick={() => setActiveTab('specifications')}
-          className={subTabClass(activeTab === 'specifications')}
-        >
-          {t('title')}
-        </button>
-        <button
-          onClick={() => setActiveTab('documentation')}
-          className={subTabClass(activeTab === 'documentation')}
-        >
-          {t('docs.tabLabel')}
-        </button>
-      </div>
+      <SubTabs
+        tabs={[
+          { id: 'specifications', label: t('title') },
+          { id: 'documentation', label: t('docs.tabLabel') },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
 
       {activeTab === 'documentation' ? (
         <DocumentationPanel workspaceId={workspaceId} generating={docsGenerating} />

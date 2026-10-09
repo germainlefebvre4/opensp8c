@@ -27,6 +27,12 @@ type reviewActionError struct {
 	Code    string `json:"code"`
 	Message string `json:"message,omitempty"`
 	Output  string `json:"output,omitempty"`
+	// Remaining is the number of unchecked tasks of a tasks_pending refusal.
+	Remaining int `json:"remaining,omitempty"`
+	// Target and Files describe an integration_conflict refusal: the branch
+	// integrated and the files in conflict.
+	Target string   `json:"target,omitempty"`
+	Files  []string `json:"files,omitempty"`
 }
 
 func writeReviewAction(w http.ResponseWriter, status int, body any) {
@@ -37,8 +43,14 @@ func writeReviewAction(w http.ResponseWriter, status int, body any) {
 
 // resolve checks the workspace and the change, writing the error itself.
 func (h *ReviewActionsHandler) resolve(w http.ResponseWriter, r *http.Request) (id, path, name string, ok bool) {
+	return resolveChange(h.ws, w, r)
+}
+
+// resolveChange checks the workspace and the change of a request, writing the
+// error itself.
+func resolveChange(ws *WorkspaceHandler, w http.ResponseWriter, r *http.Request) (id, path, name string, ok bool) {
 	id, name = chi.URLParam(r, "id"), chi.URLParam(r, "name")
-	path, found := h.ws.workspacePath(id)
+	path, found := ws.workspacePath(id)
 	if !found {
 		http.Error(w, "workspace not found", http.StatusNotFound)
 		return "", "", "", false
@@ -114,7 +126,10 @@ func approveFailure(err error) (int, reviewActionError) {
 	var moving *pool.TargetMovingError
 	var validation *pool.ValidationFailedError
 	var env *pool.ValidationEnvError
+	var pending *pool.TasksPendingError
 	switch {
+	case errors.As(err, &pending):
+		return http.StatusConflict, reviewActionError{Code: "tasks_pending", Message: err.Error(), Remaining: pending.Remaining}
 	case errors.Is(err, pool.ErrNotInReview):
 		return http.StatusConflict, reviewActionError{Code: "not_in_review", Message: err.Error()}
 	case errors.Is(err, pool.ErrWorkerActive):
@@ -124,7 +139,7 @@ func approveFailure(err error) (int, reviewActionError) {
 	case errors.Is(err, pool.ErrBaseBranchMismatch):
 		return http.StatusConflict, reviewActionError{Code: "base_branch_mismatch", Message: err.Error()}
 	case errors.As(err, &integration):
-		return http.StatusConflict, reviewActionError{Code: "integration_conflict", Message: err.Error()}
+		return http.StatusConflict, reviewActionError{Code: "integration_conflict", Message: err.Error(), Target: integration.Target, Files: integration.Files}
 	case errors.As(err, &moving):
 		return http.StatusConflict, reviewActionError{Code: "target_moving", Message: err.Error()}
 	case errors.As(err, &validation):
@@ -136,20 +151,21 @@ func approveFailure(err error) (int, reviewActionError) {
 }
 
 // RequestCorrection answers POST .../review/request-correction (body
-// {"feedback"}): 204 on success.
+// {"feedback", "reopen_human_tasks"?}): 204 on success.
 func (h *ReviewActionsHandler) RequestCorrection(w http.ResponseWriter, r *http.Request) {
 	id, path, name, ok := h.resolve(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Feedback string `json:"feedback"`
+		Feedback         string `json:"feedback"`
+		ReopenHumanTasks bool   `json:"reopen_human_tasks"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeReviewAction(w, http.StatusBadRequest, reviewActionError{Code: "empty_feedback", Message: "corps invalide"})
 		return
 	}
-	err := h.poolReg.For(id).RequestCorrection(r.Context(), id, path, name, body.Feedback)
+	err := h.poolReg.For(id).RequestCorrection(r.Context(), id, path, name, body.Feedback, pool.CorrectionOptions{ReopenHumanTasks: body.ReopenHumanTasks})
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)

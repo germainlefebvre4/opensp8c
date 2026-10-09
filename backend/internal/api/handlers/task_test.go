@@ -46,7 +46,7 @@ func TestTaskHandler_PatchTask_AppendsActivity(t *testing.T) {
 	actDir := filepath.Join(tmpDir, "activity")
 	actStore := activity.NewStore(actDir, nil)
 
-	h := NewTaskHandler(ws, actStore)
+	h := NewTaskHandler(ws, actStore, nil)
 
 	// Toggle first task (index 0)
 	rec, req := patchTaskRequest(wsID, "my-change", "0")

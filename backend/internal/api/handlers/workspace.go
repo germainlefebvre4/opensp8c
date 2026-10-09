@@ -31,19 +31,25 @@ func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 			"ready":       0,
 			"todo":        0,
 			"in-progress": 0,
+			"verifying":   0,
 			"to-review":   0,
 			"done":        0,
 		}
+		id := workspace.StableID(absPath)
+		attention := []workspace.Attention{}
 		if changes, err := openspec.ListChanges(absPath); err == nil {
+			held := applyLiveState(h.poolReg, id, absPath, changes)
 			for _, ch := range changes {
 				counts[ch.KanbanStatus]++
 			}
+			attention = ComputeAttention(changes, held, effectiveTasks(id, absPath, held))
 		}
 		workspaces = append(workspaces, workspace.Workspace{
-			ID:         workspace.StableID(absPath),
+			ID:         id,
 			Name:       wc.Name,
 			Path:       absPath,
 			TaskCounts: counts,
+			Attention:  attention,
 		})
 	}
 	if workspaces == nil {
@@ -94,7 +100,7 @@ func (h *WorkspaceHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws := workspace.Workspace{ID: id, Name: name, Path: absPath}
+	ws := workspace.Workspace{ID: id, Name: name, Path: absPath, Attention: []workspace.Attention{}}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(ws)
 }

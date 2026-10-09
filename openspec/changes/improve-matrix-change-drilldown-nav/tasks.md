@@ -21,7 +21,7 @@
 
 ## Corrections
 
-- [ ] Correction : Integrate `main` into the change branch, resolve the conflicts, then rerun the validation.
+- [x] Correction : Integrate `main` into the change branch, resolve the conflicts, then rerun the validation.
   >
   > Files in conflict:
   > - frontend/src/components/DetailPanel.test.tsx

@@ -13,13 +13,16 @@ export class ApiError extends Error {
   code?: string
   target?: string
   output?: string
-  constructor(message: string, status?: number, code?: string, target?: string, output?: string) {
+  /** Files in conflict of an `integration_conflict` refusal (may be absent). */
+  files?: string[]
+  constructor(message: string, status?: number, code?: string, target?: string, output?: string, files?: string[]) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.target = target
     this.output = output
+    this.files = files
   }
 }
 
@@ -45,6 +48,7 @@ api.interceptors.response.use(
         typeof body.code === 'string' ? body.code : undefined,
         typeof body.target === 'string' ? body.target : undefined,
         typeof body.output === 'string' ? body.output : undefined,
+        Array.isArray(body.files) ? body.files.filter((f): f is string => typeof f === 'string') : undefined,
       ))
     }
     return Promise.reject(err)
@@ -80,8 +84,8 @@ export interface AgentLanguagesPatch {
   uiLocale?: string
 }
 
-export type Role = 'explorer' | 'ff' | 'implementer' | 'fixer' | 'documenter'
-export const ROLES: Role[] = ['explorer', 'ff', 'implementer', 'fixer', 'documenter']
+export type Role = 'explorer' | 'ff' | 'implementer' | 'fixer' | 'verifier' | 'documenter'
+export const ROLES: Role[] = ['explorer', 'ff', 'implementer', 'fixer', 'verifier', 'documenter']
 
 // One level of agent/model/effort; an empty or absent field means "inherit".
 export interface RoleSetting {
@@ -138,9 +142,60 @@ export interface PoolPatch {
   validationCommand?: string | null
 }
 
+// How the UI verification agent gets a browser. `chrome` can only be chosen
+// per workspace (it drives the user's own browser).
+export type UiDriver = 'auto' | 'playwright' | 'chrome' | 'custom'
+
+// Verification: two independent steps, each on / off / inherited per level.
+export interface VerificationSettings {
+  conformity: boolean
+  ui: boolean
+  uiStartCommand?: string
+  uiBaseUrl?: string
+  uiDriver?: UiDriver
+  uiMcpConfig?: string
+  uiAllowedTools?: string[]
+  // Free text for the UI agent. Resolved values accumulate: Configuration
+  // text, then the workspace text.
+  uiGuidance?: string
+}
+
+// Partial per-workspace override; an absent field inherits.
+export type VerificationOverride = Partial<VerificationSettings>
+
+// null resets a field to inheritance.
+export interface VerificationPatch {
+  conformity?: boolean | null
+  ui?: boolean | null
+  uiStartCommand?: string | null
+  uiBaseUrl?: string | null
+  uiDriver?: UiDriver | null
+  uiMcpConfig?: string | null
+  uiAllowedTools?: string[] | null
+  uiGuidance?: string | null
+}
+
+// Change level: the two steps only (launch parameters describe the project).
+export interface ChangeVerificationOverride {
+  conformity?: boolean
+  ui?: boolean
+}
+
+export interface ChangeVerificationPatch {
+  conformity?: boolean | null
+  ui?: boolean | null
+}
+
+export interface ChangeVerification {
+  override: ChangeVerificationOverride
+  inherited: VerificationSettings
+  resolved: VerificationSettings
+}
+
 export interface GlobalSettingsPatch {
   agentSettings?: AgentSettingsPatch
   poolDefaults?: PoolPatch
+  verificationDefaults?: VerificationPatch
 }
 
 export interface AgentModel {
@@ -162,23 +217,27 @@ export interface WorkspaceSettings {
   overrides: {
     agentSettings: AgentSettings
     pool: PoolOverride
+    verification: VerificationOverride
     env: Record<string, string>
     agentEnv: Record<string, Record<string, string>>
   }
   inherited: {
     agentSettings: ResolvedSettings
     pool: PoolSettings
+    verification: VerificationSettings
     env: Record<string, string>
     agentEnv: Record<string, Record<string, string>>
   }
   resolved: {
     agentSettings: ResolvedSettings
     pool: PoolSettings
+    verification: VerificationSettings
   }
 }
 
-export interface WorkspaceSettingsPatch extends GlobalSettingsPatch {
+export interface WorkspaceSettingsPatch extends Omit<GlobalSettingsPatch, 'verificationDefaults'> {
   pool?: PoolPatch
+  verification?: VerificationPatch
   env?: Record<string, string>
   agentEnv?: Record<string, Record<string, string>>
 }
@@ -188,6 +247,7 @@ export interface Preferences {
   agentSettings?: AgentSettings
   resolvedAgentSettings?: ResolvedSettings
   poolDefaults?: PoolSettings
+  verificationDefaults?: VerificationSettings
   env: Record<string, string>
   agentEnv?: Record<string, Record<string, string>>
   systemEnv?: Record<string, string>
@@ -210,7 +270,7 @@ export const getPreferences = () =>
   api.get<Preferences>('/api/preferences').then(r => r.data)
 
 export const patchPreferences = (
-  data: Omit<Partial<Preferences>, 'agentLanguages' | 'agentSettings' | 'poolDefaults'> & AgentLanguagesPatch & GlobalSettingsPatch,
+  data: Omit<Partial<Preferences>, 'agentLanguages' | 'agentSettings' | 'poolDefaults' | 'verificationDefaults'> & AgentLanguagesPatch & GlobalSettingsPatch,
 ) => api.patch('/api/preferences', data)
 
 export const getAgentModels = () =>
@@ -221,6 +281,9 @@ export const getWorkspaceSettings = (workspaceId: string) =>
 
 export const patchWorkspaceSettings = (workspaceId: string, patch: WorkspaceSettingsPatch) =>
   api.patch<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`, patch).then(r => r.data)
+
+export const patchChangeVerification = (workspaceId: string, changeName: string, patch: ChangeVerificationPatch) =>
+  api.patch<ChangeVerification>(`/api/workspaces/${workspaceId}/changes/${changeName}/verification`, patch).then(r => r.data)
 
 export const getAgentSpecializations = () =>
   api.get<AgentSpecializations>('/api/agent-specializations').then(r => r.data)
@@ -233,6 +296,15 @@ export const triggerFF = (workspaceId: string, changeName: string) =>
 
 export const resetTasks = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/tasks/reset`)
+
+// Translation key (kanban namespace) of the toast shown when a reset is refused.
+export const resetErrorKey = (err: unknown): string => {
+  const code = err instanceof ApiError ? err.code : undefined
+  if (code === 'worker_active') return 'errors.resetWorkerActive'
+  if (code === 'review_busy') return 'errors.resetReviewBusy'
+  if (code === 'verification_busy') return 'errors.resetVerificationBusy'
+  return 'errors.resetFailed'
+}
 
 export const launchChange = (workspaceId: string, changeName: string) =>
   api.patch(`/api/workspaces/${workspaceId}/changes/${changeName}/launch`)
@@ -289,8 +361,13 @@ export const startPool = (workspaceId: string, config: AgentPoolConfig) =>
 export const stopPool = (workspaceId: string) =>
   api.post(`/api/workspaces/${workspaceId}/pool/stop`)
 
-export const resumeWorker = (workspaceId: string, workerId: number) =>
-  api.post(`/api/workspaces/${workspaceId}/pool/workers/${workerId}/resume`)
+// finalizeOnly resumes the worker without an agent turn (validate, commit,
+// finalize); the body is only sent in that case, as before otherwise.
+export const resumeWorker = (workspaceId: string, workerId: number, opts: { finalizeOnly?: boolean } = {}) =>
+  api.post(
+    `/api/workspaces/${workspaceId}/pool/workers/${workerId}/resume`,
+    ...(opts.finalizeOnly ? [{ finalize_only: true }] : []),
+  )
 
 export interface DraftTask {
   id: string
@@ -403,12 +480,69 @@ export interface ApproveResult {
 export const approveReview = (workspaceId: string, changeName: string) =>
   api.post<ApproveResult>(`${reviewURL(workspaceId, changeName)}/approve`).then(r => r.data)
 
-export const requestCorrection = (workspaceId: string, changeName: string, feedback: string) =>
-  api.post(`${reviewURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+export interface RequestCorrectionOptions {
+  /** Reopens the checked human-validation tasks in the commit of the correction. */
+  reopenHumanTasks?: boolean
+}
+
+export const requestCorrection = (workspaceId: string, changeName: string, feedback: string, options?: RequestCorrectionOptions) =>
+  api.post(
+    `${reviewURL(workspaceId, changeName)}/request-correction`,
+    options?.reopenHumanTasks ? { feedback, reopen_human_tasks: true } : { feedback },
+  ).then(() => undefined)
+
+// 'waiting': the UI step waits for the machine-wide UI lock.
+export type VerificationState = 'queued' | 'waiting' | 'running' | 'failed' | 'passed'
+
+export interface VerificationArtifact {
+  name: string
+  size: number
+}
+
+export interface VerificationReport {
+  /** Identifier of the run: locates its artifacts. */
+  run?: string
+  step: string
+  verdict: 'pass' | 'fail' | 'error' | ''
+  reason: string
+  report: string
+  started_at: string
+  /** Screenshots of a UI verification run. */
+  artifacts?: VerificationArtifact[]
+  /** Human-review tasks the verification checked off. */
+  verified?: string[]
+  /** TASK-VERIFIED lines that matched no task. */
+  ignored?: string[]
+  /** UI step only: how the agent drove the browser. Absent for another step or an older run. */
+  driver?: UiDriver
+  /** UI step only: the tools passed to the agent's --allowedTools. */
+  allowed_tools?: string[]
+}
+
+const verificationURL = (workspaceId: string, changeName: string) =>
+  `/api/workspaces/${workspaceId}/changes/${encodeURIComponent(changeName)}/verification`
+
+export const rerunVerification = (workspaceId: string, changeName: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/rerun`).then(() => undefined)
+
+export const finalizeVerification = (workspaceId: string, changeName: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/finalize`).then(() => undefined)
+
+export const requestVerificationCorrection = (workspaceId: string, changeName: string, feedback: string) =>
+  api.post(`${verificationURL(workspaceId, changeName)}/request-correction`, { feedback }).then(() => undefined)
+
+// Report of the most recent run, or of the most recent run of `step`.
+export const getVerificationReport = (workspaceId: string, changeName: string, step?: string) =>
+  api
+    .get<VerificationReport>(`${verificationURL(workspaceId, changeName)}/report`, { params: step ? { step } : undefined })
+    .then(r => r.data)
+
+export const verificationArtifactURL = (workspaceId: string, changeName: string, run: string, name: string) =>
+  `${verificationURL(workspaceId, changeName)}/artifacts/${encodeURIComponent(run)}/${encodeURIComponent(name)}`
 
 const REVIEW_ERROR_CODES = new Set([
   'not_in_review', 'worker_active', 'merge_in_progress', 'base_branch_mismatch',
-  'integration_conflict', 'target_moving', 'validation_failed', 'empty_feedback',
+  'integration_conflict', 'target_moving', 'validation_failed', 'empty_feedback', 'tasks_pending',
 ])
 
 // Translation key (dialogs namespace) of the message shown when a review action

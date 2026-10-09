@@ -23,6 +23,8 @@ export function usePatchWorkspaceSettings(workspaceId: string) {
     onSuccess: data => {
       qc.setQueryData(workspaceSettingsKey(workspaceId), data)
       qc.invalidateQueries({ queryKey: workspaceSettingsKey(workspaceId) })
+      // A change's inherited verification values come from its workspace.
+      qc.invalidateQueries({ queryKey: ['change-detail', workspaceId] })
     },
   })
 }

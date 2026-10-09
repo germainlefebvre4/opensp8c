@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Markdown } from './Markdown'
-import { X, ArrowLeft, Code, Eye, Loader2, RefreshCw, Pin } from 'lucide-react'
+import { X, ArrowLeft, Code, Eye, Loader2, RefreshCw, Pin, RotateCw, CheckCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChangeDetail } from '../hooks/useChangeDetail'
 import { useArchive } from '../hooks/useArchive'
 import { useDeleteChange } from '../hooks/useDeleteChange'
 import { useToggleTask } from '../hooks/useToggleTask'
+import { useResumeWorker } from '../hooks/useResumeWorker'
 import { useActivityTimeline } from '../hooks/useActivityTimeline'
 import { ActivityTimelineBar } from './ActivityTimelineBar'
 import { toggleTypeInFilter } from '../lib/timelineUtils'
@@ -17,8 +18,11 @@ import { useApproveReview, useRequestCorrection } from '../hooks/useReviewAction
 import { DeleteChangeDialog } from './DeleteChangeDialog'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { ReviewTab } from './ReviewTab'
-import { ApproveDialog } from './ApproveDialog'
+import { ChangeVerificationSection } from './ChangeVerificationSection'
+import { ApproveDialog, ConflictFiles } from './ApproveDialog'
 import { CorrectionDialog } from './CorrectionDialog'
+import { buildConflictFeedback } from '../lib/conflictFeedback'
+import { VerificationBanner } from './VerificationBanner'
 
 interface Props {
   workspaceId: string
@@ -37,6 +41,7 @@ const STATUS_KEY_MAP: Record<string, string> = {
   'to-explore': 'toExplore',
   'todo': 'toDo',
   'in-progress': 'inProgress',
+  'verifying': 'verifying',
   'to-review': 'toReview',
   'done': 'done',
   'archived': 'archived',
@@ -54,12 +59,15 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
   const archive = useArchive(workspaceId)
   const deleteChange = useDeleteChange(workspaceId)
   const toggleTask = useToggleTask(workspaceId, changeName)
+  const { resume, pending: resuming, errors: resumeErrors } = useResumeWorker(workspaceId)
   const retag = useRetag(workspaceId, changeName)
   const approveReview = useApproveReview(workspaceId)
   const requestCorrection = useRequestCorrection(workspaceId)
   const [approveOpen, setApproveOpen] = useState(false)
   const [correctionOpen, setCorrectionOpen] = useState(false)
-  const [approveError, setApproveError] = useState<{ message: string; output?: string } | null>(null)
+  // Text the correction dialog opens with (guided resolution of a conflict); null for an ordinary correction.
+  const [correctionPrefill, setCorrectionPrefill] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<{ message: string; output?: string; code?: string; target?: string; files?: string[] } | null>(null)
   const [archiveError, setArchiveError] = useState<string | null>(null)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -139,18 +147,34 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
       setApproveOpen(false)
     } catch (err) {
       // The dialog stays open with the error; it is also kept in the Actions tab.
-      setApproveError({ message: tDialogs(reviewErrorKey(err)), output: err instanceof ApiError ? err.output : undefined })
+      const apiErr = err instanceof ApiError ? err : undefined
+      setApproveError({ message: tDialogs(reviewErrorKey(err)), output: apiErr?.output, code: apiErr?.code, target: apiErr?.target, files: apiErr?.files })
       throw err
     }
   }
 
-  const handleCorrection = async (feedback: string) => {
-    await requestCorrection.mutateAsync({ changeName, feedback })
+  const handleCorrection = async (feedback: string, reopenHumanTasks: boolean) => {
+    await requestCorrection.mutateAsync({ changeName, feedback, reopenHumanTasks })
     setCorrectionOpen(false)
+    setCorrectionPrefill(null)
     actionDone()
   }
 
+  // Hands an integration conflict to the worker: nothing is sent until the user
+  // confirms the prefilled correction.
+  const handleResolveConflict = (target: string | undefined, files: string[]) => {
+    setApproveOpen(false)
+    setCorrectionPrefill(buildConflictFeedback(tDialogs, target, files))
+    setCorrectionOpen(true)
+  }
+
+  const cancelCorrection = () => {
+    setCorrectionOpen(false)
+    setCorrectionPrefill(null)
+  }
+
   const inReview = data?.kanban_status === 'to-review'
+  const tasksToValidate = data ? data.tasks.filter(task => !task.done).length : 0
 
   // The Review tab only exists while the change is in review: when it leaves
   // that status (approval, correction) fall back to the Tasks tab.
@@ -279,6 +303,50 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
             )}
           </div>
 
+          {data.worker_paused && data.worker_id != null && (() => {
+            const workerId = data.worker_id
+            const remaining = data.tasks_total - data.tasks_done
+            const busy = resuming.has(workerId)
+            return (
+              <div className="shrink-0 px-4 py-3 border-b border-amber-100 bg-amber-50/60 flex flex-col gap-2">
+                <div className="text-xs font-semibold text-amber-700">{t('pausedBanner.title')}</div>
+                {data.worker_blocked_reason && (
+                  <p className="text-xs text-amber-800 whitespace-pre-wrap break-words">{data.worker_blocked_reason}</p>
+                )}
+                {resumeErrors[workerId] && (
+                  <p role="alert" className="text-xs text-red-600 break-words">{resumeErrors[workerId]}</p>
+                )}
+                <div className="flex items-center justify-end gap-2">
+                  {remaining > 0 && (
+                    <span className="text-xs text-slate-500 mr-auto">{t('pausedBanner.remaining', { count: remaining })}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void resume(workerId, true)}
+                    disabled={busy || remaining > 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    <CheckCheck size={12} />
+                    {t('pausedBanner.resumeFinalize')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void resume(workerId)}
+                    disabled={busy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    <RotateCw size={12} />
+                    {t('pausedBanner.resume')}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {data.kanban_status === 'verifying' && (
+            <VerificationBanner workspaceId={workspaceId} change={data} onCorrectionSent={actionDone} />
+          )}
+
           {/* Content */}
           {activeTab === 'conversation' ? (
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -358,6 +426,9 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
                   {data.tasks.length === 0 && (
                     <p className="text-sm text-slate-400">{t('emptyTasks')}</p>
                   )}
+                  {inReview && tasksToValidate > 0 && (
+                    <p className="text-xs font-medium text-amber-700">{t('tasksToValidate', { count: tasksToValidate })}</p>
+                  )}
                   {data.tasks.map((task, i) => (
                     <label key={i} className="flex gap-2 items-start text-xs cursor-pointer group">
                       <input
@@ -391,6 +462,11 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
                       <span className={task.done ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-slate-900'}>
                         {task.text}
                       </span>
+                      {task.human_review && (
+                        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {t('humanReviewBadge')}
+                        </span>
+                      )}
                     </label>
                   ))}
                   {toggleError && (
@@ -520,14 +596,15 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => { setApproveError(null); setApproveOpen(true) }}
-                        disabled={reviewBusy}
+                        disabled={reviewBusy || tasksToValidate > 0}
+                        title={tasksToValidate > 0 ? t('tasksToValidate', { count: tasksToValidate }) : undefined}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-blue-600 border border-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {approveReview.isPending && <Loader2 size={12} className="animate-spin" />}
                         {approveReview.isPending ? t('reviewActions.approving') : t('reviewActions.approveAndMerge')}
                       </button>
                       <button
-                        onClick={() => setCorrectionOpen(true)}
+                        onClick={() => { setCorrectionPrefill(null); setCorrectionOpen(true) }}
                         disabled={reviewBusy}
                         className="text-xs px-3 py-1.5 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
@@ -542,6 +619,13 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
                       {approveError.output && (
                         <pre className="max-h-40 overflow-auto rounded bg-slate-50 border border-slate-200 p-2 text-[11px] text-slate-600 whitespace-pre-wrap">{approveError.output}</pre>
                       )}
+                      {approveError.code === 'integration_conflict' && (
+                        <ConflictFiles
+                          target={approveError.target}
+                          files={approveError.files}
+                          onResolve={() => handleResolveConflict(approveError.target, approveError.files ?? [])}
+                        />
+                      )}
                     </div>
                   )}
 
@@ -554,6 +638,14 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
                         {tKanban('card.syncAndArchive')}
                       </button>
                     </div>
+                  )}
+
+                  {data.kanban_status !== 'archived' && data.verification && (
+                    <ChangeVerificationSection
+                      workspaceId={workspaceId}
+                      changeName={changeName}
+                      verification={data.verification}
+                    />
                   )}
 
                   {data.kanban_status !== 'archived' && (
@@ -584,6 +676,7 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
           changeName={changeName}
           onConfirm={handleApprove}
           onCancel={() => setApproveOpen(false)}
+          onResolveConflict={handleResolveConflict}
         />
       )}
 
@@ -591,7 +684,10 @@ export function DetailPanel({ workspaceId, changeName, onClose, onBack, backLabe
         <CorrectionDialog
           changeName={changeName}
           onSubmit={handleCorrection}
-          onCancel={() => setCorrectionOpen(false)}
+          onCancel={cancelCorrection}
+          initialFeedback={correctionPrefill ?? undefined}
+          reopenDefault={correctionPrefill !== null}
+          humanTasksChecked={data ? data.tasks.filter(task => task.human_review && task.done).length : 0}
         />
       )}
 

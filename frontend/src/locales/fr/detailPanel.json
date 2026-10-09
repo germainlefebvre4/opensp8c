@@ -13,6 +13,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "En vérification",
     "toReview": "À Revoir",
     "done": "Done",
     "archived": "Archived"
@@ -40,6 +41,9 @@
     "label": "Brouillon d'exploration actif",
     "freeze": "Figer le change"
   },
+  "humanReviewBadge": "Validation humaine",
+  "tasksToValidate_one": "{{count}} tâche à valider",
+  "tasksToValidate_other": "{{count}} tâches à valider",
   "reviewActions": {
     "approveAndMerge": "Approuver & Fusionner",
     "requestCorrection": "Demander correction",
@@ -102,5 +106,58 @@
     "fileBinary": "Ce fichier ne peut pas être rendu (binaire).",
     "lastRun": "Dernier run",
     "openRun": "Ouvrir le run"
+  },
+  "pausedBanner": {
+    "title": "Worker en pause",
+    "resume": "Reprendre",
+    "resumeFinalize": "Reprendre en finalisant",
+    "remaining_one": "Il reste {{count}} tâche à cocher",
+    "remaining_other": "Il reste {{count}} tâches à cocher"
+  },
+  "verification": {
+    "title": "Vérification",
+    "description": "Réglage propre à ce change. « Hérité » suit le workspace puis Configuration.",
+    "tokenCost": "Consomme des tokens.",
+    "conformity": "Conformité",
+    "ui": "UI",
+    "saveError": "Échec de l'enregistrement : {{message}}"
+  },
+  "verificationBanner": {
+    "title": "Vérification",
+    "state": {
+      "queued": "en attente",
+      "waiting": "en attente de l'interface",
+      "running": "en cours ({{step}})",
+      "runningUi": "vérification UI en cours",
+      "failed": "échec",
+      "passed": "réussie, en attente de finalisation"
+    },
+    "steps": {
+      "conformity": "conformité",
+      "ui": "UI"
+    },
+    "rerun": "Relancer la vérification",
+    "finalize": "Finaliser sans vérification",
+    "requestCorrection": "Demander des corrections",
+    "remaining_one": "{{count}} tâche restante",
+    "remaining_other": "{{count}} tâches restantes",
+    "artifacts": {
+      "title": "Captures",
+      "open": "Ouvrir {{name}}",
+      "close": "Fermer",
+      "viewer": "Capture"
+    },
+    "verifiedTasks": "Tâches cochées par la vérification",
+    "ignoredLines": "Lignes TASK-VERIFIED ignorées",
+    "driver": {
+      "label": "Pilote : {{name}}",
+      "names": {
+        "auto": "automatique",
+        "playwright": "Playwright",
+        "chrome": "navigateur Chrome",
+        "custom": "personnalisé"
+      },
+      "chromeNote": "Votre navigateur a été piloté."
+    }
   }
 }

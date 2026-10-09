@@ -1,4 +1,3 @@
-import { Cpu } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { usePoolStatus, availableWorkers } from '../hooks/usePoolStatus'
@@ -6,7 +5,9 @@ import type { PoolWorker, WorkerStatus } from '../hooks/usePoolStatus'
 import { usePoolRuns } from '../hooks/usePoolRuns'
 import { useWorkspaceLiveState } from '../hooks/useWorkspaceLiveState'
 import { AgentRunPanel } from '../components/AgentRunPanel'
-import { formatElapsed, parseRunSelection, RUN_PARAM } from '../lib/poolRuns'
+import { SubTabs } from '../components/SubTabs'
+import { AGENTS_TAB_PARAM, formatElapsed, parseAgentsTab, parseRunSelection, RUN_PARAM } from '../lib/poolRuns'
+import type { AgentsTab } from '../lib/poolRuns'
 
 interface Props {
   workspaceId: string
@@ -34,10 +35,13 @@ export function AgentsPage({ workspaceId }: Props) {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const selection = parseRunSelection(searchParams.get(RUN_PARAM))
-  const selectRun = (change: string, ts: string) => {
+  const tab = parseAgentsTab(searchParams.get(AGENTS_TAB_PARAM), searchParams.get(RUN_PARAM))
+  // `tab` is only written from the row clicked; the panel's run selector leaves it as is.
+  const selectRun = (change: string, ts: string, fromTab?: AgentsTab) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       next.set(RUN_PARAM, `${change}/${ts}`)
+      if (fromTab) next.set(AGENTS_TAB_PARAM, fromTab)
       return next
     })
   }
@@ -45,6 +49,15 @@ export function AgentsPage({ workspaceId }: Props) {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       next.delete(RUN_PARAM)
+      return next
+    })
+  }
+  const setTab = (id: AgentsTab) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      // Without `tab`, a present `run` would resolve to Runs: keep Workers explicit then.
+      if (id === 'workers' && !next.has(RUN_PARAM)) next.delete(AGENTS_TAB_PARAM)
+      else next.set(AGENTS_TAB_PARAM, id)
       return next
     })
   }
@@ -60,13 +73,19 @@ export function AgentsPage({ workspaceId }: Props) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="shrink-0 px-6 pt-3 pb-3 flex items-center gap-2 border-b border-slate-100">
-        <Cpu size={16} className="text-violet-600" />
-        <h1 className="text-sm font-semibold text-slate-700">{t('title')}</h1>
-      </div>
+      <SubTabs
+        aria-label={t('title')}
+        tabs={[
+          { id: 'workers', label: t('tabs.workers'), testId: 'tab-workers' },
+          { id: 'runs', label: t('tabs.runs'), testId: 'tab-runs' },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
 
       <div className="flex-1 flex overflow-hidden">
       <div className="flex-1 overflow-y-auto p-6">
+        {tab === 'workers' && (<>
         {isRunning && (
           <div className="flex items-center gap-2 flex-wrap mb-3">
             <span className="text-[11px] text-slate-500">
@@ -101,8 +120,8 @@ export function AgentsPage({ workspaceId }: Props) {
                   data-testid="worker-row"
                   aria-selected={selected}
                   tabIndex={selectable ? 0 : undefined}
-                  onClick={selectable ? () => selectRun(w.active_change, w.run_ts!) : undefined}
-                  onKeyDown={selectable ? e => { if (e.key === 'Enter') selectRun(w.active_change, w.run_ts!) } : undefined}
+                  onClick={selectable ? () => selectRun(w.active_change, w.run_ts!, 'workers') : undefined}
+                  onKeyDown={selectable ? e => { if (e.key === 'Enter') selectRun(w.active_change, w.run_ts!, 'workers') } : undefined}
                   className={`border-b border-slate-100 ${selectable ? 'cursor-pointer hover:bg-slate-50' : ''} ${selected ? 'bg-violet-50' : ''}`}
                 >
                   <td className="py-2.5 pr-4 text-slate-600">{w.active_change}</td>
@@ -125,7 +144,10 @@ export function AgentsPage({ workspaceId }: Props) {
           <p className="text-sm text-slate-400 mt-3">{t('available', { count: available })}</p>
         )}
 
-        <section className="mt-8" data-testid="recent-runs">
+        </>)}
+
+        {tab === 'runs' && (
+        <section data-testid="recent-runs">
           <h2 className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">{t('recentRuns.title')}</h2>
           {recentRuns.length === 0 ? (
             <p className="text-sm text-slate-400">{t('recentRuns.empty')}</p>
@@ -149,8 +171,8 @@ export function AgentsPage({ workspaceId }: Props) {
                       data-testid="run-row"
                       aria-selected={selected}
                       tabIndex={0}
-                      onClick={() => selectRun(r.change, r.ts)}
-                      onKeyDown={e => { if (e.key === 'Enter') selectRun(r.change, r.ts) }}
+                      onClick={() => selectRun(r.change, r.ts, 'runs')}
+                      onKeyDown={e => { if (e.key === 'Enter') selectRun(r.change, r.ts, 'runs') }}
                       className={`border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${selected ? 'bg-violet-50' : ''}`}
                     >
                       <td className="py-2.5 pr-4 text-slate-600">{r.change}</td>
@@ -165,6 +187,7 @@ export function AgentsPage({ workspaceId }: Props) {
             </table>
           )}
         </section>
+        )}
       </div>
       {selection && (
         <AgentRunPanel

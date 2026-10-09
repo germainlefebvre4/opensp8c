@@ -5,6 +5,7 @@ import { initReactI18next } from 'react-i18next'
 import { useDroppable, useDndContext } from '@dnd-kit/core'
 import { KanbanColumn } from './KanbanColumn'
 import frKanban from '../locales/fr/kanban.json'
+import { COLUMN_WIDTH } from '../lib/kanbanLayout'
 
 vi.mock('@dnd-kit/core', () => ({
   useDroppable: vi.fn(() => ({ setNodeRef: () => {}, isOver: false })),
@@ -73,5 +74,28 @@ describe('KanbanColumn drop highlight', () => {
     expect(html).not.toContain('bg-violet-50')
     expect(html).not.toContain('bg-red-50')
     expect(html).toContain('bg-slate-50 border-slate-100')
+  })
+})
+
+describe('KanbanColumn verifying', () => {
+  it('uses its own style and is never highlighted as a drop target', () => {
+    setDndState(false)
+    const html = renderToStaticMarkup(
+      <KanbanColumn {...baseProps} title="Verifying" status="verifying" dragSourceStatus="in-progress" validDropSources={[]} />
+    )
+    expect(html).toContain('bg-teal-500')
+    expect(html).toContain('bg-teal-100 text-teal-700')
+    expect(html).not.toContain('bg-violet-50')
+    expect(html).toContain('bg-slate-50 border-slate-100')
+  })
+})
+
+describe('KanbanColumn width', () => {
+  it('uses the minimum column width declared in kanbanLayout', () => {
+    setDndState(false)
+    const html = renderToStaticMarkup(
+      <KanbanColumn {...baseProps} dragSourceStatus={null} validDropSources={[]} />
+    )
+    expect(html).toContain(`min-w-[${COLUMN_WIDTH}px]`)
   })
 })

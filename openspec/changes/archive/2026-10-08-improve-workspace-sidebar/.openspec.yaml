@@ -1,0 +1,26 @@
+schema: spec-driven
+created: "2026-10-08"
+tags:
+    type:
+        - frontend
+        - backend
+    complexity: 4
+    components:
+        - workspace-sidebar
+        - workspace-attention-signals
+        - app-navigation-layout
+        - workspace-kanban-counts
+        - workspace-management
+        - kanban-board
+        - kanban-change-detail
+        - api-router
+        - status-colors
+        - sidebar-collapse
+    agent_specialization:
+        - frontend
+        - backend
+        - api-design
+        - ux-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-08"

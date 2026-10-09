@@ -38,5 +38,5 @@
 
 ## 7. Intégration
 
-- [ ] 7.1 Exécuter un run complet de chaque méthode sur le cas d'usage, produire un rapport avec `report` et vérifier que les deux `result.json`, le journal de l'observateur et le rapport Markdown existent
+- [x] 7.1 Exécuter un run complet de chaque méthode sur le cas d'usage, produire un rapport avec `report` et vérifier que les deux `result.json`, le journal de l'observateur et le rapport Markdown existent
 - [x] 7.2 Lancer `go test ./...` dans `backend` et vérifier qu'aucun test existant n'est affecté par les nouveaux packages

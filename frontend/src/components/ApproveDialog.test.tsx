@@ -63,4 +63,39 @@ describe('ApproveDialog', () => {
     expect(alert.textContent).toContain(enDialogs.reviewErrors.validation_failed)
     expect(alert.textContent).toContain('FAIL TestX')
   })
+
+  describe('guided conflict resolution', () => {
+    const resolveBtn = () => screen.queryByRole('button', { name: enDialogs.reviewApprove.resolveConflict })
+
+    it('lists the files and offers the action for an integration conflict', async () => {
+      const onResolve = vi.fn()
+      const onConfirm = vi.fn().mockRejectedValue(new ApiError('c', 409, 'integration_conflict', 'main', undefined, ['src/a.tsx', 'src/b.tsx']))
+      render(<ApproveDialog workspaceId="ws1" changeName="add-auth" onConfirm={onConfirm} onCancel={vi.fn()} onResolveConflict={onResolve} />)
+      fireEvent.click(confirmBtn())
+      await screen.findByRole('alert')
+      expect(screen.getByText('src/a.tsx')).toBeTruthy()
+      expect(screen.getByText('src/b.tsx')).toBeTruthy()
+      expect(screen.getByText('Files in conflict with "main":')).toBeTruthy()
+      fireEvent.click(resolveBtn()!)
+      expect(onResolve).toHaveBeenCalledWith('main', ['src/a.tsx', 'src/b.tsx'])
+    })
+
+    it('still offers the action when the backend gave no file', async () => {
+      const onConfirm = vi.fn().mockRejectedValue(new ApiError('c', 409, 'integration_conflict', 'main'))
+      render(<ApproveDialog workspaceId="ws1" changeName="add-auth" onConfirm={onConfirm} onCancel={vi.fn()} onResolveConflict={vi.fn()} />)
+      fireEvent.click(confirmBtn())
+      await screen.findByRole('alert')
+      expect(resolveBtn()).toBeTruthy()
+    })
+
+    it.each([['validation_failed', 422], ['target_moving', 409], ['base_branch_mismatch', 409]])(
+      'does not offer the action for %s', async (code, status) => {
+        const onConfirm = vi.fn().mockRejectedValue(new ApiError('x', status, code, 'main', undefined, ['a.go']))
+        render(<ApproveDialog workspaceId="ws1" changeName="add-auth" onConfirm={onConfirm} onCancel={vi.fn()} onResolveConflict={vi.fn()} />)
+        fireEvent.click(confirmBtn())
+        await screen.findByRole('alert')
+        expect(resolveBtn()).toBeNull()
+        expect(screen.queryByText('a.go')).toBeNull()
+      })
+  })
 })

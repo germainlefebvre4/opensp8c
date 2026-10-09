@@ -66,6 +66,7 @@ func (h *PreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Reque
 		"agentSettings":         storedView(p, ""),
 		"resolvedAgentSettings": resolveView(p, ""),
 		"poolDefaults":          p.ResolvePool(""),
+		"verificationDefaults":  p.ResolveVerification("", nil),
 		"agentLanguages": map[string]string{
 			"chat":          levels.Chat,
 			"documentation": levels.Documentation,
@@ -97,6 +98,8 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 		UILocale      *string                         `json:"uiLocale"`
 		AgentSettings *preferences.AgentSettingsPatch `json:"agentSettings"`
 		PoolDefaults  *preferences.PoolPatch          `json:"poolDefaults"`
+
+		VerificationDefaults *preferences.VerificationPatch `json:"verificationDefaults"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -135,7 +138,7 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if err := h.prefs.ValidateGlobalUpdate(body.AgentSettings, body.PoolDefaults); err != nil {
+	if err := h.prefs.ValidateGlobalUpdate(body.AgentSettings, body.PoolDefaults, body.VerificationDefaults); err != nil {
 		var ve *preferences.ValidationError
 		if errors.As(err, &ve) {
 			http.Error(w, ve.Msg, http.StatusBadRequest)
@@ -206,6 +209,13 @@ func (h *PreferencesHandler) PatchPreferences(w http.ResponseWriter, r *http.Req
 
 	if body.PoolDefaults != nil {
 		if err := h.prefs.SetPoolDefaults(*body.PoolDefaults); err != nil {
+			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.VerificationDefaults != nil {
+		if err := h.prefs.SetVerificationDefaults(*body.VerificationDefaults); err != nil {
 			http.Error(w, "failed to save preferences", http.StatusInternalServerError)
 			return
 		}

@@ -9,6 +9,7 @@ import type { AgentLanguageLevel, AgentLanguages, SupportedLanguage } from '../l
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { RoleSettingsTable } from '../components/RoleSettingsTable'
 import { AgentPoolSettingsForm } from '../components/AgentPoolSettingsForm'
+import { VerificationSettingsForm } from '../components/VerificationSettingsForm'
 import { availableWorkers } from '../hooks/usePoolStatus'
 import { useAllPools } from '../hooks/useAllPools'
 import type { AgentWorker, PoolSummary } from '../hooks/useAllPools'
@@ -542,14 +543,33 @@ export function ColumnsTab() {
   )
 }
 
-type ConfigurationTab = 'agent-pool' | 'columns' | 'cli' | 'language'
+// Platform-wide defaults of the automatic verification steps (off by default).
+export function VerificationTab() {
+  const { data: prefs } = usePreferences()
+  const patch = usePatchPreferences()
+
+  return (
+    <VerificationSettingsForm
+      scope="global"
+      values={prefs?.verificationDefaults}
+      isSaving={patch.isPending}
+      onSave={verificationDefaults => patch.mutateAsync({ verificationDefaults })}
+    />
+  )
+}
+
+type ConfigurationTab = 'agent-pool' | 'columns' | 'verification' | 'cli' | 'language'
 
 export function ConfigurationPage() {
   const { t } = useTranslation('configuration')
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const tab: ConfigurationTab =
-    tabParam === 'cli' ? 'cli' : tabParam === 'language' ? 'language' : tabParam === 'columns' ? 'columns' : 'agent-pool'
+    tabParam === 'cli' ? 'cli'
+      : tabParam === 'language' ? 'language'
+      : tabParam === 'columns' ? 'columns'
+      : tabParam === 'verification' ? 'verification'
+      : 'agent-pool'
   const agentId = searchParams.get('agent')
 
   const setTab = (next: ConfigurationTab) => {
@@ -567,6 +587,7 @@ export function ConfigurationPage() {
         {([
           { id: 'agent-pool', label: t('tabs.agentPool') },
           { id: 'columns', label: t('tabs.columns') },
+          { id: 'verification', label: t('tabs.verification') },
           { id: 'cli', label: t('tabs.cli') },
           { id: 'language', label: t('tabs.language') },
         ] as const).map(({ id, label }) => (
@@ -594,6 +615,8 @@ export function ConfigurationPage() {
           </div>
         ) : tab === 'columns' ? (
           <ColumnsTab />
+        ) : tab === 'verification' ? (
+          <VerificationTab />
         ) : tab === 'language' ? (
           <LanguageTab />
         ) : agentId ? (

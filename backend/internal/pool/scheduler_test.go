@@ -85,3 +85,15 @@ func TestScheduler_ToReviewNotRunnableButBlocksDependents(t *testing.T) {
 		t.Errorf("runnable = %v, want %v", got, want)
 	}
 }
+
+func TestScheduler_VerifyingDependencyBlocksTodo(t *testing.T) {
+	changes := []openspec.Change{
+		{Name: "dep", KanbanStatus: "verifying"},
+		{Name: "waiting", KanbanStatus: "todo", Dependencies: []string{"dep"}},
+		{Name: "free", KanbanStatus: "todo"},
+	}
+	got := NewScheduler(changes).GetRunnableChanges()
+	if !reflect.DeepEqual(got, []string{"free"}) {
+		t.Errorf("runnable = %v, want [free]", got)
+	}
+}

@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/glefebvre/opensp8c/internal/verification"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,13 +39,70 @@ type Change struct {
 	GhostID           string   `json:"ghost_id,omitempty"`
 	WorkerActive      bool     `json:"worker_active,omitempty"`
 	WorkerPaused      bool     `json:"worker_paused,omitempty"`
+	WorkerID          *int     `json:"worker_id,omitempty"`
 	Launched          bool     `json:"launched,omitempty"`
 	Order             int      `json:"order,omitempty"`
+	// HasBranch reports that feature/<change> exists in the repository.
+	HasBranch bool `json:"has_branch,omitempty"`
+	// VerificationState and VerificationStep describe a verifying change:
+	// queued, running, failed or passed, and the running step.
+	VerificationState string `json:"verification_state,omitempty"`
+	VerificationStep  string `json:"verification_step,omitempty"`
 }
 
 type Task struct {
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Text        string `json:"text"`
+	Done        bool   `json:"done"`
+	HumanReview bool   `json:"human_review,omitempty"`
+}
+
+// HumanReviewMarker is the HTML comment flagging a tasks.md task that only the
+// user can validate (manual walkthrough, visual check, command to run).
+const HumanReviewMarker = "<!-- human review required -->"
+
+var humanReviewRe = regexp.MustCompile(`(?i)<!--\s*human review required\s*-->`)
+
+// TaskStats counts the tasks of a tasks.md, telling apart the unchecked ones
+// that carry the human review marker from those that do not.
+type TaskStats struct {
+	Done         int
+	Total        int
+	PendingHuman int
+	PendingOther int
+}
+
+// ParseTaskStats reads the tasks.md at tasksPath and counts its tasks.
+func ParseTaskStats(tasksPath string) TaskStats {
+	data, err := os.ReadFile(tasksPath)
+	if err != nil {
+		return TaskStats{}
+	}
+	return ParseTaskStatsContent(string(data))
+}
+
+// ParseTaskStatsContent counts the tasks of a tasks.md content.
+func ParseTaskStatsContent(content string) TaskStats {
+	var st TaskStats
+	for _, t := range ParseTaskListContent(content) {
+		st.Total++
+		switch {
+		case t.Done:
+			st.Done++
+		case t.HumanReview:
+			st.PendingHuman++
+		default:
+			st.PendingOther++
+		}
+	}
+	return st
+}
+
+// splitHumanReview strips the human review marker from a task text.
+func splitHumanReview(text string) (string, bool) {
+	if !humanReviewRe.MatchString(text) {
+		return text, false
+	}
+	return strings.TrimSpace(humanReviewRe.ReplaceAllString(text, "")), true
 }
 
 type Artifacts struct {
@@ -53,8 +112,20 @@ type Artifacts struct {
 
 type ChangeDetail struct {
 	Change
-	Tasks     []Task    `json:"tasks"`
-	Artifacts Artifacts `json:"artifacts"`
+	// WorkerBlockedReason is the pause reason of the worker holding the change.
+	WorkerBlockedReason string    `json:"worker_blocked_reason,omitempty"`
+	Tasks               []Task    `json:"tasks"`
+	Artifacts           Artifacts `json:"artifacts"`
+	// Verification is filled by the handler, which knows the preferences.
+	Verification *ChangeVerification `json:"verification,omitempty"`
+}
+
+// ChangeVerification exposes the verification settings of one change: its own
+// override, the value it would inherit and the effective one.
+type ChangeVerification struct {
+	Override  verification.Override `json:"override"`
+	Inherited verification.Resolved `json:"inherited"`
+	Resolved  verification.Resolved `json:"resolved"`
 }
 
 type openspecMeta struct {
@@ -64,6 +135,8 @@ type openspecMeta struct {
 	Dependencies []string `yaml:"dependencies,omitempty"`
 	Launched     *bool    `yaml:"launched,omitempty"`
 	Order        *int     `yaml:"order,omitempty"`
+	// Verification is the change-level override of the verification steps.
+	Verification *verification.Override `yaml:"verification,omitempty"`
 }
 
 type openspecProjectConfig struct {
@@ -115,11 +188,158 @@ func ReviewMarkers(workspacePath string) map[string]bool {
 	return markers
 }
 
+// VerifyKeySuffix is the suffix of the git config key
+// (branch.feature/<change>.<suffix>) holding the verification marker of a
+// change: pending, failed or passed.
+const VerifyKeySuffix = "opensp8c-verify"
+
+// Verification marker values.
+const (
+	VerifyPending = "pending"
+	VerifyFailed  = "failed"
+	VerifyPassed  = "passed"
+)
+
+// VerifyKey returns the git config key holding the verification marker of a change.
+func VerifyKey(changeName string) string {
+	return "branch.feature/" + changeName + "." + VerifyKeySuffix
+}
+
+// NormalizeVerifyState maps a raw marker value to pending, failed or passed;
+// an unknown value is read as failed (never rerun or finalized implicitly).
+func NormalizeVerifyState(v string) string {
+	switch v {
+	case VerifyPending, VerifyPassed:
+		return v
+	default:
+		return VerifyFailed
+	}
+}
+
+// VerifyMarkers returns the verification marker value of every change that
+// carries one, in a single git call. The map is empty when the folder is not
+// a git repository or git fails: the error is never propagated.
+func VerifyMarkers(workspacePath string) map[string]string {
+	markers := map[string]string{}
+	cmd := exec.Command("git", "config", "--get-regexp", `^branch\..*\.`+VerifyKeySuffix+`$`)
+	cmd.Dir = workspacePath
+	out, err := cmd.Output()
+	if err != nil {
+		return markers
+	}
+	const prefix, suffix = "branch.feature/", "." + VerifyKeySuffix
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) || len(key) <= len(prefix)+len(suffix) {
+			continue
+		}
+		markers[key[len(prefix):len(key)-len(suffix)]] = NormalizeVerifyState(strings.TrimSpace(value))
+	}
+	return markers
+}
+
 // branchExists reports whether feature/<change> exists in the repository.
 func branchExists(workspacePath, changeName string) bool {
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/feature/"+changeName)
 	cmd.Dir = workspacePath
 	return cmd.Run() == nil
+}
+
+// FeatureBranches returns the set of changes owning a feature/<change> branch,
+// in a single git call. The set is empty when the folder is not a git
+// repository or git fails: the error is never propagated.
+func FeatureBranches(workspacePath string) map[string]bool {
+	branches := map[string]bool{}
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/heads/feature/")
+	cmd.Dir = workspacePath
+	out, err := cmd.Output()
+	if err != nil {
+		return branches
+	}
+	const prefix = "refs/heads/feature/"
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) && len(line) > len(prefix) {
+			branches[line[len(prefix):]] = true
+		}
+	}
+	return branches
+}
+
+// WorktreeHasTasks reports whether the worktree at worktreePath holds a
+// tasks.md with at least one task for changeName.
+func WorktreeHasTasks(worktreePath, changeName string) bool {
+	if worktreePath == "" {
+		return false
+	}
+	_, total := ParseTaskProgress(worktreeTasksPath(worktreePath, changeName))
+	return total > 0
+}
+
+// ApplyBranchProgress overlays on ch the task counts of a feature branch's
+// tasks.md content. Unlike ApplyWorktreeProgress it never touches the kanban
+// column nor staleness: the column stays derived from the review marker and
+// the main repository. It is a no-op when content holds no task. Returns
+// whether the overlay applied.
+func ApplyBranchProgress(ch *Change, content string) bool {
+	done, total := parseTaskProgressContent(content)
+	if total == 0 {
+		return false
+	}
+	ch.TasksDone = done
+	ch.TasksTotal = total
+	return true
+}
+
+// ParseTaskListContent parses the checklist items of a tasks.md content.
+func ParseTaskListContent(content string) []Task {
+	tasks := []Task{}
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "- [") {
+			continue
+		}
+		done := strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")
+		text, human := splitHumanReview(strings.TrimSpace(line[5:]))
+		tasks = append(tasks, Task{Text: text, Done: done, HumanReview: human})
+	}
+	return tasks
+}
+
+// ReopenHumanTasks turns the checked tasks carrying the human review marker of
+// a tasks.md content back into unchecked ones and returns the new content and
+// the number of tasks reopened. Tasks are recognized as ParseTaskListContent
+// does; the rest of each line, marker included, is kept byte for byte, and so
+// is every other line.
+func ReopenHumanTasks(content string) (string, int) {
+	lines := strings.Split(content, "\n")
+	reopened := 0
+	for i, raw := range lines {
+		trimmed := strings.TrimSpace(raw)
+		if !strings.HasPrefix(trimmed, "- [x]") && !strings.HasPrefix(trimmed, "- [X]") {
+			continue
+		}
+		if !humanReviewRe.MatchString(trimmed[5:]) {
+			continue
+		}
+		at := strings.Index(raw, "- [")
+		lines[i] = raw[:at+3] + " " + raw[at+4:]
+		reopened++
+	}
+	if reopened == 0 {
+		return content, 0
+	}
+	return strings.Join(lines, "\n"), reopened
+}
+
+func parseTaskProgressContent(content string) (done, total int) {
+	for _, t := range ParseTaskListContent(content) {
+		total++
+		if t.Done {
+			done++
+		}
+	}
+	return done, total
 }
 
 func ListChanges(workspacePath string) ([]Change, error) {
@@ -134,6 +354,8 @@ func ListChanges(workspacePath string) ([]Change, error) {
 	}
 
 	markers := ReviewMarkers(workspacePath)
+	verifyMarkers := VerifyMarkers(workspacePath)
+	branches := FeatureBranches(workspacePath)
 	var changes []Change
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" {
@@ -143,8 +365,11 @@ func ListChanges(workspacePath string) ([]Change, error) {
 		if err != nil {
 			continue
 		}
-		if markers[ch.Name] && branchExists(workspacePath, ch.Name) {
+		ch.HasBranch = branches[ch.Name]
+		if markers[ch.Name] && ch.HasBranch {
 			markReviewed(ch)
+		} else if state := verifyMarkers[ch.Name]; state != "" && ch.HasBranch {
+			markVerifying(ch, state)
 		}
 		changes = append(changes, *ch)
 	}
@@ -157,11 +382,31 @@ func InReview(workspacePath, changeName string) bool {
 	return ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName)
 }
 
+// InVerification reports whether the change carries a verification marker and
+// its branch still exists, i.e. whether it sits in the Verifying column
+// (unless a review marker takes precedence).
+func InVerification(workspacePath, changeName string) bool {
+	_, ok := VerifyMarkers(workspacePath)[changeName]
+	return ok && branchExists(workspacePath, changeName)
+}
+
 // markReviewed gives ch the to-review status, which takes precedence over the
 // status derived from its tasks. Staleness does not apply to a change in review.
 func markReviewed(ch *Change) {
 	ch.KanbanStatus = "to-review"
 	ch.IsStale = false
+}
+
+// markVerifying gives ch the verifying status, which takes precedence over the
+// status derived from its tasks (but not over to-review). state is a
+// normalized marker value; pending is exposed as queued.
+func markVerifying(ch *Change, state string) {
+	ch.KanbanStatus = "verifying"
+	ch.IsStale = false
+	if state == VerifyPending {
+		state = "queued"
+	}
+	ch.VerificationState = state
 }
 
 func ListArchivedChanges(workspacePath string) ([]Change, error) {
@@ -309,7 +554,7 @@ func ApplyWorktreeProgress(ch *Change, workspacePath, worktreePath string) bool 
 	if status == "done" {
 		status = "in-progress"
 	}
-	inReview := ch.KanbanStatus == "to-review"
+	inReview := ch.KanbanStatus == "to-review" || ch.KanbanStatus == "verifying"
 	ch.TasksDone = done
 	ch.TasksTotal = total
 	if !inReview {
@@ -355,6 +600,14 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 	} else if ReviewMarkers(workspacePath)[changeName] && branchExists(workspacePath, changeName) {
 		markReviewed(ch)
 	}
+	if !isArchived {
+		ch.HasBranch = branchExists(workspacePath, changeName)
+		if ch.KanbanStatus != "to-review" && ch.HasBranch {
+			if state := VerifyMarkers(workspacePath)[changeName]; state != "" {
+				markVerifying(ch, state)
+			}
+		}
+	}
 
 	tasks := parseTaskList(filepath.Join(changeDir, "tasks.md"))
 	if !isArchived && ApplyWorktreeProgress(ch, workspacePath, worktreePath) {
@@ -371,24 +624,11 @@ func GetChangeDetail(workspacePath, changeName, worktreePath string) (*ChangeDet
 }
 
 func parseTaskList(tasksPath string) []Task {
-	f, err := os.Open(tasksPath)
+	data, err := os.ReadFile(tasksPath)
 	if err != nil {
 		return []Task{}
 	}
-	defer f.Close()
-
-	var tasks []Task
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "- [") {
-			continue
-		}
-		done := strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")
-		text := strings.TrimSpace(line[5:])
-		tasks = append(tasks, Task{Text: text, Done: done})
-	}
-	return tasks
+	return ParseTaskListContent(string(data))
 }
 
 func readFileContent(path string) string {
@@ -426,6 +666,58 @@ func SetLaunched(changeRoot string, launched bool) error {
 		return err
 	}
 	return os.WriteFile(metaPath, out, 0644)
+}
+
+// ReadVerification returns the verification override stored in the
+// .openspec.yaml of an active change of the main repository (never a
+// worktree); nil when absent.
+func ReadVerification(workspacePath, changeName string) (*verification.Override, error) {
+	metaPath := filepath.Join(workspacePath, "openspec", "changes", changeName, ".openspec.yaml")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var meta openspecMeta
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+	if meta.Verification.IsEmpty() {
+		return nil, nil
+	}
+	return meta.Verification, nil
+}
+
+// SetVerification applies a partial update to the verification override of a
+// change, dropping the field when no value remains. If .openspec.yaml does
+// not exist, it initializes one with schema "spec-driven". It returns the
+// resulting override (nil when empty).
+func SetVerification(changeRoot string, patch verification.Patch) (*verification.Override, error) {
+	metaPath := filepath.Join(changeRoot, ".openspec.yaml")
+
+	var meta openspecMeta
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		meta = openspecMeta{Schema: "spec-driven"}
+	} else if err := yaml.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+
+	meta.Verification = patch.Apply(meta.Verification)
+
+	out, err := yaml.Marshal(meta)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(metaPath, out, 0644); err != nil {
+		return nil, err
+	}
+	return meta.Verification, nil
 }
 
 // ClearKanbanState removes the persistent "launched"/"order" fields from a
@@ -505,11 +797,11 @@ func ToggleTask(workspacePath, changeName string, index int) (string, bool, erro
 				lines[i] = strings.Replace(line, "- [x]", "- [ ]", 1)
 				lines[i] = strings.Replace(lines[i], "- [X]", "- [ ]", 1)
 				done = false
-				taskText = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmed, "- [x]"), "- [X]"))
+				taskText, _ = splitHumanReview(strings.TrimSpace(trimmed[5:]))
 			} else {
 				lines[i] = strings.Replace(line, "- [ ]", "- [x]", 1)
 				done = true
-				taskText = strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ]"))
+				taskText, _ = splitHumanReview(strings.TrimSpace(trimmed[5:]))
 			}
 			found = true
 			break

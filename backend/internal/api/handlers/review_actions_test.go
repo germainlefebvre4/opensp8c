@@ -188,6 +188,7 @@ func TestApproveFailureMapping(t *testing.T) {
 		{&pool.TargetMovingError{Rounds: 3}, 409, "target_moving"},
 		{&pool.ValidationFailedError{Err: errors.New("tests failed")}, 422, "validation_failed"},
 		{&pool.ValidationEnvError{Reason: "no command"}, 422, "validation_failed"},
+		{&pool.TasksPendingError{Remaining: 2}, 409, "tasks_pending"},
 		{errors.New("boom"), 500, "approve_failed"},
 	}
 	for _, c := range cases {
@@ -195,6 +196,37 @@ func TestApproveFailureMapping(t *testing.T) {
 		if status != c.status || body.Code != c.code {
 			t.Errorf("%v: got %d %q, want %d %q", c.err, status, body.Code, c.status, c.code)
 		}
+		if c.code != "integration_conflict" && (body.Target != "" || body.Files != nil) {
+			t.Errorf("%s must carry neither target nor files: %+v", c.code, body)
+		}
+	}
+}
+
+func TestApproveFailureIntegrationConflictBody(t *testing.T) {
+	status, body := approveFailure(&pool.IntegrationConflictError{Target: "main", Files: []string{"a.txt", "b.txt"}, Err: errors.New("c")})
+	raw, _ := json.Marshal(body)
+	var got map[string]any
+	_ = json.Unmarshal(raw, &got)
+	files, _ := got["files"].([]any)
+	if status != 409 || got["code"] != "integration_conflict" || got["target"] != "main" || len(files) != 2 {
+		t.Fatalf("unexpected body: %d %s", status, raw)
+	}
+
+	_, empty := approveFailure(&pool.IntegrationConflictError{Target: "main", Err: errors.New("c")})
+	raw, _ = json.Marshal(empty)
+	if strings.Contains(string(raw), `"files"`) {
+		t.Fatalf("files must be omitted when empty: %s", raw)
+	}
+}
+
+func TestApproveFailureMapping_TasksPendingRemaining(t *testing.T) {
+	_, body := approveFailure(&pool.TasksPendingError{Remaining: 2})
+	if body.Remaining != 2 || body.Message == "" {
+		t.Errorf("unexpected body: %+v", body)
+	}
+	raw, _ := json.Marshal(reviewActionError{Code: "not_in_review"})
+	if strings.Contains(string(raw), "remaining") {
+		t.Errorf("remaining must be omitted when absent: %s", raw)
 	}
 }
 
@@ -284,4 +316,51 @@ func TestDeleteChange_InReviewCleanupFailureKeepsChange(t *testing.T) {
 		t.Fatal("change folder must be kept")
 	}
 	branchKept(t, e)
+}
+
+// commitHumanTask replaces the branch's tasks.md by one holding a checked
+// human-review task.
+func commitHumanTask(t *testing.T, e *reviewEnv) {
+	t.Helper()
+	writeReviewFile(t, e.wt, "openspec/changes/add-auth/tasks.md", "- [x] a\n- [x] b <!-- human review required -->\n")
+	reviewGit(t, e.wt, "add", "-A")
+	reviewGit(t, e.wt, "commit", "-q", "-m", "human task")
+}
+
+func TestRequestCorrection_HandlerReopensHumanTasks(t *testing.T) {
+	e := newReviewEnv(t, true)
+	commitHumanTask(t, e)
+	h := newActionsHandler(t, e)
+
+	rec := e.post(h.RequestCorrection, "add-auth", `{"feedback":"résoudre","reopen_human_tasks":true}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	got := reviewGit(t, e.repo, "show", "feature/add-auth:openspec/changes/add-auth/tasks.md")
+	if !strings.Contains(got, "- [ ] b <!-- human review required -->") || !strings.Contains(got, "- [x] a") || !strings.Contains(got, "- [ ] Correction : résoudre") {
+		t.Fatalf("tasks.md of the branch:\n%s", got)
+	}
+}
+
+func TestRequestCorrection_HandlerWithoutOptionKeepsTasks(t *testing.T) {
+	e := newReviewEnv(t, true)
+	commitHumanTask(t, e)
+	rec := e.post(newActionsHandler(t, e).RequestCorrection, "add-auth", `{"feedback":"x"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	if got := reviewGit(t, e.repo, "show", "feature/add-auth:openspec/changes/add-auth/tasks.md"); !strings.Contains(got, "- [x] b <!-- human review required -->") {
+		t.Fatalf("human task must stay checked:\n%s", got)
+	}
+}
+
+func TestRequestCorrection_HandlerReopenWithoutHumanTask(t *testing.T) {
+	e := newReviewEnv(t, true)
+	rec := e.post(newActionsHandler(t, e).RequestCorrection, "add-auth", `{"feedback":"x","reopen_human_tasks":true}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	if got := reviewGit(t, e.repo, "show", "feature/add-auth:openspec/changes/add-auth/tasks.md"); !strings.Contains(got, "- [x] a\n- [x] b\n") {
+		t.Fatalf("existing tasks must be untouched:\n%s", got)
+	}
 }

@@ -89,10 +89,10 @@ Chaque worker exécutant un changement SHALL invoquer un agent CLI réel (et non
 - **THEN** le worker marque l'état comme bloqué, arrête l'exécution de ce changement pour demander l'aide de l'utilisateur, et libère le worker pour d'autres tâches indépendantes
 
 ### Requirement: Vérification de complétion avant finalisation
-Après une validation réussie (build/tests OK), le worker SHALL vérifier que `tasks.md` existe dans le worktree, contient au moins une tâche et ne contient plus aucune tâche non cochée avant de finaliser le changement (fusion automatique en mode `full-autonomy`, ou transition vers l'état de revue en mode `hitl-review`). Si `tasks.md` est absent ou ne contient aucune tâche, ou si des tâches restent non cochées malgré une validation réussie, le worker SHALL NOT finaliser le changement et SHALL passer son propre statut à `paused` pour signaler qu'une intervention est nécessaire.
+Après une validation réussie (build/tests OK), le worker SHALL vérifier que `tasks.md` existe dans le worktree, contient au moins une tâche et ne contient plus aucune tâche à faire par l'agent avant de finaliser le changement (fusion automatique en mode `full-autonomy`, ou transition vers l'état de revue en mode `hitl-review`). En mode `full-autonomy`, toute tâche non cochée SHALL compter comme restante. En mode `hitl-review`, une tâche non cochée portant le marqueur de validation humaine (voir `human-review-tasks`) SHALL NE PAS compter comme restante : le worker finalise alors le changement en l'envoyant en revue, où l'utilisateur la valide. Si `tasks.md` est absent ou ne contient aucune tâche, ou si des tâches restent à faire malgré une validation réussie, le worker SHALL NOT finaliser le changement et SHALL passer son propre statut à `paused` pour signaler qu'une intervention est nécessaire.
 
 #### Scenario: Finalisation refusée si des tâches restent ouvertes
-- **WHEN** la validation (tests/build) réussit pour le changement `add-user-auth` mais que `tasks.md` contient encore des tâches non cochées
+- **WHEN** la validation (tests/build) réussit pour le changement `add-user-auth` mais que `tasks.md` contient encore des tâches non cochées qui ne sont pas des tâches de validation humaine
 - **THEN** le worker ne fusionne pas la branche et ne fait pas transitionner le changement vers l'état suivant ; il passe son propre statut à `paused`
 
 #### Scenario: Finalisation refusée si tasks.md est absent ou vide
@@ -102,6 +102,14 @@ Après une validation réussie (build/tests OK), le worker SHALL vérifier que `
 #### Scenario: Finalisation autorisée quand toutes les tâches sont cochées
 - **WHEN** la validation réussit et que toutes les tâches de `tasks.md` sont cochées
 - **THEN** le worker finalise le changement selon le mode de délégation configuré (fusion en `full-autonomy`, transition vers revue en `hitl-review`)
+
+#### Scenario: Tâches de validation humaine restantes en hitl-review
+- **WHEN** en mode `hitl-review` la validation réussit et que les seules tâches non cochées portent le marqueur de validation humaine
+- **THEN** le worker committe le travail, pose le marqueur de revue et le change passe en To Review, les tâches marquées restant décochées
+
+#### Scenario: Tâches de validation humaine restantes en full-autonomy
+- **WHEN** en mode `full-autonomy` la validation réussit mais qu'une tâche portant le marqueur de validation humaine reste décochée
+- **THEN** le worker ne fusionne pas la branche et passe à `paused`
 
 ### Requirement: Raison de blocage lisible sur les workers en pause
 Lorsqu'un worker passe au statut `paused`, le backend SHALL renseigner sur ce worker un message lisible décrivant la cause du blocage. Ce message SHALL être exposé à la fois par l'endpoint de statut de pool par workspace et par l'endpoint de liste globale des pools.
@@ -273,7 +281,7 @@ Tant qu'un worker est en pause pour un changement, le dispatcher SHALL NOT réas
 - **THEN** le worker de B n'est ni interrompu ni modifié, et son identifiant reste inchangé
 
 ### Requirement: Reprise explicite d'un worker en pause
-Le backend SHALL exposer une action de reprise d'un worker en pause, par workspace et par identifiant de worker (`POST /api/workspaces/{id}/pool/workers/{workerId}/resume`). La reprise SHALL retirer le worker de la liste des workers en pause, ce qui rend son changement de nouveau éligible ; le dispatcher SHALL alors le reprendre selon ses règles habituelles en réutilisant la branche et le worktree existants. La reprise SHALL NOT interrompre les autres workers du pool. L'action SHALL retourner une erreur `404` si le workspace est inconnu ou si aucun worker en pause n'a cet identifiant, et `409` si aucun pool n'est actif pour ce workspace.
+Le backend SHALL exposer une action de reprise d'un worker en pause, par workspace et par identifiant de worker (`POST /api/workspaces/{id}/pool/workers/{workerId}/resume`). La reprise SHALL retirer le worker de la liste des workers en pause, ce qui rend son changement de nouveau éligible ; le dispatcher SHALL alors le reprendre selon ses règles habituelles en réutilisant la branche et le worktree existants. La reprise SHALL NOT interrompre les autres workers du pool. Le corps de la requête SHALL être optionnel : sans corps, ou avec `{"finalize_only": false}`, le worker repris relance l'agent comme avant ; avec `{"finalize_only": true}`, la reprise SHALL suivre l'exigence « Reprise en finalisant sans tour d'agent ». L'action SHALL retourner une erreur `404` si le workspace est inconnu ou si aucun worker en pause n'a cet identifiant, et `409` si aucun pool n'est actif pour ce workspace.
 
 #### Scenario: Reprise d'un worker en pause
 - **WHEN** le client demande la reprise du worker 1, en pause sur le changement `add-user-auth`, dans un pool actif
@@ -286,6 +294,11 @@ Le backend SHALL exposer une action de reprise d'un worker en pause, par workspa
 #### Scenario: Pool arrêté
 - **WHEN** le client demande la reprise d'un worker alors qu'aucun pool n'est actif pour ce workspace
 - **THEN** le backend retourne `409`
+
+#### Scenario: Reprise sans corps
+- **WHEN** le client demande la reprise d'un worker en pause sans corps de requête
+- **THEN** le worker repris relance un tour d'agent sur les tâches restantes, comme avant l'introduction de la reprise en finalisant
+
 ### Requirement: Présence du change dans le worktree
 Avant de provisionner la branche et le worktree d'un changement dont la branche `feature/<change>` n'existe pas encore, le worker SHALL vérifier que le fichier `tasks.md` du changement est committé dans la branche courante du dépôt ; sinon il SHALL ne créer ni branche ni worktree, ne lancer aucun agent et passer à `paused` avec une raison de blocage lisible indiquant que le changement doit être committé dans le dépôt avant d'être lancé. Après le provisionnement, le worker SHALL vérifier que `tasks.md` est présent dans le worktree : s'il est absent alors que le changement est committé dans la branche courante, le comportement de recréation ou de pause de la branche périmée décrit dans « Reprise de la branche et du worktree existants » s'applique ; la raison de pause d'une branche périmée portant du travail SHALL se distinguer de celle d'un changement non committé et indiquer que la branche `feature/<change>` ne contient pas le changement et que l'utilisateur doit y intégrer la branche courante ou la supprimer. Si le changement n'est pas committé dans la branche courante, la raison de pause indiquant qu'il doit être committé SHALL être utilisée.
 
@@ -490,3 +503,105 @@ Le worker SHALL NOT fusionner dans la branche cible tant que celle-ci contient u
 #### Scenario: Mode hitl-review
 - **WHEN** un worker en `hitl-review` termine avec succès alors que `main` a avancé
 - **THEN** aucune intégration ni fusion n'est effectuée par le worker, et le changement attend la revue ; l'intégration éventuelle a lieu à l'approbation de l'utilisateur
+
+### Requirement: Reprise en finalisant sans tour d'agent
+Lorsque la reprise d'un worker en pause est demandée avec `{"finalize_only": true}`, le backend SHALL vérifier d'abord que le `tasks.md` du worktree du worker existe, contient au moins une tâche et n'en contient plus aucune non cochée ; sinon il SHALL retourner `409` avec un message indiquant le nombre de tâches restantes (ou l'absence de liste de tâches), laisser le worker en pause et ne rien modifier. Si la vérification passe, la reprise SHALL lever la pause comme une reprise ordinaire, et le worker qui reprend le changement SHALL NOT démarrer de subprocess d'agent ni envoyer de tour `/opsx:apply`. Il SHALL rejouer la validation du worktree, puis enchaîner la vérification de complétude, le commit du travail et la finalisation propres au mode de délégation (fusion en `full-autonomy`, passage en To Review en `hitl-review`). Comme aucun agent n'est disponible, un échec de validation SHALL mettre le worker en `paused` avec la raison de l'échec, sans tour de guérison ni tentative consommée. L'intention de finaliser SHALL ne valoir que pour cette reprise : une pause ultérieure suivie d'une reprise sans `finalize_only` relance l'agent, et l'intention SHALL être oubliée si le pool est arrêté ou si la pause du change est levée avant que le dispatcher ne l'ait consommée.
+
+#### Scenario: Finalisation après tâche manuelle en hitl-review
+- **WHEN** le worker du change `add-user-auth` est en pause avec 9 tâches cochées sur 10, que l'utilisateur coche la dernière dans le worktree, puis demande la reprise avec `finalize_only` en mode `hitl-review`
+- **THEN** aucun subprocess d'agent n'est démarré, la validation est rejouée, le travail est committé dans `feature/add-user-auth` et le change passe en To Review
+
+#### Scenario: Finalisation en full-autonomy
+- **WHEN** la même reprise en finalisant est demandée en mode `full-autonomy` et que la validation réussit
+- **THEN** aucun agent n'est lancé, le travail est committé, la branche est fusionnée selon les règles de fusion sûre, puis le worktree et la branche sont supprimés
+
+#### Scenario: Tâches restantes
+- **WHEN** la reprise avec `finalize_only` est demandée alors que le `tasks.md` du worktree contient encore 2 tâches non cochées
+- **THEN** le backend retourne `409` avec un message indiquant qu'il reste 2 tâches, le worker reste en pause et sa raison de blocage est inchangée
+
+#### Scenario: Validation en échec sans agent
+- **WHEN** la reprise en finalisant est acceptée mais que la validation échoue
+- **THEN** le worker passe à `paused` avec la raison de l'échec, sans tour de guérison ni tentative consommée, et le travail du worktree est conservé
+
+#### Scenario: Intention non persistée
+- **WHEN** l'utilisateur arrête le pool après avoir demandé une reprise en finalisant que le dispatcher n'a pas encore consommée, puis redémarre le pool et reprend le change sans `finalize_only`
+- **THEN** le worker repris relance l'agent normalement
+
+### Requirement: Tour de triage des tâches restantes en hitl-review
+En mode `hitl-review`, lorsque le tour d'application de l'agent est terminé et que le `tasks.md` du worktree contient des tâches non cochées sans marqueur de validation humaine, le worker SHALL envoyer à l'agent, dans la même session, un unique tour de triage lui demandant, pour chaque tâche restante concernée, soit de la terminer et de la cocher, soit de la marquer comme tâche de validation humaine parce qu'elle exige l'intervention de l'utilisateur. Le triage SHALL précéder la validation (build/tests et guérison), de sorte que le travail réalisé pendant le triage soit validé. Le triage SHALL NE PAS avoir lieu en mode `full-autonomy`, lors d'une reprise en finalisant sans agent, ni lorsqu'aucune tâche non cochée sans marqueur ne reste. Une tâche déjà marquée avant le triage SHALL être respectée et SHALL NE PAS être soumise au triage. Si le triage se termine en erreur ou par inactivité, le worker SHALL passer à `paused` avec la raison lisible habituelle d'un tour d'agent en échec. Si des tâches non cochées sans marqueur subsistent après le triage, le contrôle de complétion SHALL les traiter comme restantes (le worker passe à `paused`).
+
+#### Scenario: Tâche d'implémentation terminée pendant le triage
+- **WHEN** en mode `hitl-review` il reste, après l'application, une tâche non cochée sans marqueur que l'agent peut réaliser
+- **THEN** le worker envoie un tour de triage, l'agent la réalise et la coche, puis la validation est exécutée et le change passe en To Review
+
+#### Scenario: Tâche manuelle marquée par le triage
+- **WHEN** il reste après l'application une tâche « parcours manuel dans l'application » non cochée et sans marqueur
+- **THEN** le triage fait marquer cette tâche par l'agent, la validation est exécutée, le travail est committé avec la tâche marquée et décochée, et le change passe en To Review
+
+#### Scenario: Triage sans effet sur une tâche restante non marquée
+- **WHEN** après le triage une tâche non cochée sans marqueur subsiste
+- **THEN** le worker ne finalise pas et passe à `paused` avec la raison de tâches restantes incomplètes
+
+#### Scenario: Pas de triage quand tout est coché
+- **WHEN** toutes les tâches sont cochées après l'application
+- **THEN** aucun tour de triage n'est envoyé
+
+#### Scenario: Pas de triage en full-autonomy
+- **WHEN** le worker s'exécute en mode `full-autonomy` et qu'il reste une tâche non cochée
+- **THEN** aucun tour de triage n'est envoyé et le contrôle de complétion s'applique tel quel
+
+#### Scenario: Triage en erreur
+- **WHEN** le tour de triage se termine en erreur ou par inactivité
+- **THEN** le worker passe à `paused` avec la raison de l'échec du tour de l'agent
+
+### Requirement: Directive de validation humaine donnée aux workers en hitl-review
+Le prompt système d'un worker en mode `hitl-review` SHALL contenir une directive demandant à l'agent de ne jamais cocher une tâche portant le marqueur de validation humaine, et de marquer comme tâche de validation humaine, au lieu de la cocher sans l'avoir réalisée, toute tâche qui exige l'intervention de l'utilisateur (parcours manuel, vérification visuelle, action hors de l'environnement de l'agent). Le prompt système d'un worker en mode `full-autonomy` SHALL NE PAS contenir cette directive.
+
+#### Scenario: Directive en hitl-review
+- **WHEN** un worker démarre en mode `hitl-review`
+- **THEN** le subprocess de l'agent reçoit la directive de validation humaine dans son prompt système
+
+#### Scenario: Pas de directive en full-autonomy
+- **WHEN** un worker démarre en mode `full-autonomy`
+- **THEN** le prompt système du subprocess ne contient pas cette directive
+
+### Requirement: Traçabilité des tâches marquées par le triage
+Chaque tâche que le triage fait marquer comme validation humaine SHALL être consignée dans l'activité du change par une entrée de catégorie `pool` dont le résumé nomme la tâche (texte sans marqueur) et qui porte l'identifiant du worker et le nom du change. Une tâche déjà marquée avant le triage SHALL NE PAS produire d'entrée.
+
+#### Scenario: Deux tâches marquées par le triage
+- **WHEN** le triage fait marquer deux tâches
+- **THEN** l'activité du change reçoit deux entrées, une par tâche, nommant chacune
+
+#### Scenario: Tâche déjà marquée
+- **WHEN** une tâche marquée avant le triage reste décochée
+- **THEN** aucune entrée d'activité n'est créée pour elle
+
+### Requirement: Issue `awaiting-verification` d'un worker
+Lorsqu'un worker pose un marqueur de vérification à la fin de l'implémentation d'un change (voir `verification-stage`), son exécution SHALL se terminer avec l'issue `awaiting-verification`, enregistrée dans le marqueur de fin du run `pool`. Cette issue SHALL libérer le slot du worker comme toute fin d'exécution, sans pause : le worker n'apparaît ni parmi les workers actifs ni parmi les workers en pause, et le change n'est plus tenu par un worker. Cette issue ne SHALL PAS annuler le worktree ni la branche du change.
+
+#### Scenario: Issue enregistrée
+- **WHEN** un worker termine un change dont la vérification est activée
+- **THEN** le marqueur de fin du run `pool` porte `awaiting-verification`
+
+#### Scenario: Slot libéré
+- **WHEN** l'issue `awaiting-verification` est atteinte avec une taille de pool de 1
+- **THEN** le tick suivant peut démarrer un worker sur un autre change
+
+#### Scenario: Worktree conservé
+- **WHEN** un worker termine avec l'issue `awaiting-verification`
+- **THEN** le worktree et la branche `feature/<change>` existent toujours
+
+### Requirement: Dispatch d'un change dont la vérification a réussi
+En plus des changes de la colonne To Do dont les dépendances sont satisfaites, le dispatcher SHALL proposer au tick les changes dont le marqueur de vérification vaut `passed` et qu'aucun worker ne tient, sans vérifier leurs dépendances, qui l'étaient déjà au démarrage du change. Le worker démarré SHALL être `finalizeOnly` et SHALL lever le marqueur à son démarrage. La limite de taille du pool SHALL s'appliquer à ces workers comme aux autres.
+
+#### Scenario: Dispatch d'un change vérifié
+- **WHEN** un change porte le marqueur `passed` et qu'un slot est libre
+- **THEN** le tick démarre un worker `finalizeOnly` pour ce change et lève le marqueur
+
+#### Scenario: Pas de double dispatch
+- **WHEN** un worker, actif ou en pause, tient déjà le change
+- **THEN** le tick ne démarre pas de second worker pour ce change
+
+#### Scenario: Limite de taille
+- **WHEN** deux changes portent `passed` et que la taille du pool est 1
+- **THEN** un seul worker de finalisation démarre par slot libre, l'autre change attend

@@ -44,3 +44,17 @@ export function parseRunSelection(value: string | null): { change: string; ts: s
 export function runLink(change: string, ts: string): string {
   return `/agents?${new URLSearchParams({ [RUN_PARAM]: `${change}/${ts}` }).toString()}`
 }
+
+export type AgentsTab = 'workers' | 'runs'
+
+export const AGENTS_TAB_PARAM = 'tab'
+
+/**
+ * Active Agents sub-tab: a valid `tab` wins, else a valid `run` opens Runs, else Workers.
+ * WorkspaceTabs forwards the query string between pages, so Settings' `tab` values
+ * (agent-pool, columns...) must stay disjoint from these: an unknown value is ignored.
+ */
+export function parseAgentsTab(tabParam: string | null, runParam: string | null): AgentsTab {
+  if (tabParam === 'workers' || tabParam === 'runs') return tabParam
+  return parseRunSelection(runParam) ? 'runs' : 'workers'
+}

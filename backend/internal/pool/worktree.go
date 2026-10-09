@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,6 +55,10 @@ type WorktreeController struct {
 	repoRoot    string
 	workspaceID string
 	root        string
+
+	// unmergedFiles reads the files in conflict of the worktree at dir; nil
+	// selects the git implementation (a seam for tests).
+	unmergedFiles func(dir string) ([]string, error)
 }
 
 // NewWorktreeController builds a controller for repoRoot whose worktrees live
@@ -297,6 +302,9 @@ func (wc *WorktreeController) Cleanup(changeName string) error {
 			return err
 		}
 	}
+	if err := wc.ClearVerify(changeName); err != nil {
+		return err
+	}
 	return wc.ClearReview(changeName)
 }
 
@@ -335,7 +343,7 @@ func (wc *WorktreeController) CommitAll(changeName string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := wc.runGitIn(path, "commit", "-q", "-m", "feat("+changeName+"): apply OpenSpec change"); err != nil {
+	if _, err := wc.runGitIn(path, "commit", "-q", "-m", wc.commitMessageFor(changeName)); err != nil {
 		return nil, err
 	}
 	return strings.Split(files, "\n"), nil
@@ -353,6 +361,24 @@ func (wc *WorktreeController) CommitFile(changeName, relPath, message string) er
 		return err
 	}
 	return nil
+}
+
+// BranchTasks returns the tasks.md of the change as carried by its branch: the
+// file of the worktree when there is one (it may hold an uncommitted tick),
+// else the one committed on feature/<change>. It never provisions anything.
+// ok is false when the branch has no tasks.md.
+func (wc *WorktreeController) BranchTasks(changeName string) (content string, ok bool) {
+	rel := filepath.Join("openspec", "changes", changeName, "tasks.md")
+	if path := wc.resolvePath(changeName); wc.isRegisteredWorktree(path) {
+		if data, err := os.ReadFile(filepath.Join(path, rel)); err == nil {
+			return string(data), true
+		}
+	}
+	out, err := wc.runGit("show", "feature/"+changeName+":"+filepath.ToSlash(rel))
+	if err != nil {
+		return "", false
+	}
+	return out, true
 }
 
 // HasWork reports whether the change produced anything: a dirty worktree or
@@ -396,6 +422,38 @@ func (wc *WorktreeController) ClearReview(changeName string) error {
 	default:
 		return fmt.Errorf("git config --unset exited with status %d", code)
 	}
+}
+
+// SetVerify records the verification state (pending, failed or passed) of a
+// change in the repository's git configuration. Git drops it with the branch
+// and it touches no tracked file.
+func (wc *WorktreeController) SetVerify(changeName, state string) error {
+	_, err := wc.runGit("config", openspec.VerifyKey(changeName), state)
+	return err
+}
+
+// ClearVerify lifts the verification marker of a change; lifting an absent
+// marker is not an error.
+func (wc *WorktreeController) ClearVerify(changeName string) error {
+	_, code, err := wc.runGitCode("config", "--unset", openspec.VerifyKey(changeName))
+	switch {
+	case err != nil:
+		return err
+	case code == 0, code == 5:
+		return nil
+	default:
+		return fmt.Errorf("git config --unset exited with status %d", code)
+	}
+}
+
+// VerifyState returns the verification state of a change (an unknown value
+// reads as failed); ok is false when the change carries no marker.
+func (wc *WorktreeController) VerifyState(changeName string) (state string, ok bool) {
+	out, code, err := wc.runGitCode("config", "--get", openspec.VerifyKey(changeName))
+	if err != nil || code != 0 {
+		return "", false
+	}
+	return openspec.NormalizeVerifyState(strings.TrimSpace(out)), true
 }
 
 // HasReview reports whether the change carries a review marker.
@@ -477,7 +535,8 @@ func (wc *WorktreeController) MergeInto(changeName string) (string, error) {
 	if err := wc.CheckBase(changeName); err != nil {
 		return target, err
 	}
-	_, err := wc.runGit("merge", "--no-ff", "-m", "Merge change "+changeName, "feature/"+changeName)
+	header, body, _ := strings.Cut(wc.commitMessageFor(changeName), "\n\n")
+	_, err := wc.runGit("merge", "--no-ff", "-m", header, "-m", body, "feature/"+changeName)
 	if err != nil {
 		if wc.mergeInProgress() {
 			_, _ = wc.runGit("merge", "--abort")
@@ -522,16 +581,45 @@ func (wc *WorktreeController) IsMerged(changeName string) (bool, error) {
 
 // IntegrateTarget merges the target branch into the change branch, inside the
 // worktree (which must be clean). A failed merge is aborted so the branch and
-// the worktree are left as they were.
-func (wc *WorktreeController) IntegrateTarget(changeName, target string) error {
+// the worktree are left as they were. The files in conflict are read before
+// the abort and returned (sorted, relative to the repository root); the list is
+// empty when git reports none or when reading it failed.
+func (wc *WorktreeController) IntegrateTarget(changeName, target string) ([]string, error) {
 	path := wc.resolvePath(changeName)
 	if _, err := wc.runGitIn(path, "merge", "--no-edit", target); err != nil {
+		var files []string
 		if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
+			read := wc.unmergedFiles
+			if read == nil {
+				read = wc.gitUnmergedFiles
+			}
+			if f, ferr := read(path); ferr == nil {
+				files = f
+			}
 			_, _ = wc.runGitIn(path, "merge", "--abort")
 		}
-		return fmt.Errorf("conflit lors de l'intégration de %s : %w", target, err)
+		return files, fmt.Errorf("conflit lors de l'intégration de %s : %w", target, err)
 	}
-	return nil
+	return nil, nil
+}
+
+// gitUnmergedFiles lists the paths with unmerged index entries in dir, sorted.
+// -z keeps special characters unescaped; the output is split on NUL.
+func (wc *WorktreeController) gitUnmergedFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U", "-z")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(string(out), "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // runGitInCode reports whether a git command in dir succeeded.

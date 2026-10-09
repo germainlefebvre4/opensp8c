@@ -254,3 +254,33 @@ func TestStore_ListKindAcrossChanges_MissingDir(t *testing.T) {
 		t.Fatalf("expected empty non-nil list, got %v %v", runs, err)
 	}
 }
+
+func TestStore_RunDirIsNotListedAsRun(t *testing.T) {
+	s := NewStore(t.TempDir())
+	ts := "2026-06-29T14-00-00Z"
+	f, err := s.OpenRun("ws1", "my-change", "verify", ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte(`{"type":"meta"}` + "\n"))
+	f.Close()
+
+	dir := s.RunDir("ws1", "my-change", "verify", ts)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nav.png"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runs, err := s.List("ws1", "my-change", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Ts != ts {
+		t.Fatalf("one run, without an entry for the evidence folder, expected: %+v", runs)
+	}
+	if _, err := s.Load("ws1", "my-change", "verify", ts); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -164,3 +164,34 @@ func TestRunRetentionSweep_ActivityPurgedWhenChangeArchivedExpired(t *testing.T)
 		t.Errorf("expected recent-change activity kept, got err=%v", err)
 	}
 }
+
+func TestRunRetentionSweep_PurgesVerifyEvidenceWithLogs(t *testing.T) {
+	old := time.Now().UTC().AddDate(0, 0, -20).Format("2006-01-02")
+	wsPath, wsID := setupRetentionWorkspace(t, []string{old + "-old-change"})
+
+	convDir := t.TempDir()
+	store := NewStore(convDir)
+	ts := "2026-01-01T00-00-00Z"
+	f, _ := store.OpenRun(wsID, "old-change", "verify", ts)
+	f.Close()
+	evidence := store.RunDir(wsID, "old-change", "verify", ts)
+	if err := os.MkdirAll(evidence, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(evidence, "nav.png"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Workspaces:             []config.WorkspaceConfig{{Name: "ws", Path: wsPath}},
+		ChangeLogRetentionDays: 15,
+	}
+	RunRetentionSweep(cfg, preferences.NewService(filepath.Join(t.TempDir(), "preferences.json")), store, nil)
+
+	if _, err := os.Stat(evidence); !os.IsNotExist(err) {
+		t.Errorf("evidence must be purged with the change logs, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(convDir, wsID, "old-change")); !os.IsNotExist(err) {
+		t.Errorf("change logs must be purged, got err=%v", err)
+	}
+}

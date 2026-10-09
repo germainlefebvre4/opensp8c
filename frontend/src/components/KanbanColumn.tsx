@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsRight } from 'lucide-react'
 import { useDroppable, useDndContext } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTranslation } from 'react-i18next'
 import type { Change } from '../hooks/useChanges'
 import { ChangeCard } from './ChangeCard'
+import { STATUS_STYLES, DEFAULT_STATUS_STYLE, type StatusStyle } from '../lib/statusColors'
 
 interface Props {
   title: string
@@ -16,29 +17,35 @@ interface Props {
   onNew?: () => void
   onDeleteGhost?: (ghostId: string) => void
   onStopWorker?: (change: Change) => void
+  onResumeWorker?: (change: Change, finalizeOnly: boolean) => void
+  resumingWorkerIds?: ReadonlySet<number>
+  onRerunVerification?: (change: Change) => void
+  onFinalizeVerification?: (change: Change) => void
+  verificationPendingNames?: ReadonlySet<string>
   maxVisible?: number
   collapsible?: boolean
+  /** Controlled collapse / pagination, so a parent can keep them while the column is unmounted. */
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+  visibleCount?: number
+  onVisibleCountChange?: (count: number) => void
+  /** Folds the slot this column belongs to into a rail. */
+  onFold?: () => void
   className?: string
   getFfStatus: (name: string) => 'running' | 'failed' | null
   validDropSources: string[]
   dragSourceStatus: string | null
 }
 
-const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
-  'to-explore': { badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-400' },
-  'ready': { badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400' },
-  'todo': { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  'in-progress': { badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
-  'to-review': { badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  'done': { badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-  'archived': { badge: 'bg-slate-100 text-slate-400', dot: 'bg-slate-300' },
-}
-
-export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, maxVisible, collapsible, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
+export function KanbanColumn({ title, status, changes, allChanges, workspaceId, onOpen, onNew, onDeleteGhost, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames, maxVisible, collapsible, collapsed: collapsedProp, onCollapsedChange, visibleCount: visibleCountProp, onVisibleCountChange, onFold, className, getFfStatus, validDropSources, dragSourceStatus }: Props) {
   const { t } = useTranslation('kanban')
-  const style = STATUS_STYLES[status] ?? { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
-  const [visibleCount, setVisibleCount] = useState(maxVisible ?? Infinity)
-  const [collapsed, setCollapsed] = useState(false)
+  const style = (STATUS_STYLES as Record<string, StatusStyle>)[status] ?? DEFAULT_STATUS_STYLE
+  const [visibleCountState, setVisibleCountState] = useState(maxVisible ?? Infinity)
+  const [collapsedState, setCollapsedState] = useState(false)
+  const visibleCount = visibleCountProp ?? visibleCountState
+  const setVisibleCount = onVisibleCountChange ?? setVisibleCountState
+  const collapsed = collapsedProp ?? collapsedState
+  const setCollapsed = onCollapsedChange ?? setCollapsedState
 
   const { setNodeRef, isOver } = useDroppable({ id: status })
   const { over } = useDndContext()
@@ -52,7 +59,7 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
   return (
     <div
       ref={setNodeRef}
-      className={`${className ?? 'flex-1'} min-w-[220px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
+      className={`${className ?? 'flex-1'} min-w-[190px] rounded-xl p-3 flex flex-col gap-2 border transition-colors ${
         isValidForDrag && isOverColumn
           ? 'bg-violet-50 border-violet-300'
           : isValidForDrag
@@ -78,9 +85,19 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${style.badge}`}>
             {changes.length}
           </span>
+          {onFold && (
+            <button
+              onClick={onFold}
+              title={t('columnActions.foldDone')}
+              aria-label={t('columnActions.foldDone')}
+              className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <ChevronsRight size={12} />
+            </button>
+          )}
           {collapsible && (
             <button
-              onClick={() => setCollapsed(v => !v)}
+              onClick={() => setCollapsed(!collapsed)}
               title={collapsed ? t('columnActions.showColumn') : t('columnActions.hideColumn')}
               className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
@@ -118,13 +135,18 @@ export function KanbanColumn({ title, status, changes, allChanges, workspaceId, 
                   onDelete={onDeleteGhost}
                   associatedGhostId={associatedGhost?.ghost_id}
                   onStopWorker={onStopWorker}
+                  onResumeWorker={onResumeWorker}
+                  resumingWorkerIds={resumingWorkerIds}
+                  onRerunVerification={onRerunVerification}
+                  onFinalizeVerification={onFinalizeVerification}
+                  verificationPendingNames={verificationPendingNames}
                 />
               )
             })}
           </SortableContext>
           {hasMore && (
             <button
-              onClick={() => setVisibleCount(v => v + (maxVisible ?? 3))}
+              onClick={() => setVisibleCount(visibleCount + (maxVisible ?? 3))}
               className="text-[11px] text-slate-400 hover:text-slate-600 py-1 text-center transition-colors cursor-pointer"
             >
               {t('columnActions.showMore', { count: changes.length - visibleCount })}

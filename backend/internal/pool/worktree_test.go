@@ -263,6 +263,9 @@ func TestCommitAllAndHasWork(t *testing.T) {
 	if gitIn(t, path, "status", "--porcelain") != "" {
 		t.Fatal("worktree still dirty after commit")
 	}
+	if msg := gitIn(t, path, "log", "-1", "--format=%B"); msg != "feat: Add auth\n\nChange: add-auth" {
+		t.Fatalf("commit message = %q", msg)
+	}
 	if has, _ := wc.HasWork("add-auth"); !has {
 		t.Fatal("a branch-only commit counts as work")
 	}
@@ -274,6 +277,19 @@ func TestCommitAllAndHasWork(t *testing.T) {
 	}
 	if gitIn(t, path, "rev-parse", "HEAD") != before {
 		t.Fatal("an empty commit was created")
+	}
+}
+
+func TestCommitAllUsesComponentScope(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	path, _ := wc.Provision("add-auth")
+	writeScopeFiles(t, filepath.Join(path, "openspec", "changes", "add-auth"), "tags:\n  components: [auth]\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := gitIn(t, path, "log", "-1", "--format=%B"); msg != "feat(auth): Add auth\n\nChange: add-auth" {
+		t.Fatalf("commit message = %q", msg)
 	}
 }
 
@@ -291,6 +307,9 @@ func TestMergeInto(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "ok.txt")); err != nil {
 		t.Fatalf("merged file missing: %v", err)
+	}
+	if msg := gitIn(t, repo, "log", "-1", "--format=%B"); msg != "feat: Ok change\n\nChange: ok-change" {
+		t.Fatalf("merge message = %q", msg)
 	}
 	if err := wc.Remove("ok-change"); err != nil {
 		t.Fatal(err)
@@ -482,7 +501,7 @@ func TestTargetAheadAndIntegrate(t *testing.T) {
 	if ahead, err := wc.TargetAhead("integ"); err != nil || !ahead {
 		t.Fatalf("advanced target: ahead=%v err=%v", ahead, err)
 	}
-	if err := wc.IntegrateTarget("integ", "main"); err != nil {
+	if _, err := wc.IntegrateTarget("integ", "main"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(path, "user.txt")); err != nil {
@@ -549,7 +568,7 @@ func TestIntegrateTargetConflictIsAborted(t *testing.T) {
 	commitFile(t, repo, "README.md", "from main")
 	head := gitIn(t, path, "rev-parse", "HEAD")
 
-	if err := wc.IntegrateTarget("clash", "main"); err == nil {
+	if _, err := wc.IntegrateTarget("clash", "main"); err == nil {
 		t.Fatal("expected a conflict")
 	}
 	if _, ok := wc.runGitInCode(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"); ok {
@@ -749,5 +768,126 @@ func TestRecreateFromHeadKeepsBranchWithWork(t *testing.T) {
 	}
 	if exists, _ := wc.branchExists("feature/add-auth"); !exists {
 		t.Fatal("branch was deleted")
+	}
+}
+
+func TestBranchTasks(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	rel := filepath.Join("openspec", "changes", "add-auth", "tasks.md")
+
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("no branch: BranchTasks must report absent")
+	}
+
+	path, err := wc.Provision("add-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("branch without tasks.md must report absent")
+	}
+
+	writeFile(t, filepath.Join(path, rel), "- [ ] a\n- [ ] b\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	// An uncommitted tick in the worktree is what BranchTasks reads.
+	writeFile(t, filepath.Join(path, rel), "- [x] a\n- [ ] b\n")
+	if got, ok := wc.BranchTasks("add-auth"); !ok || got != "- [x] a\n- [ ] b\n" {
+		t.Fatalf("with worktree = %q, %v", got, ok)
+	}
+
+	// Without worktree: the committed content, and nothing is provisioned.
+	if err := wc.Remove("add-auth"); err == nil {
+		t.Fatal("dirty worktree should refuse Remove")
+	}
+	if err := wc.Discard("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	_ = gitIn(t, repo, "branch", "feature/add-auth", "main") // recreate an empty branch
+	if _, ok := wc.BranchTasks("add-auth"); ok {
+		t.Fatal("tasks.md absent from the branch must report absent")
+	}
+}
+
+func TestBranchTasks_CommittedWithoutWorktree(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	rel := filepath.Join("openspec", "changes", "add-auth", "tasks.md")
+	path, _ := wc.Provision("add-auth")
+	writeFile(t, filepath.Join(path, rel), "- [x] a\n- [ ] b\n")
+	if _, err := wc.CommitAll("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Remove("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := wc.BranchTasks("add-auth")
+	if !ok || got != "- [x] a\n- [ ] b" {
+		t.Fatalf("BranchTasks = %q, %v", got, ok)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("BranchTasks must not recreate the worktree")
+	}
+}
+
+func TestVerifyMarker(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("no marker expected")
+	}
+	if err := wc.ClearVerify("add-auth"); err != nil {
+		t.Fatalf("clearing an absent marker: %v", err)
+	}
+	if err := wc.SetVerify("add-auth", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitIn(t, repo, "config", "--get", "branch.feature/add-auth.opensp8c-verify"); got != "pending" {
+		t.Fatalf("raw marker = %q", got)
+	}
+	if st, ok := wc.VerifyState("add-auth"); !ok || st != "pending" {
+		t.Fatalf("state = %q %v", st, ok)
+	}
+	if status := gitIn(t, repo, "status", "--porcelain"); status != "" {
+		t.Fatalf("marker touched tracked files: %q", status)
+	}
+	gitIn(t, repo, "config", "branch.feature/add-auth.opensp8c-verify", "weird")
+	if st, _ := wc.VerifyState("add-auth"); st != "failed" {
+		t.Fatalf("unknown value = %q, want failed", st)
+	}
+	if err := wc.ClearVerify("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("marker should be lifted")
+	}
+}
+
+func TestVerifyMarkerDroppedWithBranch(t *testing.T) {
+	repo := newTestRepo(t)
+	wc := newTestWC(t, repo)
+	if _, err := wc.Provision("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.SetVerify("add-auth", "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Discard("add-auth"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wc.VerifyState("add-auth"); ok {
+		t.Fatal("marker should vanish with the branch")
+	}
+}
+
+func TestVerifyMarkerNonGitRepo(t *testing.T) {
+	wc := NewWorktreeController(t.TempDir(), "ws-a", t.TempDir())
+	if _, ok := wc.VerifyState("x"); ok {
+		t.Fatal("non git repo: no marker expected")
 	}
 }

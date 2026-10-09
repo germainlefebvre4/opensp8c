@@ -685,7 +685,8 @@ func TestKanbanHandler_WorkerWorktreeProgress(t *testing.T) {
 	}
 	_ = dir
 
-	// Worker released without merge: back to the main repo values.
+	// Worker released without merge: the column is back to the main repo
+	// one, the counts follow the branch (its worktree is still there).
 	if err := os.WriteFile(tasks, []byte("- [x] a\n- [x] b\n- [x] c\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +699,7 @@ func TestKanbanHandler_WorkerWorktreeProgress(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if c.WorkerActive || c.KanbanStatus != "todo" || c.TasksDone != 0 {
+	if c.WorkerActive || c.KanbanStatus != "todo" || c.TasksDone != 3 || !c.HasBranch {
 		t.Errorf("released: got %s %d/%d worker=%v", c.KanbanStatus, c.TasksDone, c.TasksTotal, c.WorkerActive)
 	}
 }

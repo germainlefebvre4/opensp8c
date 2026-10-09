@@ -195,23 +195,42 @@ Les colonnes Kanban SHALL occuper toute la hauteur disponible de la zone de cont
 - **THEN** toutes les colonnes ont la même hauteur (celle de la colonne la plus haute ou de la zone disponible)
 
 ### Requirement: Application pleine largeur avec colonnes auto-adaptées
-Le Kanban Board SHALL occuper toute la largeur disponible de la zone de contenu, que le DetailPanel soit ouvert ou non. Lorsque le DetailPanel est ouvert, les colonnes SHALL partager l'espace horizontal avec lui selon un layout flex : colonnes en `flex: 1` et DetailPanel en largeur fixe (`420px`). Le bottom panel d'exploration n'affecte pas la largeur des colonnes. Les colonnes SHALL être scrollables horizontalement si leur largeur minimale combinée dépasse l'espace disponible.
+Le Kanban Board SHALL occuper toute la largeur disponible de la zone de contenu, que le DetailPanel soit ouvert ou non. Chaque colonne active SHALL avoir une largeur minimale de **190px**, et les espacements entre colonnes et autour du conteneur SHALL être resserrés de façon à ce que les six slots dépliés tiennent dans environ 1200px. Lorsque le DetailPanel est ouvert, il SHALL partager l'espace horizontal avec les colonnes (voir `kanban-change-detail`). Le bottom panel d'exploration n'affecte pas la largeur des colonnes.
+
+Lorsque l'espace horizontal disponible est insuffisant, le Kanban SHALL dégrader son affichage selon l'échelle suivante, en passant au palier suivant uniquement si le palier courant ne suffit pas :
+1. tous les slots dépliés et DetailPanel poussant les colonnes ;
+2. DetailPanel rétréci jusqu'à sa largeur minimale ;
+3. slot **Done/Archived** replié en rail ;
+4. DetailPanel en overlay par-dessus les colonnes ;
+5. scroll horizontal des colonnes, en dernier recours.
 
 #### Scenario: Redimensionnement de la fenêtre sans panel
 - **WHEN** l'utilisateur redimensionne la fenêtre du navigateur et aucun panel n'est ouvert
-- **THEN** les colonnes s'adaptent automatiquement pour remplir toute la largeur disponible sans débordement horizontal
+- **THEN** les colonnes s'adaptent automatiquement pour remplir toute la largeur disponible sans débordement horizontal tant que la largeur disponible couvre le minimum des six slots dépliés
 
 #### Scenario: DetailPanel ouvert — colonnes réduites
 - **WHEN** le DetailPanel est ouvert
-- **THEN** les colonnes occupent l'espace restant après le slot de 420px du DetailPanel, avec un scroll horizontal si nécessaire
+- **THEN** les colonnes occupent l'espace restant après le slot du DetailPanel, et si cet espace est insuffisant l'échelle de dégradation s'applique palier par palier, le scroll horizontal n'intervenant qu'en dernier recours
+
+#### Scenario: DetailPanel ouvert sur un écran large
+- **WHEN** le DetailPanel est ouvert et la largeur disponible permet de conserver les six slots dépliés à leur largeur minimale
+- **THEN** le panel pousse les colonnes, aucun slot n'est replié et aucune scrollbar horizontale n'apparaît
+
+#### Scenario: DetailPanel ouvert — espace insuffisant
+- **WHEN** le DetailPanel est ouvert et les six slots dépliés ne tiennent plus à côté du panel, même rétréci à sa largeur minimale
+- **THEN** le slot Done/Archived se replie automatiquement en rail avant tout passage en overlay ou en scroll horizontal
 
 #### Scenario: DetailPanel fermé — colonnes pleine largeur
 - **WHEN** le DetailPanel est fermé
-- **THEN** les colonnes reprennent toute la largeur disponible
+- **THEN** les colonnes reprennent toute la largeur disponible et le slot Done/Archived se redéplie automatiquement, sauf surcharge manuelle
 
 #### Scenario: Bottom panel ouvert — largeur colonnes inchangée
 - **WHEN** le bottom panel d'exploration est ouvert
 - **THEN** les colonnes conservent leur largeur (le bottom panel n'affecte que la hauteur disponible)
+
+#### Scenario: Écran très étroit — scroll horizontal en dernier recours
+- **WHEN** la largeur disponible est inférieure à celle requise par cinq slots dépliés plus le rail, même avec le DetailPanel en overlay ou fermé
+- **THEN** les colonnes sont scrollables horizontalement
 
 ### Requirement: Rafraîchissement automatique du Kanban
 Le Kanban SHALL se rafraîchir automatiquement pour refléter les changements apportés aux fichiers OpenSpec par des outils externes (Claude Code, openspec CLI). Le rafraîchissement SHALL se faire via les événements SSE du stream `/api/workspaces/{id}/events` — sans polling périodique. À réception d'un événement `change_updated`, le frontend SHALL invalider la liste des changes ET le détail du change concerné. À réception d'un événement `change_created` ou `change_deleted`, le frontend SHALL invalider uniquement la liste des changes. En cas d'indisponibilité du stream SSE, les données affichées restent celles du dernier fetch réussi (pas de fallback polling).
@@ -246,3 +265,115 @@ Chaque change renvoyé par `GET /changes` SHALL exposer deux indicateurs exclusi
 #### Scenario: Pause levée
 - **WHEN** la pause du worker du changement `add-user-auth` est levée par une reprise ou par la rétrogradation du change
 - **THEN** la liste des changes n'expose plus `worker_paused = true` pour ce change et sa carte n'affiche plus le badge de pause
+
+### Requirement: Actions de reprise sur la carte d'un change en pause
+Chaque change renvoyé par `GET /changes` et tenu par un worker du pool SHALL exposer l'identifiant de ce worker (`worker_id`) ; le champ SHALL être absent lorsque aucun worker ne tient le change. La carte d'un change avec `worker_paused = true` SHALL afficher, en plus du badge de pause, un bouton « Reprendre » et un bouton « Reprendre en finalisant » qui demandent respectivement la reprise ordinaire et la reprise avec `finalize_only` du worker `worker_id`. « Reprendre en finalisant » SHALL être désactivé, avec une info-bulle indiquant le nombre de tâches restantes, tant que `tasks_done` est inférieur à `tasks_total` (les compteurs de la carte reflétant déjà le worktree du worker). Ces boutons SHALL NOT ouvrir le DetailPanel ni amorcer un drag de la carte, et SHALL NOT apparaître sur une carte sans worker en pause. En cas d'échec, l'application SHALL afficher le message d'erreur du backend dans une notification et conserver la carte inchangée.
+
+#### Scenario: Carte d'un change en pause
+- **WHEN** le worker 2 du changement `add-user-auth` est en pause avec 9 tâches cochées sur 10
+- **THEN** la liste des changes expose `worker_id = 2` pour ce change, et sa carte affiche le badge de pause, « Reprendre » actif et « Reprendre en finalisant » désactivé avec l'info-bulle « Il reste 1 tâche »
+
+#### Scenario: Reprise en finalisant depuis la carte
+- **WHEN** toutes les tâches du change en pause sont cochées et que l'utilisateur clique sur « Reprendre en finalisant » sur sa carte
+- **THEN** l'application demande la reprise du worker avec `finalize_only`, le DetailPanel ne s'ouvre pas et la carte quitte l'état de pause dès la reprise par le pool
+
+#### Scenario: Reprise ordinaire depuis la carte
+- **WHEN** l'utilisateur clique sur « Reprendre » sur la carte d'un change en pause
+- **THEN** l'application demande la reprise du worker sans `finalize_only`
+
+#### Scenario: Aucune action sans pause
+- **WHEN** un change est tenu par un worker actif ou n'est tenu par aucun worker
+- **THEN** sa carte n'affiche aucun bouton de reprise
+
+#### Scenario: Refus du backend
+- **WHEN** le backend répond `409` à la demande de reprise depuis la carte
+- **THEN** une notification affiche le message retourné et la carte reste en pause
+
+### Requirement: Compteurs de tâches issus de la branche et indicateur de branche
+Pour chaque change de `GET /api/workspaces/{id}/changes` qui porte une branche `feature/<change>` et qu'aucun worker du pool ne tient, `tasks_done` et `tasks_total` SHALL provenir du `tasks.md` de la branche (le worktree du change s'il existe, sinon la branche) lorsque celui-ci contient au moins une tâche, de sorte que la carte affiche la progression réelle du travail y compris en To Review. La colonne (`kanban_status`) SHALL NOT être recalculée à partir de ces compteurs : elle reste dérivée du marqueur de revue, de l'état « lancé » et du `tasks.md` du dépôt principal, de sorte qu'une branche entièrement cochée ne place jamais un change en Done et ne lui offre pas l'action de synchronisation et d'archivage. Pour un change tenu par un worker, la surcharge existante (compteurs et colonne du worktree) SHALL rester inchangée. Chaque change de la liste SHALL aussi exposer `has_branch` (booléen, `true` lorsque `feature/<change>` existe, absent ou `false` sinon). La détection des branches SHALL se faire par une lecture groupée des références du dépôt, sans appel git par change, et le contenu des branches SHALL n'être lu que pour les changes qui en portent une.
+
+#### Scenario: Carte d'un change en revue
+- **WHEN** un change en revue a 10 tâches cochées sur 10 dans sa branche et `0/10` dans le dépôt principal
+- **THEN** sa carte est en To Review et affiche « 10 / 10 »
+
+#### Scenario: Branche entièrement cochée sans marqueur
+- **WHEN** un change non lancé porte une branche à 10 tâches cochées sur 10, sans worker ni marqueur de revue
+- **THEN** sa carte reste dans la colonne dérivée du dépôt principal (Ready), affiche « 10 / 10 » et n'est pas proposée à l'archivage
+
+#### Scenario: Change rétrogradé avec travail conservé
+- **WHEN** un change rétrogradé en Ready par un arrêt forcé porte une branche à 7 tâches cochées sur 10
+- **THEN** sa carte reste en Ready, affiche « 7 / 10 » et `has_branch` vaut `true`
+
+#### Scenario: Change sans branche
+- **WHEN** un change n'a pas de branche `feature/<change>`
+- **THEN** ses compteurs proviennent du `tasks.md` du dépôt principal et `has_branch` est absent ou `false`
+
+#### Scenario: Change tenu par un worker
+- **WHEN** un worker tient le change
+- **THEN** les compteurs et la colonne suivent le worktree du worker, comme avant
+
+#### Scenario: Branche sans liste de tâches
+- **WHEN** la branche du change existe mais que son `tasks.md` est absent ou sans tâche
+- **THEN** les compteurs proviennent du dépôt principal et `has_branch` vaut `true`
+
+### Requirement: Colonne Verifying sous In Progress
+Le Kanban SHALL afficher une colonne **Verifying** contenant les changes dont `kanban_status` vaut `verifying`. Cette colonne SHALL occuper le slot de **In Progress**, empilée sous elle, sans ajouter de slot horizontal : **In Progress** occupe le haut du slot en `flex-1 min-h-0`, prioritaire sur l'espace vertical, et **Verifying** le bas, avec une hauteur plafonnée à 40 % du slot et un défilement interne, séparées par un trait horizontal fin, comme le slot Done / Archived. La colonne SHALL être affichée lorsque la vérification est activée pour le workspace (valeur résolue sans réglage de change, voir `verification-settings`) ou lorsqu'elle contient au moins une carte ; elle SHALL être masquée sinon, **In Progress** reprenant alors tout le slot. Chaque carte SHALL afficher le nom du change, la progression de ses tâches et un badge d'état : `queued` (en attente), `running` (en cours, avec l'étape), `failed` (échec) ou `passed` (réussi, en attente de finalisation). Les cartes `failed` SHALL proposer des boutons d'action rapide « Relancer » et « Finaliser », qui n'ouvrent pas le détail et ne déclenchent pas de drag. Un clic sur une carte SHALL ouvrir le DetailPanel.
+
+#### Scenario: Colonne empilée sous In Progress
+- **WHEN** le Kanban est affiché avec au moins un change `verifying`
+- **THEN** le slot de In Progress contient In Progress en haut, un trait horizontal, puis Verifying en bas, et le Kanban garde six slots horizontaux
+
+#### Scenario: Hauteur plafonnée
+- **WHEN** la colonne Verifying contient beaucoup de cartes
+- **THEN** elle occupe au plus 40 % du slot et défile en interne, In Progress gardant l'espace résiduel
+
+#### Scenario: Colonne masquée
+- **WHEN** la vérification n'est activée pour le workspace et qu'aucun change n'est `verifying`
+- **THEN** la colonne Verifying n'est pas affichée et In Progress occupe tout le slot
+
+#### Scenario: Colonne affichée par son contenu
+- **WHEN** la vérification est désactivée pour le workspace mais qu'un change porte encore le marqueur de vérification
+- **THEN** la colonne Verifying est affichée avec ce change
+
+#### Scenario: Badge d'état
+- **WHEN** une vérification de conformité tourne pour un change
+- **THEN** sa carte dans Verifying affiche le badge « en cours » avec l'étape `conformity`
+
+#### Scenario: Actions d'une carte en échec
+- **WHEN** un change `failed` est affiché
+- **THEN** sa carte propose « Relancer » et « Finaliser », et un clic sur l'un d'eux n'ouvre pas le DetailPanel
+
+#### Scenario: Carte non déplaçable
+- **WHEN** l'utilisateur tente de saisir une carte de la colonne Verifying
+- **THEN** le drag ne démarre pas
+
+#### Scenario: Retour dans In Progress
+- **WHEN** la vérification d'un change réussit et que son worker de finalisation démarre
+- **THEN** la carte quitte la colonne Verifying pour In Progress, avec le badge du worker
+
+### Requirement: Slot Done/Archived repliable en rail
+Le slot partagé **Done/Archived** SHALL pouvoir être affiché sous forme de **rail** : une bande étroite d'environ 40px qui conserve visible le compteur de la colonne Done et un chevron d'expansion, et qui masque les cartes de Done et d'Archived. Le repli et le dépli SHALL être décidés automatiquement selon l'espace disponible (échelle de dégradation de « Application pleine largeur avec colonnes auto-adaptées »). Le chevron du slot SHALL permettre à l'utilisateur de surcharger manuellement l'état automatique ; la surcharge manuelle SHALL être prioritaire sur le calcul automatique, SHALL être conservée en mémoire pour la durée de la session et SHALL NOT être persistée entre deux sessions. Lorsque l'utilisateur bascule le slot vers l'état que le calcul automatique aurait choisi, la surcharge SHALL être levée et le comportement automatique reprend. Le repli du slot SHALL NOT modifier l'état collapse propre à la colonne Archived.
+
+#### Scenario: Repli automatique à l'ouverture du DetailPanel
+- **WHEN** le DetailPanel s'ouvre et que l'espace disponible ne permet plus six slots dépliés, sans surcharge manuelle active
+- **THEN** le slot Done/Archived se replie en rail et son compteur Done reste visible
+
+#### Scenario: Dépli automatique à la fermeture du DetailPanel
+- **WHEN** le DetailPanel se ferme et que l'espace permet de nouveau six slots dépliés, sans surcharge manuelle active
+- **THEN** le slot Done/Archived se redéplie
+
+#### Scenario: Surcharge manuelle — forcer le dépli
+- **WHEN** le slot est replié automatiquement et l'utilisateur clique sur le chevron du rail
+- **THEN** le slot se déplie et reste déplié tant que la surcharge est active, et si l'espace manque l'échelle de dégradation poursuit avec les paliers suivants (overlay du panel, puis scroll)
+
+#### Scenario: Surcharge manuelle — forcer le repli
+- **WHEN** le slot est déplié et l'utilisateur le replie manuellement via le chevron
+- **THEN** le slot reste replié même si l'espace permettrait de le déplier
+
+#### Scenario: Retour au comportement automatique
+- **WHEN** une surcharge manuelle est active et l'utilisateur bascule le slot vers l'état que le calcul automatique choisirait
+- **THEN** la surcharge est levée et le slot suit de nouveau l'espace disponible
+
+#### Scenario: Surcharge non persistée
+- **WHEN** l'utilisateur recharge l'application après avoir surchargé manuellement l'état du slot
+- **THEN** le slot démarre en mode automatique

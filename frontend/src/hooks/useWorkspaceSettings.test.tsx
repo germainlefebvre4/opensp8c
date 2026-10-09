@@ -17,9 +17,9 @@ vi.mock('../lib/api', async importOriginal => ({
 
 const resolved = { global: { agent: 'claude', model: '', effort: '' }, roles: {} as never }
 const view = (model: string): WorkspaceSettings => ({
-  overrides: { agentSettings: { global: {}, roles: {} as never }, pool: {}, env: {}, agentEnv: {} },
-  inherited: { agentSettings: resolved, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }, env: {}, agentEnv: {} },
-  resolved: { agentSettings: { ...resolved, global: { ...resolved.global, model } }, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 } },
+  overrides: { agentSettings: { global: {}, roles: {} as never }, pool: {}, verification: {}, env: {}, agentEnv: {} },
+  inherited: { agentSettings: resolved, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }, verification: { conformity: false, ui: false }, env: {}, agentEnv: {} },
+  resolved: { agentSettings: { ...resolved, global: { ...resolved.global, model } }, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }, verification: { conformity: false, ui: false } },
 })
 
 function setup() {

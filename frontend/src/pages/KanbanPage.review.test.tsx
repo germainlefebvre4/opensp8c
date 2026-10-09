@@ -31,13 +31,15 @@ vi.mock('../components/ExploreAnonymousBottomPanel', () => ({ ExploreAnonymousBo
 vi.mock('../hooks/useChangeReview', () => ({
   useChangeReview: () => ({ data: { branch: 'feature/add-auth', base: 'main', target_ahead: false, files: [] } }),
 }))
-vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast }) }))
 vi.mock('../hooks/useArchivedChanges', () => ({ useArchivedChanges: () => ({ data: [] }) }))
 vi.mock('../hooks/usePoolStatus', () => ({ usePoolStatus: () => ({ data: undefined }) }))
 vi.mock('../hooks/useWorkspaceLiveState', () => ({
   useWorkspaceLiveState: () => ({ getFfStatus: () => null, setFfRunning: vi.fn() }),
 }))
 vi.mock('../hooks/useChanges', () => ({ useChanges: vi.fn() }))
+vi.mock('../hooks/useChangeDetail', () => ({ useChangeDetail: vi.fn() }))
 vi.mock('../lib/api', async importOriginal => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   approveReview: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('../lib/api', async importOriginal => ({
 }))
 
 import { useChanges } from '../hooks/useChanges'
+import { useChangeDetail } from '../hooks/useChangeDetail'
 
 const change = (name: string, kanban_status: string): Change =>
   ({ name, kanban_status, tasks_done: 1, tasks_total: 1, created: '2026-10-01' }) as Change
@@ -60,6 +63,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks()
   dragEnd = undefined
+  vi.mocked(useChangeDetail).mockReturnValue({ data: undefined } as unknown as ReturnType<typeof useChangeDetail>)
   vi.mocked(useChanges).mockReturnValue({
     data: [change('add-auth', 'to-review'), change('other', 'todo')], isLoading: false,
   } as unknown as ReturnType<typeof useChanges>)
@@ -73,6 +77,37 @@ function renderPage() {
 
 const drop = (active: string, over: string) =>
   act(async () => { await dragEnd!({ active: { id: active }, over: { id: over } } as unknown as DragEndEvent) })
+
+describe('KanbanPage drop on Done with tasks left to validate', () => {
+  it('refuses the drop with a notification, without confirmation nor request', async () => {
+    vi.mocked(useChanges).mockReturnValue({
+      data: [{ ...change('add-auth', 'to-review'), tasks_done: 8, tasks_total: 10 }], isLoading: false,
+    } as unknown as ReturnType<typeof useChanges>)
+    renderPage()
+    await drop('add-auth', 'done')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(approveReview).not.toHaveBeenCalled()
+    expect(toast).toHaveBeenCalledWith({ title: 'Cannot approve: 2 tasks to validate.', variant: 'error' })
+  })
+
+  it('opens the confirmation when every task is checked', async () => {
+    vi.mocked(useChanges).mockReturnValue({
+      data: [{ ...change('add-auth', 'to-review'), tasks_done: 10, tasks_total: 10 }], isLoading: false,
+    } as unknown as ReturnType<typeof useChanges>)
+    renderPage()
+    await drop('add-auth', 'done')
+    expect(screen.getByRole('dialog', { name: enDialogs.reviewApprove.title })).toBeTruthy()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend tasks_pending refusal in the dialog', async () => {
+    vi.mocked(approveReview).mockRejectedValue(new ApiError('c', 409, 'tasks_pending'))
+    renderPage()
+    await drop('add-auth', 'done')
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewApprove.confirm }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain(enDialogs.reviewErrors.tasks_pending))
+  })
+})
 
 describe('KanbanPage drops from To Review', () => {
   it('opens the approval confirmation on a drop on Done, without any request', async () => {
@@ -161,5 +196,73 @@ describe('KanbanPage drops from To Review', () => {
     fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewCorrection.confirm }))
     await waitFor(() => expect(requestCorrection).toHaveBeenCalledWith('ws1', 'add-auth', 'Cancel is broken'))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+describe('KanbanPage guided conflict resolution from a drop on Done', () => {
+  const conflict = () => new ApiError('c', 409, 'integration_conflict', 'main', undefined, ['src/a.tsx', 'src/b.tsx'])
+  const withHumanTask = () => vi.mocked(useChangeDetail).mockReturnValue({
+    data: { name: 'add-auth', tasks: [{ text: 'a', done: true }, { text: 'b', done: true, human_review: true }] },
+  } as unknown as ReturnType<typeof useChangeDetail>)
+
+  async function dropAndConflict() {
+    vi.mocked(approveReview).mockRejectedValue(conflict())
+    renderPage()
+    await drop('add-auth', 'done')
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewApprove.confirm }))
+    await screen.findByRole('alert')
+  }
+  const resolveBtn = () => screen.getByRole('button', { name: enDialogs.reviewApprove.resolveConflict })
+
+  it('lists the files and offers the action, the card staying in review', async () => {
+    await dropAndConflict()
+    expect(screen.getByText('src/a.tsx')).toBeTruthy()
+    expect(screen.getByText('src/b.tsx')).toBeTruthy()
+    expect(resolveBtn()).toBeTruthy()
+    expect(vi.mocked(useChanges).mock.results.at(-1)?.value.data[0].kanban_status).toBe('to-review')
+  })
+
+  it('opens the prefilled correction dialog with the reopen box checked, sending nothing', async () => {
+    withHumanTask()
+    await dropAndConflict()
+    fireEvent.click(resolveBtn())
+    expect(screen.queryByRole('dialog', { name: enDialogs.reviewApprove.title })).toBeNull()
+    const dialog = screen.getByRole('dialog', { name: enDialogs.reviewCorrection.title })
+    const text = (within(dialog).getByRole('textbox') as HTMLTextAreaElement).value
+    expect(text).toContain('`main`')
+    expect(text).toContain('- src/a.tsx')
+    expect((within(dialog).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+    expect(requestCorrection).not.toHaveBeenCalled()
+  })
+
+  it('cancelling the prefilled dialog sends nothing and the card stays in review', async () => {
+    await dropAndConflict()
+    fireEvent.click(resolveBtn())
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewCorrection.cancel }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(requestCorrection).not.toHaveBeenCalled()
+    expect(vi.mocked(useChanges).mock.results.at(-1)?.value.data[0].kanban_status).toBe('to-review')
+  })
+
+  it('sends the correction with the reopen option on confirmation', async () => {
+    withHumanTask()
+    vi.mocked(requestCorrection).mockResolvedValue(undefined)
+    await dropAndConflict()
+    fireEvent.click(resolveBtn())
+    fireEvent.click(screen.getByRole('button', { name: enDialogs.reviewCorrection.confirm }))
+    await waitFor(() => expect(requestCorrection).toHaveBeenCalledTimes(1))
+    const [ws, name, feedback, options] = vi.mocked(requestCorrection).mock.calls[0]
+    expect([ws, name, options]).toEqual(['ws1', 'add-auth', { reopenHumanTasks: true }])
+    expect(feedback).toContain('src/b.tsx')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('leaves the reopen box unchecked for a drop on In Progress', async () => {
+    withHumanTask()
+    renderPage()
+    await drop('add-auth', 'in-progress')
+    const dialog = screen.getByRole('dialog', { name: enDialogs.reviewCorrection.title })
+    expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect((within(dialog).getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
   })
 })

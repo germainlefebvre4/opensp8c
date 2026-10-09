@@ -1,4 +1,17 @@
 schema: spec-driven
 created: "2026-10-02"
-tags: null
+tags:
+    type: []
+    complexity: 3
+    components:
+        - timeline-spec-matrix
+        - timeline-page
+        - kanban-change-detail
+        - change-review-actions
+    agent_specialization:
+        - frontend
+        - ux-design
+        - testing
+    _auto: true
+    _tagged_at: "2026-10-03"
 launched: true

@@ -58,11 +58,12 @@ const resolvedRoles = {
   ff: rr('claude', 'sonnet', 'medium'),
   implementer: rr('claude', 'sonnet', 'medium'),
   fixer: rr('claude', 'sonnet', 'medium'),
+  verifier: rr('claude', 'sonnet', 'medium'),
   documenter: rr('claude', 'haiku', 'low'),
 }
-const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, documenter: {} }
+const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, verifier: {}, documenter: {} }
 
-function settingsFor(opts: { implementerModel?: string; pool?: object; env?: Record<string, string> } = {}): WorkspaceSettings {
+function settingsFor(opts: { implementerModel?: string; pool?: object; verification?: object; env?: Record<string, string> } = {}): WorkspaceSettings {
   const overrides: AgentSettings = {
     global: {},
     roles: { ...emptyRoles, implementer: opts.implementerModel ? { model: opts.implementerModel } : {} },
@@ -72,19 +73,20 @@ function settingsFor(opts: { implementerModel?: string; pool?: object; env?: Rec
     roles: { ...resolvedRoles, implementer: rr('claude', opts.implementerModel ?? 'sonnet', 'medium') },
   }
   return {
-    overrides: { agentSettings: overrides, pool: opts.pool ?? {}, env: opts.env ?? {}, agentEnv: {} },
+    overrides: { agentSettings: overrides, pool: opts.pool ?? {}, verification: opts.verification ?? {}, env: opts.env ?? {}, agentEnv: {} },
     inherited: {
       agentSettings: { global: rr('claude'), roles: resolvedRoles },
       pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 },
+      verification: { conformity: true, ui: false, uiStartCommand: 'make dev' },
       env: { GLOBAL_KEY: 'secret' },
       agentEnv: {},
     },
-    resolved: { agentSettings: resolved, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 } },
+    resolved: { agentSettings: resolved, pool: { size: 3, delegationMode: 'hitl-review', maxAttempts: 3 }, verification: { conformity: true, ui: false, uiStartCommand: 'make dev' } },
   }
 }
 
 const byWorkspace: Record<string, WorkspaceSettings> = {
-  a: settingsFor({ implementerModel: 'opus', pool: { size: 4 } }),
+  a: settingsFor({ implementerModel: 'opus', pool: { size: 4 }, verification: { conformity: false } }),
   b: settingsFor(),
 }
 
@@ -111,17 +113,27 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('SettingsPage', () => {
-  it('shows the four sub-tabs and the workspace name', () => {
+  it('shows the five sub-tabs in order and the workspace name', () => {
     renderPage('a')
-    for (const label of ['Agent Pool', 'Columns', 'Environment', 'Specializations']) {
-      expect(screen.getByRole('button', { name: label })).toBeTruthy()
-    }
+    const labels = ['Agent Pool', 'Columns', 'Verification', 'Environment', 'Specializations']
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(labels)
     expect(screen.getByText('Workspace: Alpha')).toBeTruthy()
+  })
+
+  it('has no page title and pins the workspace name at the end of the bar', () => {
+    renderPage('a')
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    expect(screen.getByTestId('subtabs-trailing').textContent).toBe('Workspace: Alpha')
+  })
+
+  it.each(['/settings?workspace=a', '/settings?workspace=a&tab=nope'])('defaults to Agent Pool for %s', url => {
+    renderPage('a', url)
+    expect(screen.getByRole('tab', { name: 'Agent Pool' }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('carries the sub-tab in the URL while keeping the workspace', () => {
     renderPage('a')
-    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Columns' }))
     const loc = screen.getByTestId('loc').textContent
     expect(loc).toContain('workspace=a')
     expect(loc).toContain('tab=columns')
@@ -164,6 +176,46 @@ describe('SettingsPage', () => {
     expect((screen.getByLabelText('Implementation — Model') as HTMLInputElement).value).toBe('opus')
     fireEvent.click(screen.getByLabelText('Implementation — Reset to inherited'))
     expect(mutateAsync).toHaveBeenCalledWith({ agentSettings: { roles: { implementer: { agent: null, model: null, effort: null } } } })
+  })
+
+  it('reopens the Verification sub-tab from the URL and writes it back when clicked', () => {
+    renderPage('a', '/settings?workspace=a&tab=verification')
+    expect(screen.getByRole('tab', { name: 'Verification' }).getAttribute('aria-selected')).toBe('true')
+    cleanup()
+    renderPage('a')
+    fireEvent.click(screen.getByRole('tab', { name: 'Verification' }))
+    expect(screen.getByTestId('loc').textContent).toContain('tab=verification')
+  })
+
+  it('shows the inherited verification value and saves an override', () => {
+    renderPage('b', '/settings?workspace=b&tab=verification')
+    const conformity = screen.getByLabelText('Conformity verification') as HTMLSelectElement
+    expect(conformity.value).toBe('inherit')
+    expect(screen.getByRole('option', { name: 'Inherited (On)' })).toBeTruthy()
+    expect((screen.getByLabelText('Start command') as HTMLInputElement).placeholder).toBe('make dev')
+
+    fireEvent.change(conformity, { target: { value: 'off' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(mutateAsync).toHaveBeenCalledWith({ verification: { conformity: false } })
+    expect(vi.mocked(usePatchWorkspaceSettings)).toHaveBeenLastCalledWith('b')
+  })
+
+  it('offers the chrome driver with a warning and saves it as a workspace override', () => {
+    renderPage('b', '/settings?workspace=b&tab=verification')
+    const driver = screen.getByLabelText('Browser driver') as HTMLSelectElement
+    expect(Array.from(driver.options).map(o => o.value)).toEqual(['inherit', 'auto', 'playwright', 'chrome', 'custom'])
+    fireEvent.change(driver, { target: { value: 'chrome' } })
+    expect(screen.getByText(/drive your own Chrome browser/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Save'))
+    expect(mutateAsync).toHaveBeenCalledWith({ verification: { uiDriver: 'chrome' } })
+  })
+
+  it('marks a verification override and resets it with null', () => {
+    renderPage('a', '/settings?workspace=a&tab=verification')
+    expect((screen.getByLabelText('Conformity verification') as HTMLSelectElement).value).toBe('off')
+    expect(screen.getByText('Override')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Conformity verification — Back to inheritance'))
+    expect(mutateAsync).toHaveBeenCalledWith({ verification: { conformity: null } })
   })
 
   it('adds and removes an environment variable, showing only inherited keys', async () => {

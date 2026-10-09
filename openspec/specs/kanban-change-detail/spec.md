@@ -5,15 +5,23 @@ Permettre à l'utilisateur de consulter et piloter le détail complet d'un chang
 ## Requirements
 
 ### Requirement: Ouvrir le DetailPanel au clic sur une carte hors To Explore
-L'utilisateur SHALL pouvoir cliquer sur une carte dans les colonnes **To Do**, **In Progress** ou **Done** pour ouvrir un panneau latéral (`DetailPanel`) affichant le détail complet du change. Le panel SHALL s'afficher dans un slot dédié à droite des colonnes Kanban (layout inline), sans masquer les colonnes. Un seul panneau peut être ouvert à la fois ; ouvrir un panneau ferme tout autre panneau précédemment ouvert (ExplorePanel inclus).
+L'utilisateur SHALL pouvoir cliquer sur une carte dans les colonnes **To Do**, **In Progress** ou **Done** pour ouvrir un panneau latéral (`DetailPanel`) affichant le détail complet du change. Par défaut le panel SHALL s'afficher dans un slot dédié à droite des colonnes Kanban (layout inline), sans masquer les colonnes ; sa largeur SHALL être fluide, comprise entre **320px** et **420px** selon l'espace disponible. Lorsque l'espace ne permet plus de conserver les colonnes visibles même après rétrécissement du panel et repli du slot Done/Archived (voir `kanban-board`), le panel SHALL s'afficher en **overlay** par-dessus la partie droite des colonnes. Un seul panneau peut être ouvert à la fois ; ouvrir un panneau ferme tout autre panneau précédemment ouvert (ExplorePanel inclus).
 
 #### Scenario: Clic sur carte en colonne To Do
 - **WHEN** l'utilisateur clique sur une carte dans la colonne **To Do**, **In Progress** ou **Done**
-- **THEN** le `DetailPanel` s'ouvre dans un slot inline à droite des colonnes, affichant le détail du change correspondant
+- **THEN** le `DetailPanel` s'ouvre à droite des colonnes, affichant le détail du change correspondant
 
 #### Scenario: Panel inline ne masque pas les colonnes
-- **WHEN** le DetailPanel est ouvert
+- **WHEN** le DetailPanel est ouvert et l'espace suffit à conserver les colonnes visibles
 - **THEN** les colonnes Kanban restent visibles et interactibles à gauche du panel
+
+#### Scenario: Largeur fluide du panel
+- **WHEN** l'espace disponible diminue alors que le DetailPanel est ouvert en mode inline
+- **THEN** la largeur du panel se réduit progressivement jusqu'à 320px avant que d'autres paliers de l'échelle de dégradation soient déclenchés
+
+#### Scenario: Panel en overlay quand l'espace manque
+- **WHEN** le DetailPanel est ouvert et que les colonnes ne tiennent plus à côté du panel à sa largeur minimale, slot Done/Archived déjà replié
+- **THEN** le panel s'affiche en overlay par-dessus les colonnes de droite, qui gardent leur largeur et ne sont plus poussées
 
 #### Scenario: Exclusivité du panneau
 - **WHEN** un panneau (DetailPanel ou ExplorePanel) est déjà ouvert et l'utilisateur clique sur une autre carte
@@ -65,7 +73,7 @@ L'utilisateur SHALL pouvoir modifier le `kanban_status` d'un change directement 
 - **THEN** le `kanban_status` est mis à jour dans `.openspec.yaml`, la carte se déplace dans la colonne correspondante, et le DetailPanel reste ouvert
 
 ### Requirement: Afficher l'onglet Actions dans le DetailPanel
-Le `DetailPanel` SHALL afficher un onglet **Actions**, à côté des onglets Tâches, Proposal, Design, Log et Tags. Cet onglet SHALL regrouper les actions de cycle de vie disponibles pour le change ouvert. Son contenu SHALL varier selon le `kanban_status` du change : le bouton Supprimer est toujours présent (sauf statut `archived`), le bouton Archiver n'apparaît qu'au statut `done`, et les boutons "Approuver & Fusionner" / "Demander correction" n'apparaissent qu'au statut `to-review`.
+Le `DetailPanel` SHALL afficher un onglet **Actions**, à côté des onglets Tâches, Proposal, Design, Log et Tags. Cet onglet SHALL regrouper les actions de cycle de vie disponibles pour le change ouvert. Son contenu SHALL varier selon le `kanban_status` du change : le bouton Supprimer est toujours présent (sauf statut `archived`), le bouton Archiver n'apparaît qu'au statut `done`, et les boutons "Approuver & Fusionner" / "Demander correction" n'apparaissent qu'au statut `to-review`. Pour tout change non archivé, l'onglet SHALL en outre afficher une section **Vérification** décrite par l'exigence « Réglage de la vérification dans le DetailPanel », qui n'est pas une action de cycle de vie.
 
 #### Scenario: Onglet Actions toujours présent
 - **WHEN** le DetailPanel s'ouvre pour un change, quel que soit son statut
@@ -81,7 +89,12 @@ Le `DetailPanel` SHALL afficher un onglet **Actions**, à côté des onglets Tâ
 
 #### Scenario: Contenu de l'onglet Actions aux autres statuts
 - **WHEN** l'onglet Actions est actif pour un change en statut **To Do** ou **In Progress**
-- **THEN** seul le bouton Supprimer est affiché
+- **THEN** seul le bouton Supprimer est affiché parmi les boutons d'action de cycle de vie
+- **THEN** la section Vérification est affichée en plus
+
+#### Scenario: Change archivé
+- **WHEN** l'onglet Actions est actif pour un change archivé
+- **THEN** aucune action de cycle de vie ni section de réglage n'est modifiable
 
 ### Requirement: Archiver un change depuis le DetailPanel
 L'utilisateur SHALL pouvoir déclencher l'archivage d'un change en statut **Done** depuis le bouton Archiver de l'onglet Actions du DetailPanel.
@@ -190,12 +203,179 @@ Le backend SHALL exposer un endpoint `DELETE /api/workspaces/{id}/changes/{name}
 - **THEN** le backend supprime aussi ce ghost record avant de retourner HTTP 204
 
 ### Requirement: Liste des tâches reflétant le worktree du worker actif
-Tant qu'un worker du pool est actif sur un change (y compris en pause), la liste des tâches renvoyée par `GET /api/workspaces/{id}/changes/{name}` et affichée dans le `DetailPanel` SHALL être lue depuis le `tasks.md` du worktree du worker, de sorte que `tasks`, `tasks_done`, `tasks_total` et `kanban_status` soient cohérents avec la carte du Kanban. Lorsque le `tasks.md` du worktree est absent ou ne contient aucune tâche, la liste SHALL provenir du dépôt principal.
+La liste des tâches renvoyée par `GET /api/workspaces/{id}/changes/{name}` et affichée dans le `DetailPanel` SHALL provenir du `tasks.md` de la branche du change dès qu'une source de travail existe. Tant qu'un worker du pool est actif sur un change (y compris en pause), elle SHALL être lue depuis le `tasks.md` du worktree du worker, de sorte que `tasks`, `tasks_done`, `tasks_total` et `kanban_status` soient cohérents avec la carte du Kanban. Lorsqu'aucun worker ne tient le change mais que `feature/<change>` existe, y compris pour un change en revue, `tasks`, `tasks_done` et `tasks_total` SHALL être lus depuis le `tasks.md` du worktree du change s'il existe, sinon depuis la branche, sans nécessiter de worktree ; `kanban_status` SHALL rester dérivé du marqueur de revue, de l'état « lancé » et du `tasks.md` du dépôt principal, et SHALL NOT être recalculé à partir de la branche. Lorsque le `tasks.md` de la branche ou du worktree est absent ou ne contient aucune tâche, la liste SHALL provenir du dépôt principal. La lecture SHALL être en lecture seule : elle ne crée ni worktree ni commit.
 
 #### Scenario: Détail d'un change pendant le run
 - **WHEN** l'utilisateur ouvre le DetailPanel d'un change dont le worker a coché 3 tâches dans son worktree
 - **THEN** ces 3 tâches sont affichées comme faites et `tasks_done` vaut 3
 
+#### Scenario: Détail d'un change en revue
+- **WHEN** l'utilisateur ouvre le DetailPanel d'un change en revue dont la branche a 8 tâches cochées sur 10 et dont le `tasks.md` du dépôt principal est à `0/10`
+- **THEN** la liste affiche les tâches de la branche, `tasks_done` vaut 8, `tasks_total` vaut 10 et `kanban_status` reste `to-review`
+
+#### Scenario: Détail d'un change en revue sans worktree
+- **WHEN** le worktree d'un change en revue a été supprimé et que la branche existe
+- **THEN** la liste des tâches est lue depuis la branche, aucun worktree n'est créé et aucun commit n'est ajouté
+
+#### Scenario: Détail d'un change à branche seule
+- **WHEN** un change rétrogradé en Ready (worktree et commits conservés) porte une branche à 7 tâches cochées sur 10
+- **THEN** le DetailPanel affiche les 7 tâches cochées et `tasks_done` vaut 7, tandis que `kanban_status` reste `ready`
+
+#### Scenario: Branche sans liste de tâches
+- **WHEN** la branche du change existe mais que son `tasks.md` est absent ou sans tâche
+- **THEN** la liste des tâches provient du dépôt principal
+
 #### Scenario: Détail d'un change dont le worker est terminé
 - **WHEN** le worker du change a été libéré
-- **THEN** la liste des tâches du DetailPanel provient à nouveau du `tasks.md` du dépôt principal
+- **THEN** la liste des tâches du DetailPanel provient du `tasks.md` de la branche du change si elle existe (en revue, c'est la branche qui est lue), et du `tasks.md` du dépôt principal sinon
+
+### Requirement: Actions de reprise dans le DetailPanel d'un change en pause
+`GET /api/workspaces/{id}/changes/{name}` SHALL exposer, lorsqu'un worker du pool tient le change, l'identifiant du worker (`worker_id`) et, s'il est en pause, sa raison de blocage lisible (`worker_blocked_reason`). Le `DetailPanel` d'un change avec `worker_paused = true` SHALL afficher un bandeau contenant cette raison de blocage et deux boutons, « Reprendre » et « Reprendre en finalisant », ayant le même effet que sur la carte et dans le panneau d'état du pool. « Reprendre en finalisant » SHALL être désactivé tant que `tasks_done` est inférieur à `tasks_total`, avec le nombre de tâches restantes indiqué, et SHALL devenir actif dès que la dernière tâche est cochée depuis ce panneau, sans rechargement de la page. Un échec de reprise SHALL afficher le message du backend dans le bandeau. Le bandeau SHALL NOT apparaître pour un change sans worker en pause.
+
+#### Scenario: Bandeau d'un change en pause
+- **WHEN** l'utilisateur ouvre le DetailPanel du changement `add-user-auth`, dont le worker est en pause avec la raison « Validation réussie mais tâches restantes incomplètes (9/10) dans tasks.md »
+- **THEN** le panneau affiche cette raison, un bouton « Reprendre » actif et un bouton « Reprendre en finalisant » désactivé indiquant 1 tâche restante
+
+#### Scenario: Cocher la dernière tâche débloque la finalisation
+- **WHEN** l'utilisateur coche la dernière tâche depuis le DetailPanel d'un change dont le worker est en pause
+- **THEN** la tâche est enregistrée dans le worktree du worker (voir `task-toggle`) et « Reprendre en finalisant » devient actif
+
+#### Scenario: Reprise en finalisant depuis le détail
+- **WHEN** l'utilisateur clique sur « Reprendre en finalisant » dans le bandeau
+- **THEN** l'application demande la reprise avec `finalize_only`, et le bandeau disparaît dès que le worker n'est plus en pause
+
+#### Scenario: Pas de bandeau sans pause
+- **WHEN** l'utilisateur ouvre le DetailPanel d'un change tenu par un worker actif ou par aucun worker
+- **THEN** aucun bandeau ni bouton de reprise n'est affiché
+
+### Requirement: Signalement des tâches de validation humaine dans le DetailPanel
+Dans la liste des tâches du `DetailPanel`, une tâche dont `human_review` est vrai SHALL porter un badge « Validation humaine » (« Human validation » en anglais), visible qu'elle soit cochée ou non, et son texte SHALL être affiché sans le commentaire du marqueur. Le checkbox d'une tâche marquée SHALL rester interactif dans les conditions où celui des autres tâches l'est. Pour un change en To Review, l'onglet Tâches SHALL aussi afficher, au-dessus de la liste, le nombre de tâches restant à valider lorsqu'il est supérieur à zéro. Les libellés SHALL être disponibles en français et en anglais.
+
+#### Scenario: Tâche marquée non cochée
+- **WHEN** le DetailPanel affiche une tâche `4.2 Parcours manuel` avec `human_review` à vrai et `done` à faux
+- **THEN** la tâche porte le badge « Validation humaine », son texte ne montre pas le commentaire du marqueur et son checkbox est décoché et actif
+
+#### Scenario: Tâche marquée cochée
+- **WHEN** l'utilisateur coche cette tâche
+- **THEN** le badge reste affiché et la tâche apparaît comme faite
+
+#### Scenario: Compteur de tâches à valider en revue
+- **WHEN** l'utilisateur ouvre l'onglet Tâches d'un change en To Review qui a 2 tâches non cochées
+- **THEN** un message indique « 2 tâches à valider » au-dessus de la liste
+
+#### Scenario: Aucune tâche restante
+- **WHEN** toutes les tâches d'un change en To Review sont cochées
+- **THEN** aucun message de tâches à valider n'est affiché
+### Requirement: Réglage de la vérification dans le DetailPanel
+La section Vérification de l'onglet Actions SHALL permettre de définir, pour le change ouvert, chacune des étapes `conformity` et `ui` avec les choix « Hérité », « Activé » et « Désactivé ». Lorsque « Hérité » est sélectionné, la section SHALL indiquer la valeur héritée (Configuration et workspace). Un choix SHALL être enregistré immédiatement via `PATCH /api/workspaces/{id}/changes/{name}/verification`, et une erreur SHALL être affichée sans modifier la sélection enregistrée. La section SHALL être absente pour un change archivé.
+
+#### Scenario: Valeur héritée affichée
+- **WHEN** le workspace active `ui` et que le change n'a pas de réglage
+- **THEN** le choix « Hérité » est sélectionné pour `ui` et indique la valeur héritée « Activé »
+
+#### Scenario: Désactivation pour ce change
+- **WHEN** l'utilisateur choisit « Désactivé » pour `ui`
+- **THEN** une requête de réglage est envoyée avec `ui` à `false` et la section affiche le choix enregistré
+
+#### Scenario: Retour à l'héritage
+- **WHEN** l'utilisateur choisit « Hérité » pour une étape qu'il avait désactivée
+- **THEN** une requête de réglage est envoyée avec `null` pour cette étape et la valeur héritée est affichée
+
+#### Scenario: Erreur d'enregistrement
+- **WHEN** l'enregistrement échoue
+- **THEN** un message d'erreur est affiché et le choix précédent est conservé
+
+### Requirement: Le détail d'un change expose ses réglages de vérification
+La réponse de `GET /api/workspaces/{id}/changes/{name}` SHALL inclure un objet `verification` contenant `override` (valeurs définies par le change, champs absents si héritées), `inherited` (valeurs effectives sans le réglage du change) et `resolved` (valeurs effectives pour le change), chacune avec les booléens `conformity` et `ui` lorsque applicable.
+
+#### Scenario: Change sans réglage
+- **WHEN** un change n'a pas de réglage de vérification et que la Configuration n'en définit pas
+- **THEN** `override` est vide et `inherited` et `resolved` valent `false` pour les deux étapes
+
+#### Scenario: Change avec réglage
+- **WHEN** un change définit `ui` à `true` alors que le workspace ne l'active pas
+- **THEN** `override.ui` vaut `true`, `inherited.ui` vaut `false` et `resolved.ui` vaut `true`
+
+### Requirement: Bandeau de vérification dans le DetailPanel
+Lorsque le change ouvert a le statut `verifying`, le DetailPanel SHALL afficher, au-dessus de la liste des tâches, un bandeau de vérification indiquant l'état (`queued`, `running` avec l'étape, `failed`, `passed`) et, pour les états `failed` et `passed`, le rapport de la dernière vérification rendu en Markdown, chargé par `GET …/verification/report`. Pour l'état `failed`, le bandeau SHALL proposer trois boutons : « Relancer la vérification », « Finaliser sans vérification » et « Demander des corrections ». « Finaliser sans vérification » SHALL être désactivé, avec le nombre de tâches restantes, tant que la liste des tâches du change n'est pas entièrement cochée ; la coche de la dernière tâche SHALL l'activer sans rechargement. « Demander des corrections » SHALL ouvrir la saisie de retour utilisée pour la revue. Le message d'erreur du backend SHALL être affiché sans modifier l'état affiché. Le bandeau SHALL être absent pour un change qui n'est pas `verifying`.
+
+#### Scenario: Change en cours de vérification
+- **WHEN** l'utilisateur ouvre un change dont la vérification tourne
+- **THEN** le bandeau indique « en cours » avec l'étape, sans bouton d'action
+
+#### Scenario: Change en échec avec rapport
+- **WHEN** l'utilisateur ouvre un change `failed`
+- **THEN** le bandeau affiche le rapport en Markdown et les trois boutons d'action
+
+#### Scenario: Finalisation bloquée
+- **WHEN** 2 tâches du change `failed` sont décochées
+- **THEN** « Finaliser sans vérification » est désactivé et indique « 2 tâches restantes »
+
+#### Scenario: Finalisation débloquée
+- **WHEN** l'utilisateur coche la dernière tâche d'un change `failed`
+- **THEN** « Finaliser sans vérification » devient actif sans rechargement
+
+#### Scenario: Demande de correction
+- **WHEN** l'utilisateur clique sur « Demander des corrections », saisit un retour et valide
+- **THEN** une requête `POST …/verification/request-correction` est envoyée avec le retour, et la carte quitte la colonne Verifying
+
+#### Scenario: Erreur du backend
+- **WHEN** une action est refusée en `409`
+- **THEN** le message du backend est affiché dans le bandeau et l'état affiché ne change pas
+
+#### Scenario: Change hors vérification
+- **WHEN** l'utilisateur ouvre un change qui n'est pas `verifying`
+- **THEN** aucun bandeau de vérification n'est affiché
+
+### Requirement: Lecture de l'état de vérification d'un change
+Chaque change retourné par `GET /api/workspaces/{id}/changes` et par `GET /api/workspaces/{id}/changes/{name}` SHALL porter, lorsque son statut est `verifying`, `verification_state` (`queued`, `running`, `failed` ou `passed`) et, lorsque l'état est `running`, `verification_step` (`conformity`). Ces champs SHALL être absents pour un change qui n'est pas `verifying`. L'état `queued` SHALL désigner un marqueur `pending` sans exécution en cours, et `running` un marqueur `pending` dont l'exécution est en cours dans le pool.
+
+#### Scenario: Marqueur pending sans exécution
+- **WHEN** un change porte le marqueur `pending` et que le pool est arrêté
+- **THEN** `verification_state` vaut `queued` et `verification_step` est absent
+
+#### Scenario: Vérification en cours
+- **WHEN** la vérification de conformité d'un change tourne
+- **THEN** `verification_state` vaut `running` et `verification_step` vaut `conformity`
+
+#### Scenario: Change sans vérification
+- **WHEN** un change n'est pas `verifying`
+- **THEN** ni `verification_state` ni `verification_step` ne figurent dans la réponse
+
+### Requirement: Captures de la vérification UI dans le DetailPanel
+Lorsque le bandeau de vérification du DetailPanel affiche le rapport d'une étape `ui` (voir `verification-stage`), il SHALL afficher sous le rapport les preuves listées par `GET …/verification/report` sous forme de vignettes, chacune servie par `GET …/verification/artifacts/{run}/{name}`. Un clic sur une vignette SHALL l'afficher en grand dans une visionneuse que l'utilisateur peut fermer. Lorsque le rapport n'a pas de preuve, aucune zone de vignettes ne SHALL être affichée. Le bandeau SHALL aussi afficher les lignes `TASK-VERIFIED:` retenues et ignorées du rapport. Un état `waiting` SHALL y être libellé « en attente de l'interface ».
+
+#### Scenario: Vignettes affichées
+- **WHEN** l'utilisateur ouvre un change dont le rapport UI liste deux captures
+- **THEN** deux vignettes sont affichées sous le rapport
+
+#### Scenario: Visionneuse
+- **WHEN** l'utilisateur clique sur une vignette
+- **THEN** la capture s'affiche en grand et peut être fermée
+
+#### Scenario: Aucune preuve
+- **WHEN** le rapport ne liste aucune capture
+- **THEN** aucune zone de vignettes n'est affichée
+
+#### Scenario: Tâches vérifiées
+- **WHEN** le rapport indique une tâche cochée et une ligne `TASK-VERIFIED:` ignorée
+- **THEN** le bandeau distingue la tâche cochée de la ligne ignorée
+
+#### Scenario: État d'attente
+- **WHEN** la vérification du change attend le verrou UI
+- **THEN** le bandeau affiche « en attente de l'interface »
+
+### Requirement: Pilote affiché dans le rapport de vérification UI
+Lorsque le bandeau de vérification du DetailPanel affiche le rapport d'une étape `ui`, il SHALL indiquer le pilote utilisé (`driver` du rapport) par un libellé court : « automatique » pour `auto`, « Playwright » pour `playwright`, « navigateur Chrome » pour `chrome` et « personnalisé » pour `custom`. Pour `chrome`, le libellé SHALL être accompagné d'une mention signalant que le navigateur de l'utilisateur a été piloté. Lorsque le rapport ne porte pas de pilote, aucun libellé de pilote ne SHALL être affiché.
+
+#### Scenario: Pilote Playwright
+- **WHEN** l'utilisateur ouvre un change dont le rapport UI porte `driver` à `playwright`
+- **THEN** le bandeau affiche « Playwright »
+
+#### Scenario: Pilote Chrome
+- **WHEN** le rapport UI porte `driver` à `chrome`
+- **THEN** le bandeau affiche « navigateur Chrome » avec la mention que le navigateur de l'utilisateur a été piloté
+
+#### Scenario: Rapport sans pilote
+- **WHEN** le rapport affiché est celui de la conformité ou celui d'un run antérieur sans `driver`
+- **THEN** aucun libellé de pilote n'est affiché

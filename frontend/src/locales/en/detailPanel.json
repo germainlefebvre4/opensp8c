@@ -13,6 +13,7 @@
     "toExplore": "To Explore",
     "toDo": "To Do",
     "inProgress": "In Progress",
+    "verifying": "Verifying",
     "toReview": "To Review",
     "done": "Done",
     "archived": "Archived"
@@ -40,6 +41,9 @@
     "label": "Active exploration draft",
     "freeze": "Freeze the change"
   },
+  "humanReviewBadge": "Human validation",
+  "tasksToValidate_one": "{{count}} task to validate",
+  "tasksToValidate_other": "{{count}} tasks to validate",
   "reviewActions": {
     "approveAndMerge": "Approve & Merge",
     "requestCorrection": "Request correction",
@@ -102,5 +106,58 @@
     "fileBinary": "This file cannot be rendered (binary).",
     "lastRun": "Last run",
     "openRun": "Open the run"
+  },
+  "pausedBanner": {
+    "title": "Worker paused",
+    "resume": "Resume",
+    "resumeFinalize": "Resume and finalize",
+    "remaining_one": "{{count}} task left to check",
+    "remaining_other": "{{count}} tasks left to check"
+  },
+  "verification": {
+    "title": "Verification",
+    "description": "Setting for this change only. \"Inherited\" follows the workspace, then Configuration.",
+    "tokenCost": "Uses tokens.",
+    "conformity": "Conformity",
+    "ui": "UI",
+    "saveError": "Could not save: {{message}}"
+  },
+  "verificationBanner": {
+    "title": "Verification",
+    "state": {
+      "queued": "queued",
+      "waiting": "waiting for the UI",
+      "running": "running ({{step}})",
+      "runningUi": "UI verification running",
+      "failed": "failed",
+      "passed": "passed, awaiting finalization"
+    },
+    "steps": {
+      "conformity": "conformity",
+      "ui": "UI"
+    },
+    "rerun": "Rerun verification",
+    "finalize": "Finalize without verification",
+    "requestCorrection": "Request corrections",
+    "remaining_one": "{{count}} task left to check",
+    "remaining_other": "{{count}} tasks left to check",
+    "artifacts": {
+      "title": "Screenshots",
+      "open": "Open {{name}}",
+      "close": "Close",
+      "viewer": "Screenshot"
+    },
+    "verifiedTasks": "Tasks checked by the verification",
+    "ignoredLines": "Ignored TASK-VERIFIED lines",
+    "driver": {
+      "label": "Driver: {{name}}",
+      "names": {
+        "auto": "automatic",
+        "playwright": "Playwright",
+        "chrome": "Chrome browser",
+        "custom": "custom"
+      },
+      "chromeNote": "Your own browser was driven."
+    }
   }
 }

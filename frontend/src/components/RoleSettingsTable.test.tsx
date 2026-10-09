@@ -48,7 +48,7 @@ const agents: AgentStatus[] = [
   { id: 'copilot', label: 'Copilot', installed: true },
 ]
 
-const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, documenter: {} }
+const emptyRoles = { explorer: {}, ff: {}, implementer: {}, fixer: {}, verifier: {}, documenter: {} }
 const settings = (over: Partial<Record<Role, object>> = {}, global = {}): AgentSettings =>
   ({ global, roles: { ...emptyRoles, ...over } }) as AgentSettings
 const rr = (agent: string, model = '', effort = ''): ResolvedRole => ({ agent, model, effort })
@@ -59,6 +59,7 @@ const resolvedWith = (roles: Partial<Record<Role, ResolvedRole>>, global = rr('c
     ff: rr('claude', 'sonnet', 'medium'),
     implementer: rr('claude', 'sonnet', 'medium'),
     fixer: rr('claude', 'sonnet', 'medium'),
+    verifier: rr('claude', 'sonnet', 'medium'),
     documenter: rr('claude', 'haiku', 'low'),
     ...roles,
   },
@@ -92,11 +93,13 @@ describe('EffortField', () => {
 describe('RoleSettingsTable', () => {
   const base = { agents, catalog, onSave: vi.fn() }
 
-  it('shows the global row plus five roles with presets as defaults', () => {
+  it('shows the global row plus six roles with presets as defaults', () => {
     render(<RoleSettingsTable {...base} scope="global" settings={settings()} resolved={resolvedWith({})} />)
-    expect(screen.getAllByRole('row')).toHaveLength(7) // header + global + 5 roles
+    expect(screen.getAllByRole('row')).toHaveLength(8) // header + global + 6 roles
     expect((screen.getByLabelText('Exploration — Model') as HTMLInputElement).placeholder).toBe('Default: opus')
     expect(screen.getByText('To Review')).toBeTruthy()
+    expect((screen.getByLabelText('Verification — Model') as HTMLInputElement).placeholder).toBe('Default: sonnet')
+    expect((screen.getByLabelText('Verification — Agent') as HTMLSelectElement)).toBeTruthy()
   })
 
   it('explains the scope of the fixer role', () => {

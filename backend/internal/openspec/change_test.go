@@ -1,9 +1,11 @@
 package openspec
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -457,5 +459,154 @@ func TestGetChangeDetail_FollowsWorktree(t *testing.T) {
 	}
 	if d.TasksDone != 0 || d.Tasks[0].Done || d.KanbanStatus != "todo" {
 		t.Errorf("main detail wrong: %+v", d)
+	}
+}
+
+func TestParseTaskList_HumanReviewMarker(t *testing.T) {
+	content := `- [ ] 4.2 Parcours manuel <!-- human review required -->
+- [x] 4.3 Fait <!--Human Review Required-->
+- [ ] 4.4 Ordinaire
+Texte <!-- human review required --> hors tâche
+`
+	tasks := ParseTaskListContent(content)
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Text != "4.2 Parcours manuel" || !tasks[0].HumanReview || tasks[0].Done {
+		t.Errorf("unexpected task 0: %+v", tasks[0])
+	}
+	if tasks[1].Text != "4.3 Fait" || !tasks[1].HumanReview || !tasks[1].Done {
+		t.Errorf("unexpected task 1: %+v", tasks[1])
+	}
+	if tasks[2].HumanReview {
+		t.Errorf("task 2 must not be marked: %+v", tasks[2])
+	}
+}
+
+func TestParseTaskStats_DistinguishesHumanTasks(t *testing.T) {
+	content := "- [x] a\n- [x] b <!-- human review required -->\n- [ ] c <!-- human review required -->\n- [ ] d <!-- human review required -->\n- [ ] e\n"
+	st := ParseTaskStatsContent(content)
+	want := TaskStats{Done: 2, Total: 5, PendingHuman: 2, PendingOther: 1}
+	if st != want {
+		t.Errorf("got %+v, want %+v", st, want)
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tasks.md")
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if done, total := ParseTaskProgress(p); done != 2 || total != 5 {
+		t.Errorf("ParseTaskProgress = %d/%d, want 2/5", done, total)
+	}
+	if got := ParseTaskStats(p); got != want {
+		t.Errorf("ParseTaskStats = %+v, want %+v", got, want)
+	}
+}
+
+func TestToggleTask_KeepsMarkerAndCleansText(t *testing.T) {
+	ws := t.TempDir()
+	dir := filepath.Join(ws, "openspec", "changes", "c")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "tasks.md")
+	if err := os.WriteFile(p, []byte("- [ ] Parcours <!-- human review required -->\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	text, done, err := ToggleTask(ws, "c", 0)
+	if err != nil || !done || text != "Parcours" {
+		t.Fatalf("got (%q, %v, %v)", text, done, err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "- [x] Parcours <!-- human review required -->\n" {
+		t.Errorf("unexpected file: %q", data)
+	}
+}
+
+func TestChangeScenarios(t *testing.T) {
+	root := t.TempDir()
+	specs := filepath.Join(root, "openspec", "changes", "c", "specs")
+	write := func(rel, content string) string {
+		p := filepath.Join(specs, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("b-cap/spec.md", "## ADDED Requirements\n\n### Requirement: R\ntext\n\n#### Scenario: Premier\n- **WHEN** a\n- **THEN** b\n- **AND** c\n\n#### Scenario: Sans then\n- **WHEN** seul\n\n### Requirement: Autre\n- **THEN** hors scénario\n")
+	write("a-cap/spec.md", "#### Scenario: Unique\n- **WHEN** x\n- **THEN** y\n")
+	write("a-cap/notes.md", "#### Scenario: Ignoré\n- **WHEN** z\n")
+	write("empty/spec.md", "# rien\n")
+	if p := write("locked/spec.md", "#### Scenario: Illisible\n- **WHEN** q\n"); os.Chmod(p, 0) == nil && os.Geteuid() != 0 {
+		defer os.Chmod(p, 0o644)
+	}
+
+	got := ChangeScenarios(root, "c")
+	if len(got) < 2 || got[0].File != "a-cap/spec.md" {
+		t.Fatalf("expected files in alphabetical order, got %+v", got)
+	}
+	var b SpecScenarios
+	for _, g := range got {
+		if g.File == "locked/spec.md" && os.Geteuid() != 0 {
+			t.Fatal("unreadable file must be skipped")
+		}
+		if g.File == "b-cap/spec.md" {
+			b = g
+		}
+		if g.File == "empty/spec.md" || strings.HasSuffix(g.File, "notes.md") {
+			t.Fatalf("unexpected file %s", g.File)
+		}
+	}
+	if len(b.Scenarios) != 2 || b.Scenarios[0].Name != "Premier" || len(b.Scenarios[0].Lines) != 3 {
+		t.Fatalf("b-cap: %+v", b)
+	}
+	if s := b.Scenarios[1]; s.Name != "Sans then" || len(s.Lines) != 1 || s.Lines[0] != "- **WHEN** seul" {
+		t.Fatalf("scenario without THEN must be kept as is: %+v", s)
+	}
+	if got := ChangeScenarios(root, "absent"); len(got) != 0 {
+		t.Fatalf("change without delta spec: %+v", got)
+	}
+}
+
+func TestReopenHumanTasks(t *testing.T) {
+	content := "# T\n\n- [x] 1.1 Implémentation\n- [ ] 2.1 Pending <!-- human review required -->\n- [X] 4.2 Parcours <!--Human Review Required-->  \n  - [x] 4.3 Nested <!-- human review required -->\nNote <!-- human review required --> - [x] hors tâche\n"
+	got, n := ReopenHumanTasks(content)
+	want := "# T\n\n- [x] 1.1 Implémentation\n- [ ] 2.1 Pending <!-- human review required -->\n- [ ] 4.2 Parcours <!--Human Review Required-->  \n  - [ ] 4.3 Nested <!-- human review required -->\nNote <!-- human review required --> - [x] hors tâche\n"
+	if n != 2 || got != want {
+		t.Fatalf("n=%d got:\n%q\nwant:\n%q", n, got, want)
+	}
+	if again, n := ReopenHumanTasks(got); n != 0 || again != got {
+		t.Fatalf("second pass must be a no-op: n=%d", n)
+	}
+}
+
+func TestReopenHumanTasksCounters(t *testing.T) {
+	var b strings.Builder
+	for i := 1; i <= 10; i++ {
+		if i == 7 {
+			b.WriteString("- [x] 7 manuel <!-- human review required -->\n")
+		} else {
+			fmt.Fprintf(&b, "- [x] %d tâche\n", i)
+		}
+	}
+	got, n := ReopenHumanTasks(b.String())
+	if n != 1 {
+		t.Fatalf("reopened = %d", n)
+	}
+	done, total := parseTaskProgressContent(got)
+	if done != 9 || total != 10 {
+		t.Fatalf("done/total = %d/%d, want 9/10", done, total)
+	}
+	var marked Task
+	for _, tk := range ParseTaskListContent(got) {
+		if tk.HumanReview {
+			marked = tk
+		}
+	}
+	if marked.Done || !marked.HumanReview {
+		t.Fatalf("marked task = %+v", marked)
 	}
 }

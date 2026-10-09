@@ -56,6 +56,7 @@ type Preferences struct {
 	UILocale                   string                       `json:"uiLocale,omitempty"`
 	AgentSettings              *AgentSettings               `json:"agentSettings,omitempty"` // Per-role agent/model/effort (Configuration level)
 	PoolDefaults               *PoolSettings                `json:"poolDefaults,omitempty"`
+	VerificationDefaults       *VerificationSettings        `json:"verificationDefaults,omitempty"`
 	Workspaces                 map[string]*WorkspacePrefs   `json:"workspaces,omitempty"` // Overrides keyed by workspace stable id
 }
 

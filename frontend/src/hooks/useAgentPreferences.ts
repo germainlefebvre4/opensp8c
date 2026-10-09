@@ -25,6 +25,8 @@ export function usePatchPreferences() {
       qc.invalidateQueries({ queryKey: ['agent-specializations'] })
       // Configuration values are inherited by every workspace's settings.
       qc.invalidateQueries({ queryKey: ['workspace-settings'] })
+      // A change's inherited verification values come from Configuration.
+      qc.invalidateQueries({ queryKey: ['change-detail'] })
     },
   })
 }

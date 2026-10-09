@@ -14,5 +14,33 @@
     "chooseAgent": "Choisir l'agent de code",
     "configureEnv": "Configurer les variables d'environnement de l'agent",
     "notInstalled": "non installé"
-  }
+  },
+  "attentionCount": "{{count}} change(s) en attente d'action",
+  "signal": {
+    "review": "À revoir",
+    "paused": "En pause",
+    "hitl": "Validation humaine",
+    "verify-failed": "Vérification échouée"
+  },
+  "moreSignals": "+{{count}} autres",
+  "status": {
+    "to-explore": "À explorer",
+    "ready": "Prêt",
+    "todo": "À faire",
+    "in-progress": "En cours",
+    "verifying": "En vérification",
+    "to-review": "À revoir",
+    "done": "Terminé"
+  },
+  "statusSegment": "{{label}} : {{count}}",
+  "total": "{{count}} change(s) au total",
+  "expand": "Déplier les actions en attente",
+  "collapse": "Replier les actions en attente",
+  "actions": "Actions du projet {{name}}",
+  "removeFromTracking": "Retirer du suivi",
+  "removeTitle": "Retirer « {{name}} » du suivi ?",
+  "removeBody": "Le projet est retiré de la liste, mais son dossier n'est pas supprimé.",
+  "removeConfirm": "Retirer",
+  "openChange": "Ouvrir le change {{name}}",
+  "attentionDot": "Actions en attente"
 }

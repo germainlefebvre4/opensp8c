@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, AlertCircle, Trash2, Pin, Cpu, Square, Pause } from 'lucide-react'
+import { Loader2, AlertCircle, Trash2, Pin, Cpu, Square, Pause, RotateCw, CheckCheck } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
@@ -7,6 +7,7 @@ import type { Change } from '../hooks/useChanges'
 import { useArchive } from '../hooks/useArchive'
 import { useToast } from '../hooks/useToast'
 import { deleteGhost } from '../lib/api'
+import type { VerificationState } from '../lib/api'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 
 interface Props {
@@ -18,11 +19,28 @@ interface Props {
   associatedGhostId?: string
   isOverlay?: boolean
   onStopWorker?: (change: Change) => void
+  onResumeWorker?: (change: Change, finalizeOnly: boolean) => void
+  // Ids of the workers whose resume request is in flight.
+  resumingWorkerIds?: ReadonlySet<number>
+  // Quick actions of a verifying card whose verification failed.
+  onRerunVerification?: (change: Change) => void
+  onFinalizeVerification?: (change: Change) => void
+  // Names of the changes whose verification request is in flight.
+  verificationPendingNames?: ReadonlySet<string>
 }
 
+const VERIFICATION_BADGE_STYLES: Record<VerificationState, string> = {
+  queued: 'bg-slate-100 text-slate-600 border-slate-200',
+  waiting: 'bg-amber-50 text-amber-700 border-amber-200',
+  running: 'bg-teal-50 text-teal-700 border-teal-200',
+  failed: 'bg-red-50 text-red-600 border-red-200',
+  passed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+}
+
+// Verifying cards are driven by the system: never draggable.
 const DRAGGABLE_STATUSES = new Set(['to-explore', 'ready', 'todo', 'in-progress', 'to-review'])
 
-export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false, onStopWorker }: Props) {
+export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, associatedGhostId, isOverlay = false, onStopWorker, onResumeWorker, resumingWorkerIds, onRerunVerification, onFinalizeVerification, verificationPendingNames }: Props) {
   const { t: tKanban } = useTranslation('kanban')
   const { t: tDialogs } = useTranslation('dialogs')
   const { toast } = useToast()
@@ -40,6 +58,7 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
     }
   }
 
+  const remainingTasks = change.tasks_total - change.tasks_done
   const progressPct = change.tasks_total > 0
     ? Math.round((change.tasks_done / change.tasks_total) * 100)
     : 0
@@ -66,6 +85,9 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
   const isDimmed = isDragging && !isOverlay
 
   const isArchived = change.kanban_status === 'archived'
+  const isVerifying = change.kanban_status === 'verifying'
+  const verificationState = change.verification_state
+  const verificationBusy = verificationPendingNames?.has(change.name) ?? false
   const isDone = change.kanban_status === 'done'
 
   const handleArchiveClick = (e: React.MouseEvent) => {
@@ -261,11 +283,47 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
                 </span>
               )}
               {change.worker_paused && (
-                <span
-                  title={tKanban('card.workerPausedTooltip')}
-                  className="flex items-center gap-0.5 text-amber-600 font-medium"
-                >
-                  <Pause size={10} /> {tKanban('card.workerPausedBadge')}
+                <span className="flex items-center gap-1">
+                  <span
+                    title={tKanban('card.workerPausedTooltip')}
+                    className="flex items-center gap-0.5 text-amber-600 font-medium"
+                  >
+                    <Pause size={10} /> {tKanban('card.workerPausedBadge')}
+                  </span>
+                  {onResumeWorker && change.worker_id != null && (
+                    <>
+                      <button
+                        type="button"
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => {
+                          e.stopPropagation()
+                          onResumeWorker(change, false)
+                        }}
+                        disabled={resumingWorkerIds?.has(change.worker_id)}
+                        title={tKanban('card.resumeTooltip')}
+                        className="p-0.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                      >
+                        <RotateCw size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => {
+                          e.stopPropagation()
+                          onResumeWorker(change, true)
+                        }}
+                        disabled={remainingTasks > 0 || resumingWorkerIds?.has(change.worker_id)}
+                        title={
+                          remainingTasks > 0
+                            ? tKanban('card.resumeFinalizeRemaining', { count: remainingTasks })
+                            : tKanban('card.resumeFinalizeTooltip')
+                        }
+                        className="p-0.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                      >
+                        <CheckCheck size={10} />
+                      </button>
+                    </>
+                  )}
                 </span>
               )}
               {change.is_stale && (
@@ -280,6 +338,62 @@ export function ChangeCard({ change, workspaceId, onOpen, ffStatus, onDelete, as
             />
           </div>
         </>
+      )}
+
+      {isVerifying && verificationState && (
+        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+          <span
+            data-testid="verification-badge"
+            className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border flex items-center gap-1 ${VERIFICATION_BADGE_STYLES[verificationState]}`}
+          >
+            {verificationState === 'running' && <Loader2 size={9} className="animate-spin" />}
+            {verificationState === 'running'
+              ? change.verification_step === 'ui'
+                ? tKanban('card.verification.runningUi')
+                : tKanban('card.verification.running', {
+                    step: tKanban(`card.verification.steps.${change.verification_step ?? ''}`, { defaultValue: change.verification_step ?? '' }),
+                  })
+              : tKanban(`card.verification.${verificationState}`)}
+          </span>
+          {verificationState === 'failed' && (
+            <span className="flex items-center gap-1">
+              {onRerunVerification && (
+                <button
+                  type="button"
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => {
+                    e.stopPropagation()
+                    onRerunVerification(change)
+                  }}
+                  disabled={verificationBusy}
+                  title={tKanban('card.verification.rerunTooltip')}
+                  className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-slate-200 text-slate-600 hover:text-violet-600 hover:bg-violet-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                >
+                  <RotateCw size={9} /> {tKanban('card.verification.rerun')}
+                </button>
+              )}
+              {onFinalizeVerification && (
+                <button
+                  type="button"
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => {
+                    e.stopPropagation()
+                    onFinalizeVerification(change)
+                  }}
+                  disabled={remainingTasks > 0 || verificationBusy}
+                  title={
+                    remainingTasks > 0
+                      ? tKanban('card.verification.finalizeRemaining', { count: remainingTasks })
+                      : tKanban('card.verification.finalizeTooltip')
+                  }
+                  className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                >
+                  <CheckCheck size={9} /> {tKanban('card.verification.finalize')}
+                </button>
+              )}
+            </span>
+          )}
+        </div>
       )}
 
       {isDone && (
