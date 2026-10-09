@@ -17,7 +17,7 @@
 ## 3. Vérification finale
 
 - [x] 3.1 Lancer la suite frontend complète (`npm test`), le lint et le typecheck ; tout doit être vert.
-- [ ] 3.2 Parcours manuel dans l'application (Timeline → Matrice → clic sur une spec → clic sur un change → ←, X, Échap, scroll d'une spec à nombreux changes) et vérifier que le Kanban n'a pas changé (ouverture et fermeture du `DetailPanel`). <!-- human review required -->
+- [x] 3.2 Parcours manuel dans l'application (Timeline → Matrice → clic sur une spec → clic sur un change → ←, X, Échap, scroll d'une spec à nombreux changes) et vérifier que le Kanban n'a pas changé (ouverture et fermeture du `DetailPanel`). <!-- human review required -->
 
 ## Corrections
 
